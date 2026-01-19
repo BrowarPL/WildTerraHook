@@ -144,7 +144,7 @@ namespace WildTerraHook
 
                     Light l = _playerLightObj.AddComponent<Light>();
                     l.type = LightType.Point;
-                    l.range = 100f;       // Większy zasięg
+                    l.range = 200f;       // Większy zasięg
                     l.intensity = 2.0f;  // Jaśniej
                     l.color = Color.white;
                     l.shadows = LightShadows.None;
