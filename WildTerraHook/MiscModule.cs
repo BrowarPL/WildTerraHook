@@ -10,6 +10,7 @@ namespace WildTerraHook
         private bool _cameraUnlock = false;
         private bool _eternalDay = false;
         private bool _brightPlayer = false;
+        private bool _noFog = false; // NOWOŚĆ: Wyłączanie mgły
 
         // --- ZMIENNE POMOCNICZE ---
         private float _defaultMaxDist = -1f;
@@ -17,7 +18,7 @@ namespace WildTerraHook
         private GameObject _playerLightObj;
 
         // Cache
-        private MonoBehaviour _activeCameraScript; // Przechowuje WTRPGCamera lub CameraMMO
+        private MonoBehaviour _activeCameraScript;
         private bool _isWTRPG = false;
         private float _cacheTimer = 0f;
 
@@ -26,7 +27,7 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(200));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(250)); // Zwiększona wysokość
 
             GUILayout.Label("<b>INNE FUNKCJE</b>");
 
@@ -47,7 +48,10 @@ namespace WildTerraHook
             // 2. WIECZNY DZIEŃ
             _eternalDay = GUILayout.Toggle(_eternalDay, "Wieczny Dzień (Godz. 12:00)");
 
-            // 3. ŚWIATŁO GRACZA
+            // 3. NO FOG (NOWE)
+            _noFog = GUILayout.Toggle(_noFog, "Usuń Mgłę (No Fog)");
+
+            // 4. ŚWIATŁO GRACZA
             bool newLight = GUILayout.Toggle(_brightPlayer, "Latarka Gracza");
             if (newLight != _brightPlayer)
             {
@@ -61,6 +65,7 @@ namespace WildTerraHook
         public void Update()
         {
             if (_eternalDay) ForceDayTime();
+            if (_noFog) DisableFog(); // Wywoływane co klatkę, aby nadpisać Enviro
 
             if (_cameraUnlock)
             {
@@ -68,10 +73,19 @@ namespace WildTerraHook
             }
         }
 
+        // --- LOGIKA MGŁY (NOWE) ---
+        private void DisableFog()
+        {
+            // Wymuszamy wyłączenie mgły na poziomie silnika renderującego
+            // Musi być w Update, bo EnviroSky próbuje to włączyć co klatkę
+            RenderSettings.fog = false;
+            RenderSettings.fogDensity = 0f;
+            RenderSettings.fogMode = FogMode.Linear;
+        }
+
         // --- LOGIKA KAMERY ---
         private void ApplyCameraUnlock()
         {
-            // 1. Znajdź kamerę (co 1s)
             if (_activeCameraScript == null || Time.time > _cacheTimer)
             {
                 FindCameraScript();
@@ -82,25 +96,20 @@ namespace WildTerraHook
             {
                 if (_isWTRPG)
                 {
-                    // Obsługa WTRPGCamera (Namespace: JohnStairs.RCC.ThirdPerson)
                     var rpgCam = _activeCameraScript as JohnStairs.RCC.ThirdPerson.WTRPGCamera;
                     if (rpgCam != null)
                     {
-                        // Zapisz domyślne
                         if (_defaultMaxDist == -1f) _defaultMaxDist = rpgCam.MaxDistance;
 
-                        // Hack
                         if (rpgCam.MaxDistance < 150f)
                         {
                             rpgCam.MaxDistance = 150f;
-                            // Opcjonalnie: Zwiększ czułość
                             rpgCam.ZoomSensitivity = 30f;
                         }
                     }
                 }
                 else
                 {
-                    // Obsługa CameraMMO (Fallback)
                     var mmoCam = _activeCameraScript as global::CameraMMO;
                     if (mmoCam != null)
                     {
@@ -122,7 +131,6 @@ namespace WildTerraHook
 
         private void FindCameraScript()
         {
-            // Próba 1: WTRPGCamera (Najbardziej prawdopodobna)
             var rpg = JohnStairs.RCC.ThirdPerson.WTRPGCamera.instance;
             if (rpg == null) rpg = UnityEngine.Object.FindObjectOfType<JohnStairs.RCC.ThirdPerson.WTRPGCamera>();
 
@@ -133,7 +141,6 @@ namespace WildTerraHook
                 return;
             }
 
-            // Próba 2: CameraMMO
             var mmo = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
             if (mmo != null)
             {
@@ -162,7 +169,6 @@ namespace WildTerraHook
                     }
                 }
             }
-            // Reset flag
             _defaultMaxDist = -1f;
         }
 
@@ -177,7 +183,7 @@ namespace WildTerraHook
             }
         }
 
-        // --- LOGIKA ŚWIATŁA ---
+        // --- LOGIKA ŚWIATŁA (TWOJA WERSJA) ---
         private void TogglePlayerLight(bool enable)
         {
             var player = global::Player.localPlayer;
@@ -189,12 +195,13 @@ namespace WildTerraHook
                 {
                     _playerLightObj = new GameObject("HackLight");
                     _playerLightObj.transform.SetParent(player.transform);
+                    // Zaktualizowana pozycja (10m w górę)
                     _playerLightObj.transform.localPosition = new Vector3(0, 10, 0);
 
                     Light l = _playerLightObj.AddComponent<Light>();
                     l.type = LightType.Point;
-                    l.range = 200f;
-                    l.intensity = 2.0f;
+                    l.range = 200f;       // Zwiększony zasięg
+                    l.intensity = 2.0f;   // Zmniejszona intensywność (z 3.0 na 2.0)
                     l.color = Color.white;
                     l.shadows = LightShadows.None;
                 }
