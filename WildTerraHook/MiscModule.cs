@@ -10,7 +10,7 @@ namespace WildTerraHook
         private bool _cameraUnlock = false;
         private bool _eternalDay = false;
         private bool _brightPlayer = false;
-        private bool _noFog = false; // NOWOŚĆ: Wyłączanie mgły
+        private bool _noFog = false;
 
         // --- ZMIENNE POMOCNICZE ---
         private float _defaultMaxDist = -1f;
@@ -27,13 +27,13 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(250)); // Zwiększona wysokość
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(250));
 
             GUILayout.Label("<b>INNE FUNKCJE</b>");
 
-            // Status Kamery
+            // Status Kamery (Debug dla Ciebie)
             if (_activeCameraScript != null)
-                GUILayout.Label($"Kamera: {_activeCameraScript.GetType().Name} [OK]");
+                GUILayout.Label($"Cam: {_activeCameraScript.GetType().Name} [OK]");
             else
                 GUILayout.Label("Kamera: Szukanie...");
 
@@ -48,10 +48,10 @@ namespace WildTerraHook
             // 2. WIECZNY DZIEŃ
             _eternalDay = GUILayout.Toggle(_eternalDay, "Wieczny Dzień (Godz. 12:00)");
 
-            // 3. NO FOG (NOWE)
+            // 3. NO FOG
             _noFog = GUILayout.Toggle(_noFog, "Usuń Mgłę (No Fog)");
 
-            // 4. ŚWIATŁO GRACZA
+            // 4. ŚWIATŁO GRACZA (Twoje ustawienia)
             bool newLight = GUILayout.Toggle(_brightPlayer, "Latarka Gracza");
             if (newLight != _brightPlayer)
             {
@@ -65,7 +65,7 @@ namespace WildTerraHook
         public void Update()
         {
             if (_eternalDay) ForceDayTime();
-            if (_noFog) DisableFog(); // Wywoływane co klatkę, aby nadpisać Enviro
+            if (_noFog) DisableFog(); // Wywoływane co klatkę
 
             if (_cameraUnlock)
             {
@@ -73,13 +73,21 @@ namespace WildTerraHook
             }
         }
 
-        // --- LOGIKA MGŁY (NOWE) ---
+        // --- LOGIKA MGŁY (POPRAWIONA) ---
         private void DisableFog()
         {
-            // Wymuszamy wyłączenie mgły na poziomie silnika renderującego
-            // Musi być w Update, bo EnviroSky próbuje to włączyć co klatkę
+            // 1. Wyłączamy flagę (Enviro może to nadpisać)
             RenderSettings.fog = false;
-            RenderSettings.fogDensity = 0f;
+
+            // 2. Zerujemy gęstość
+            RenderSettings.fogDensity = 0.0f;
+
+            // 3. KLUCZOWE: Odsuwamy mgłę na 100km. 
+            // Nawet jak Enviro włączy mgłę (fog=true), to nie będzie jej widać.
+            RenderSettings.fogStartDistance = 100000f;
+            RenderSettings.fogEndDistance = 200000f;
+
+            // 4. Wymuszamy tryb Linear, który respektuje powyższe dystanse
             RenderSettings.fogMode = FogMode.Linear;
         }
 
@@ -99,17 +107,24 @@ namespace WildTerraHook
                     var rpgCam = _activeCameraScript as JohnStairs.RCC.ThirdPerson.WTRPGCamera;
                     if (rpgCam != null)
                     {
-                        if (_defaultMaxDist == -1f) _defaultMaxDist = rpgCam.MaxDistance;
+                        // Zapisz domyślne
+                        if (_defaultMaxDist == -1f)
+                        {
+                            _defaultMaxDist = rpgCam.MaxDistance;
+                            _defaultZoomSpeed = rpgCam.ZoomSensitivity;
+                        }
 
+                        // Hack: Zwiększamy dystans i czułość (żeby szybciej oddalać)
                         if (rpgCam.MaxDistance < 150f)
                         {
                             rpgCam.MaxDistance = 150f;
-                            rpgCam.ZoomSensitivity = 30f;
+                            rpgCam.ZoomSensitivity = 60f; // Szybki scroll
                         }
                     }
                 }
                 else
                 {
+                    // Fallback dla starej kamery
                     var mmoCam = _activeCameraScript as global::CameraMMO;
                     if (mmoCam != null)
                     {
@@ -131,6 +146,7 @@ namespace WildTerraHook
 
         private void FindCameraScript()
         {
+            // Próbujemy znaleźć instancję WTRPGCamera (używana w nowszych wersjach gry)
             var rpg = JohnStairs.RCC.ThirdPerson.WTRPGCamera.instance;
             if (rpg == null) rpg = UnityEngine.Object.FindObjectOfType<JohnStairs.RCC.ThirdPerson.WTRPGCamera>();
 
@@ -141,6 +157,7 @@ namespace WildTerraHook
                 return;
             }
 
+            // Próbujemy znaleźć CameraMMO (starsze wersje / fallback)
             var mmo = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
             if (mmo != null)
             {
@@ -157,7 +174,11 @@ namespace WildTerraHook
                 if (_isWTRPG)
                 {
                     var rpgCam = _activeCameraScript as JohnStairs.RCC.ThirdPerson.WTRPGCamera;
-                    if (rpgCam != null) rpgCam.MaxDistance = _defaultMaxDist;
+                    if (rpgCam != null)
+                    {
+                        rpgCam.MaxDistance = _defaultMaxDist;
+                        rpgCam.ZoomSensitivity = _defaultZoomSpeed;
+                    }
                 }
                 else
                 {
@@ -183,7 +204,7 @@ namespace WildTerraHook
             }
         }
 
-        // --- LOGIKA ŚWIATŁA (TWOJA WERSJA) ---
+        // --- LOGIKA ŚWIATŁA (Twoja wersja) ---
         private void TogglePlayerLight(bool enable)
         {
             var player = global::Player.localPlayer;
@@ -195,13 +216,12 @@ namespace WildTerraHook
                 {
                     _playerLightObj = new GameObject("HackLight");
                     _playerLightObj.transform.SetParent(player.transform);
-                    // Zaktualizowana pozycja (10m w górę)
                     _playerLightObj.transform.localPosition = new Vector3(0, 10, 0);
 
                     Light l = _playerLightObj.AddComponent<Light>();
                     l.type = LightType.Point;
-                    l.range = 200f;       // Zwiększony zasięg
-                    l.intensity = 2.0f;   // Zmniejszona intensywność (z 3.0 na 2.0)
+                    l.range = 200f;
+                    l.intensity = 2.0f;
                     l.color = Color.white;
                     l.shadows = LightShadows.None;
                 }
