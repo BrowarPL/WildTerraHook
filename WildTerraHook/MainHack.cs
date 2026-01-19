@@ -21,9 +21,10 @@ namespace WildTerraHook
         private ColorFishingModule _colorBot = new ColorFishingModule();
         private ResourceEspModule _esp = new ResourceEspModule();
 
-        private Rect _menuRect = new Rect(30, 30, 240, 180);
+        private Rect _menuRect = new Rect(30, 30, 240, 240);
         private Rect _analyzerRect = new Rect(280, 30, 450, 600);
-        private Rect _debugRect = new Rect(30, 220, 350, 200);
+        private Rect _debugRect = new Rect(30, 280, 350, 200);
+        private Rect _espRect = new Rect(500, 30, 320, 500); // Dodano definicję
 
         public static Type FindType(string name)
         {
@@ -35,9 +36,11 @@ namespace WildTerraHook
         {
             if (Input.GetKeyDown(Settings.MenuKey)) { Settings.ShowMenu = !Settings.ShowMenu; Cursor.visible = Settings.ShowMenu; }
             if (Settings.ShowAnalyzer) _analyzer.Update();
+
             _colorBot.Update();
-            if (Input.GetKeyDown(KeyCode.End)) UnityEngine.Object.Destroy(this.gameObject);
             _esp.Update();
+
+            if (Input.GetKeyDown(KeyCode.End)) UnityEngine.Object.Destroy(this.gameObject);
         }
 
         void OnGUI()
@@ -47,20 +50,25 @@ namespace WildTerraHook
 
             if (Settings.AutoFishColor)
                 _debugRect = GUI.Window(12, _debugRect, _colorBot.DrawDebugWindow, "<b>STATUS BOTA</b>");
+
+            if (Settings.ShowEspMenu)
+                _espRect = GUI.Window(13, _espRect, (id) => { _esp.DrawMenu(); GUI.DragWindow(); }, "<b>ESP SETTINGS</b>");
+
             _esp.DrawESP();
         }
 
         void DrawMenu(int id)
         {
-            if (GUILayout.Button("OPEN ESP MENU")) Settings.ShowEspMenu = !Settings.ShowEspMenu;
             if (GUILayout.Button("ANALIZATOR", GUILayout.Height(30))) Settings.ShowAnalyzer = !Settings.ShowAnalyzer;
+
+            if (GUILayout.Button("ESP MENU", GUILayout.Height(30))) Settings.ShowEspMenu = !Settings.ShowEspMenu;
+
             GUILayout.Space(10);
 
             GUI.backgroundColor = Settings.AutoFishColor ? Color.green : Color.red;
             if (GUILayout.Button("AUTO-FISH + WALKA", GUILayout.Height(45)))
             {
                 Settings.AutoFishColor = !Settings.AutoFishColor;
-                // FAIL-SAFE: Reset przy wyłączeniu
                 if (!Settings.AutoFishColor) _colorBot.OnDisable();
             }
 
@@ -68,7 +76,6 @@ namespace WildTerraHook
             GUILayout.Space(10);
             if (GUILayout.Button("WYŁĄCZ (END)")) UnityEngine.Object.Destroy(this.gameObject);
             GUI.DragWindow(new Rect(0, 0, 10000, 25));
-
         }
     }
 }
