@@ -68,6 +68,7 @@
     <Reference Include="UnityEngine.InputModule">
       <HintPath>Z:\SteamLibrary\steamapps\common\Wild Terra 2\Wild-Terra-2_Data\Managed\UnityEngine.InputModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" />
     <Reference Include="UnityEngine.UI, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>Z:\SteamLibrary\steamapps\common\Wild Terra 2\Wild-Terra-2_Data\Managed\UnityEngine.UI.dll</HintPath>
