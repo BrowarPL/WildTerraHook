@@ -1,8 +1,7 @@
-﻿using System;
+﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
-using TMPro;
-using UnityEngine;
+using System;
 
 namespace WildTerraHook
 {
@@ -15,9 +14,7 @@ namespace WildTerraHook
         private bool _showLumber = false;
 
         private bool _showMobs = false;
-        private bool _showBosses = false;
-        private bool _showElites = false;
-        private bool _showAggressive = false;
+        private bool _showAggressive = false;   // Tutaj wpadają też Bossy i Elity (wszystko co nie jest na innych listach)
         private bool _showRetaliating = false;
         private bool _showPassive = false;
 
@@ -26,27 +23,21 @@ namespace WildTerraHook
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
 
-        // Listy definicji Mobów (Nazwy do dopasowania)
-        // Priorytet: Boss > Elite > Passive > Retaliating > Aggressive
+        // --- LISTY MOBÓW ---
 
-        private List<string> _bossNames = new List<string>() {
-            "Giant crab", "Angry black bear", "Ancient ent", "Swamp serpent",
-            "Barghest", "Prospector overseer", "Crocodile", "Captive master",
-            "Black giant crab", "Giant scorpion", "Entity of Cthulhu", "King", "Queen", "Boss"
-        };
-
-        private List<string> _eliteNames = new List<string>() {
-            "Zombie tusker", "Large furious reaper", "Huge boar", "Wolf leader",
-            "Bear", "Large Dark wolf", "Black scorpion", "Elite", "Leader"
-        };
-
+        // 1. Pasywne (Błękitne) - Uciekają lub nic nie robią
         private List<string> _passiveNames = new List<string>() {
-            "Hare", "Deer", "Stag", "Cow", "Chicken", "Sheep", "Pig"
+            "Hare", "Deer", "Stag", "Cow", "Chicken", "Sheep", "Pig",
+            "Crow", "Seagull" // Nowe
         };
 
+        // 2. Oddające (Żółte) - Atakują tylko sprowokowane
         private List<string> _retaliatingNames = new List<string>() {
-            "Fox", "Goat", "Silver Fox", "Boar", "Moose"
+            "Fox", "Goat", "Silver Fox", "Boar", "Moose", "Horse", // Horse dodany
+            "Ancient ent", "Ancient Ent", "Ent" // Boss nieagresywny
         };
+
+        // UWAGA: Wszystko co nie jest na powyższych listach, wpada automatycznie do AGGRESSIVE (Czerwone)
 
         // Ignorowane obiekty ("Śmieci")
         private string[] _ignoreKeywords = {
@@ -70,7 +61,6 @@ namespace WildTerraHook
             public Vector3 Position;
             public string Label;
             public Color Color;
-            public bool IsImportant; // Bossy i Elity będą większe
         }
 
         public ResourceEspModule()
@@ -80,12 +70,15 @@ namespace WildTerraHook
 
         private void InitializeLists()
         {
+            // Mining
             string[] mining = { "Rock", "Copper", "Tin", "Limestone", "Coal", "Sulfur", "Iron", "Marblestone", "Arsenic", "Zuperit", "Mortuus", "Sangit" };
             foreach (var s in mining) _miningToggles[s] = false;
 
-            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "Russalas", "Grey amanita", "Fly agaric", "Sticks pile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "Nettles", "Clay", "Hazel", "Greenary", "Ligonberry", "Beehive", "Swamp thorn", "Mountain sage", "Wolf berries", "Chelidonium", "Sand" };
+            // Gathering (Dodano Strawberry)
+            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "Russalas", "Grey amanita", "Fly agaric", "Sticks pile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "Nettles", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "Swamp thorn", "Mountain sage", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
             foreach (var s in gathering) _gatheringToggles[s] = false;
 
+            // Lumber
             string[] lumber = { "Apple tree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
             foreach (var s in lumber) _lumberToggles[s] = false;
         }
@@ -142,40 +135,29 @@ namespace WildTerraHook
             string name = mob.name;
             Vector3 pos = mob.transform.position;
 
-            // --- KATEGORYZACJA (Priorytety) ---
-
-            // 1. BOSS
-            if (MatchesList(name, _bossNames))
-            {
-                if (_showBosses) AddCache(pos, $"[BOSS] {name}", Color.red, true);
-                return; // Znaleziono, koniec
-            }
-
-            // 2. ELITE
-            if (MatchesList(name, _eliteNames))
-            {
-                if (_showElites) AddCache(pos, $"[ELITE] {name}", new Color(1f, 0.5f, 0f), true); // Orange
-                return;
-            }
-
-            // 3. PASSIVE
+            // 1. PASSIVE (Błękitny)
             if (MatchesList(name, _passiveNames))
             {
-                if (_showPassive) AddCache(pos, name, Color.cyan, false);
+                if (_showPassive) AddCache(pos, name, Color.cyan);
                 return;
             }
 
-            // 4. RETALIATING
+            // 2. RETALIATING (Żółty)
             if (MatchesList(name, _retaliatingNames))
             {
-                if (_showRetaliating) AddCache(pos, name, Color.yellow, false);
+                if (_showRetaliating) AddCache(pos, name, Color.yellow);
                 return;
             }
 
-            // 5. AGGRESSIVE (Wszystko inne)
+            // 3. AGGRESSIVE (Czerwony) - Wszystko inne (Bossy, Elity, Wilki, Niedźwiedzie)
             if (_showAggressive)
             {
-                AddCache(pos, name, Color.red, false);
+                // Opcjonalne prefiksy dla Bossów/Elit dla lepszej widoczności
+                string prefix = "";
+                if (name.Contains("Boss") || name.Contains("King")) prefix = "[BOSS] ";
+                else if (name.Contains("Elite") || name.Contains("Leader")) prefix = "[ELITE] ";
+
+                AddCache(pos, prefix + name, Color.red);
             }
         }
 
@@ -201,10 +183,10 @@ namespace WildTerraHook
             {
                 if (pair.Value)
                 {
-                    // Szukamy nazwy normalnie i bez spacji (fix dla Grey Amanita)
+                    // Szukamy nazwy normalnie i bez spacji
                     if (ContainsIgnoreCase(objName, pair.Key) || ContainsIgnoreCase(objName, pair.Key.Replace(" ", "")))
                     {
-                        AddCache(pos, pair.Key, color, false);
+                        AddCache(pos, pair.Key, color);
                         return;
                     }
                 }
@@ -216,9 +198,9 @@ namespace WildTerraHook
             return source.IndexOf(toCheck, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private void AddCache(Vector3 pos, string label, Color col, bool important)
+        private void AddCache(Vector3 pos, string label, Color col)
         {
-            _cachedObjects.Add(new CachedObject { Position = pos, Label = label, Color = col, IsImportant = important });
+            _cachedObjects.Add(new CachedObject { Position = pos, Label = label, Color = col });
         }
 
         // --- GUI ---
@@ -265,11 +247,9 @@ namespace WildTerraHook
             if (_showMobs)
             {
                 GUILayout.BeginHorizontal(); GUILayout.Space(15); GUILayout.BeginVertical();
-                _showBosses = GUILayout.Toggle(_showBosses, "Bosses");
-                _showElites = GUILayout.Toggle(_showElites, "Elites");
-                _showAggressive = GUILayout.Toggle(_showAggressive, "Aggressive (Others)");
-                _showRetaliating = GUILayout.Toggle(_showRetaliating, "Retaliating");
-                _showPassive = GUILayout.Toggle(_showPassive, "Non-Aggressive");
+                _showAggressive = GUILayout.Toggle(_showAggressive, "Aggressive (Bosses/Elites/Others)");
+                _showRetaliating = GUILayout.Toggle(_showRetaliating, "Retaliating (Horse/Ent/Goat/Fox)");
+                _showPassive = GUILayout.Toggle(_showPassive, "Non-Aggressive (Deer/Hare/Crow)");
                 GUILayout.EndVertical(); GUILayout.EndHorizontal();
             }
             GUILayout.EndScrollView();
@@ -292,73 +272,48 @@ namespace WildTerraHook
             float screenW = Screen.width;
             float screenH = Screen.height;
             Vector3 camPos = cam.transform.position;
-            Vector3 camFwd = cam.transform.forward;
 
             foreach (var obj in _cachedObjects)
             {
-                // Oblicz dystans
                 float dist = Vector3.Distance(camPos, obj.Position);
-                if (dist > 250) continue; // Limit rysowania
+                if (dist > 250) continue;
 
-                // Zamiana na pozycję ekranową
                 Vector3 screenPos = cam.WorldToScreenPoint(obj.Position);
                 bool isBehind = screenPos.z < 0;
 
-                // --- OFF-SCREEN LOGIC ---
-                // Jeśli obiekt jest za kamerą LUB poza widokiem ekranu
+                // Logika Off-Screen
                 bool isOffScreen = isBehind ||
                                    screenPos.x < 0 || screenPos.x > screenW ||
                                    screenPos.y < 0 || screenPos.y > screenH;
 
                 if (isOffScreen)
                 {
-                    // Jeśli jest za nami, odwracamy współrzędne
-                    if (isBehind)
-                    {
-                        screenPos.x *= -1;
-                        screenPos.y *= -1;
-                    }
+                    if (isBehind) { screenPos.x *= -1; screenPos.y *= -1; }
 
-                    // Przesuwamy środek układu współrzędnych na środek ekranu do obliczeń
                     Vector3 screenCenter = new Vector3(screenW / 2, screenH / 2, 0);
                     screenPos -= screenCenter;
 
-                    // Znajdujemy kąt
                     float angle = Mathf.Atan2(screenPos.y, screenPos.x);
                     angle -= 90 * Mathf.Deg2Rad;
-
                     float cos = Mathf.Cos(angle);
                     float sin = -Mathf.Sin(angle);
 
-                    // Pozycja na krawędzi (m = y/x)
-                    screenPos = screenCenter + new Vector3(sin * 150, cos * 150); // Wstępny wektor kierunkowy
-
-                    // Dokładne przyklejenie do krawędzi (Clamp)
-                    // y = mx + b -> mapowanie wektora na ramkę ekranu
                     float m = cos / sin;
+                    Vector3 screenBounds = screenCenter;
+                    screenBounds.x -= 20; screenBounds.y -= 20;
 
-                    Vector3 screenBounds = screenCenter * 0.9f; // Margines 10%
-
-                    // Obliczamy punkt przecięcia z ramką
                     if (cos > 0) screenPos = new Vector3(screenBounds.y / m, screenBounds.y, 0);
                     else screenPos = new Vector3(-screenBounds.y / m, -screenBounds.y, 0);
 
-                    // Jeśli wyszło poza boki X, korygujemy
                     if (screenPos.x > screenBounds.x) screenPos = new Vector3(screenBounds.x, screenBounds.x * m, 0);
                     else if (screenPos.x < -screenBounds.x) screenPos = new Vector3(-screenBounds.x, -screenBounds.x * m, 0);
 
-                    screenPos += screenCenter; // Wracamy do układu ekranu
+                    screenPos += screenCenter;
                 }
 
-                // Odwracamy Y dla GUI (Unity Legacy GUI ma 0 na górze)
                 screenPos.y = screenH - screenPos.y;
 
-                // Rysowanie
-                float w = 140;
-                float h = 22;
-                if (obj.IsImportant) { w = 160; h = 26; _styleLabel.fontSize = 13; } // Bossy większe
-                else { _styleLabel.fontSize = 11; }
-
+                float w = 140; float h = 22;
                 Rect r = new Rect(screenPos.x - w / 2, screenPos.y - h / 2, w, h);
 
                 GUI.Box(r, GUIContent.none, _styleBackground);
