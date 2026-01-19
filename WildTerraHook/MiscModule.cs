@@ -73,7 +73,15 @@ namespace WildTerraHook
             // Odśwież cache co 1s jeśli zgubiono kamerę
             if (_cachedCam == null || Time.time > _cacheTimer)
             {
+                // PRÓBA 1: FindObjectOfType
                 _cachedCam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
+
+                // PRÓBA 2: Camera.main (Pewniejsza)
+                if (_cachedCam == null && Camera.main != null)
+                {
+                    _cachedCam = Camera.main.GetComponent<global::CameraMMO>();
+                }
+
                 _cacheTimer = Time.time + 1.0f;
             }
 
@@ -90,7 +98,7 @@ namespace WildTerraHook
                 if (_cachedCam.maxDistance < 150f)
                 {
                     _cachedCam.maxDistance = 150f;
-                    _cachedCam.zoomSpeedMouse = 5.0f; // 5x szybszy zoom dla wygody
+                    _cachedCam.zoomSpeedMouse = 10.0f; // Bardzo szybki zoom
                 }
             }
         }
@@ -101,6 +109,10 @@ namespace WildTerraHook
             {
                 _cachedCam.maxDistance = _defaultMaxDist;
                 _cachedCam.zoomSpeedMouse = _defaultZoomSpeed;
+
+                // Przywróć dystans jeśli jesteśmy za daleko
+                if (_cachedCam.distance > _defaultMaxDist)
+                    _cachedCam.distance = _defaultMaxDist;
             }
         }
 
@@ -128,12 +140,12 @@ namespace WildTerraHook
                 {
                     _playerLightObj = new GameObject("HackLight");
                     _playerLightObj.transform.SetParent(player.transform);
-                    _playerLightObj.transform.localPosition = new Vector3(0, 3, 0);
+                    _playerLightObj.transform.localPosition = new Vector3(0, 10, 0); // Wyżej dla lepszego zasięgu
 
                     Light l = _playerLightObj.AddComponent<Light>();
                     l.type = LightType.Point;
-                    l.range = 30f;
-                    l.intensity = 2.0f;
+                    l.range = 100f;       // Większy zasięg
+                    l.intensity = 3.0f;  // Jaśniej
                     l.color = Color.white;
                     l.shadows = LightShadows.None;
                 }
