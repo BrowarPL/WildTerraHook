@@ -12,9 +12,10 @@ namespace WildTerraHook
         private bool _showMining = false;
         private bool _showGathering = false;
         private bool _showLumber = false;
+        private bool _showOthers = false; // Nowa kategoria
 
         private bool _showMobs = false;
-        private bool _showAggressive = false;   // Tutaj wpadają też Bossy i Elity (wszystko co nie jest na innych listach)
+        private bool _showAggressive = false;
         private bool _showRetaliating = false;
         private bool _showPassive = false;
 
@@ -23,27 +24,26 @@ namespace WildTerraHook
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
 
-        // --- LISTY MOBÓW ---
+        // Zbiór wszystkich znanych surowców (dla filtru Others)
+        private HashSet<string> _knownResources = new HashSet<string>();
 
-        // 1. Pasywne (Błękitne) - Uciekają lub nic nie robią
+        // --- LISTY MOBÓW ---
         private List<string> _passiveNames = new List<string>() {
             "Hare", "Deer", "Stag", "Cow", "Chicken", "Sheep", "Pig",
-            "Crow", "Seagull" // Nowe
+            "Crow", "Seagull"
         };
 
-        // 2. Oddające (Żółte) - Atakują tylko sprowokowane
         private List<string> _retaliatingNames = new List<string>() {
-            "Fox", "Goat", "Silver Fox", "Boar", "Moose", "Horse", // Horse dodany
-            "Ancient ent", "Ancient Ent", "Ent" // Boss nieagresywny
+            "Fox", "Goat", "Silver Fox", "Boar", "Moose", "Horse",
+            "Ancient ent", "Ancient Ent", "Ent"
         };
-
-        // UWAGA: Wszystko co nie jest na powyższych listach, wpada automatycznie do AGGRESSIVE (Czerwone)
 
         // Ignorowane obiekty ("Śmieci")
         private string[] _ignoreKeywords = {
             "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace",
             "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence",
-            "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor"
+            "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor",
+            "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation"
         };
 
         // Cache
@@ -53,7 +53,7 @@ namespace WildTerraHook
 
         // GUI
         private GUIStyle _styleLabel;
-        private GUIStyle _styleBackground;
+        private GUIStyle _styleBackground; // Styl tła (Label, nie Box)
         private Texture2D _bgTexture;
 
         private struct CachedObject
@@ -72,15 +72,19 @@ namespace WildTerraHook
         {
             // Mining
             string[] mining = { "Rock", "Copper", "Tin", "Limestone", "Coal", "Sulfur", "Iron", "Marblestone", "Arsenic", "Zuperit", "Mortuus", "Sangit" };
-            foreach (var s in mining) _miningToggles[s] = false;
+            foreach (var s in mining) { _miningToggles[s] = false; _knownResources.Add(s); }
 
-            // Gathering (Dodano Strawberry)
+            // Gathering
             string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "Russalas", "Grey amanita", "Fly agaric", "Sticks pile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "Nettles", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "Swamp thorn", "Mountain sage", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
-            foreach (var s in gathering) _gatheringToggles[s] = false;
+            foreach (var s in gathering) { _gatheringToggles[s] = false; _knownResources.Add(s); }
 
             // Lumber
             string[] lumber = { "Apple tree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
-            foreach (var s in lumber) _lumberToggles[s] = false;
+            foreach (var s in lumber) { _lumberToggles[s] = false; _knownResources.Add(s); }
+
+            // Dodajemy warianty bez spacji do znanych (dla bezpieczeństwa filtru Others)
+            var temp = new List<string>(_knownResources);
+            foreach (var s in temp) _knownResources.Add(s.Replace(" ", ""));
         }
 
         public void Update()
@@ -99,7 +103,7 @@ namespace WildTerraHook
 
             try
             {
-                // 1. SUROWCE
+                // 1. SUROWCE + OTHERS
                 if (_showResources)
                 {
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
@@ -108,11 +112,29 @@ namespace WildTerraHook
                         if (obj == null) continue;
                         string name = obj.name;
 
+                        // Pomijamy jeśli to Mob (jest WTMob, ale dziedziczy po WTObject, więc trzeba uważać)
+                        // WTMob zwykle ma komponent Monster/Mob, ale sprawdźmy po prostu czy nie jest na listach mobów
+                        if (obj is global::WTMob) continue;
+
+                        // Filtr śmieci
                         if (IsIgnored(name)) continue;
 
-                        if (_showMining) CheckAndAddResource(name, obj.transform.position, _miningToggles, Color.gray);
-                        if (_showGathering) CheckAndAddResource(name, obj.transform.position, _gatheringToggles, Color.green);
-                        if (_showLumber) CheckAndAddResource(name, obj.transform.position, _lumberToggles, new Color(0.6f, 0.3f, 0f));
+                        bool matched = false;
+
+                        // Standardowe kategorie
+                        if (_showMining && CheckAndAddResource(name, obj.transform.position, _miningToggles, Color.gray)) matched = true;
+                        else if (_showGathering && CheckAndAddResource(name, obj.transform.position, _gatheringToggles, Color.green)) matched = true;
+                        else if (_showLumber && CheckAndAddResource(name, obj.transform.position, _lumberToggles, new Color(0.6f, 0.3f, 0f))) matched = true;
+
+                        // Kategoria OTHERS (Śmietniczek)
+                        // Dodajemy tylko jeśli włączone, nie dopasowano wyżej i nie jest znany
+                        if (!matched && _showOthers)
+                        {
+                            if (!IsKnownResource(name))
+                            {
+                                AddCache(obj.transform.position, name, Color.white);
+                            }
+                        }
                     }
                 }
 
@@ -135,28 +157,24 @@ namespace WildTerraHook
             string name = mob.name;
             Vector3 pos = mob.transform.position;
 
-            // 1. PASSIVE (Błękitny)
             if (MatchesList(name, _passiveNames))
             {
                 if (_showPassive) AddCache(pos, name, Color.cyan);
                 return;
             }
 
-            // 2. RETALIATING (Żółty)
             if (MatchesList(name, _retaliatingNames))
             {
                 if (_showRetaliating) AddCache(pos, name, Color.yellow);
                 return;
             }
 
-            // 3. AGGRESSIVE (Czerwony) - Wszystko inne (Bossy, Elity, Wilki, Niedźwiedzie)
+            // Wszystko inne -> Aggressive
             if (_showAggressive)
             {
-                // Opcjonalne prefiksy dla Bossów/Elit dla lepszej widoczności
                 string prefix = "";
                 if (name.Contains("Boss") || name.Contains("King")) prefix = "[BOSS] ";
                 else if (name.Contains("Elite") || name.Contains("Leader")) prefix = "[ELITE] ";
-
                 AddCache(pos, prefix + name, Color.red);
             }
         }
@@ -164,9 +182,7 @@ namespace WildTerraHook
         private bool MatchesList(string name, List<string> list)
         {
             foreach (var entry in list)
-            {
                 if (name.IndexOf(entry, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            }
             return false;
         }
 
@@ -177,20 +193,30 @@ namespace WildTerraHook
             return false;
         }
 
-        private void CheckAndAddResource(string objName, Vector3 pos, Dictionary<string, bool> toggles, Color color)
+        private bool IsKnownResource(string name)
+        {
+            // Sprawdza czy nazwa obiektu zawiera którąkolwiek ze znanych nazw
+            foreach (var known in _knownResources)
+            {
+                if (name.IndexOf(known, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+            return false;
+        }
+
+        private bool CheckAndAddResource(string objName, Vector3 pos, Dictionary<string, bool> toggles, Color color)
         {
             foreach (var pair in toggles)
             {
                 if (pair.Value)
                 {
-                    // Szukamy nazwy normalnie i bez spacji
                     if (ContainsIgnoreCase(objName, pair.Key) || ContainsIgnoreCase(objName, pair.Key.Replace(" ", "")))
                     {
                         AddCache(pos, pair.Key, color);
-                        return;
+                        return true; // Znaleziono
                     }
                 }
             }
+            return false;
         }
 
         private bool ContainsIgnoreCase(string source, string toCheck)
@@ -224,6 +250,8 @@ namespace WildTerraHook
                 _styleLabel.alignment = TextAnchor.MiddleCenter;
                 _styleLabel.fontSize = 11;
                 _styleLabel.fontStyle = FontStyle.Bold;
+                // WAŻNE: To ustawienie w Label z tłem pozwala klikać przez niego
+                _styleLabel.normal.background = _bgTexture;
             }
         }
 
@@ -239,6 +267,8 @@ namespace WildTerraHook
                 if (_showMining = GUILayout.Toggle(_showMining, "Mining")) DrawDictionary(_miningToggles);
                 if (_showGathering = GUILayout.Toggle(_showGathering, "Gathering")) DrawDictionary(_gatheringToggles);
                 if (_showLumber = GUILayout.Toggle(_showLumber, "Lumberjacking")) DrawDictionary(_lumberToggles);
+                // Nowy Toggle OTHERS
+                _showOthers = GUILayout.Toggle(_showOthers, "Others (Uncategorized)");
                 GUILayout.EndVertical(); GUILayout.EndHorizontal();
             }
 
@@ -281,7 +311,6 @@ namespace WildTerraHook
                 Vector3 screenPos = cam.WorldToScreenPoint(obj.Position);
                 bool isBehind = screenPos.z < 0;
 
-                // Logika Off-Screen
                 bool isOffScreen = isBehind ||
                                    screenPos.x < 0 || screenPos.x > screenW ||
                                    screenPos.y < 0 || screenPos.y > screenH;
@@ -289,34 +318,28 @@ namespace WildTerraHook
                 if (isOffScreen)
                 {
                     if (isBehind) { screenPos.x *= -1; screenPos.y *= -1; }
-
                     Vector3 screenCenter = new Vector3(screenW / 2, screenH / 2, 0);
                     screenPos -= screenCenter;
-
                     float angle = Mathf.Atan2(screenPos.y, screenPos.x);
                     angle -= 90 * Mathf.Deg2Rad;
                     float cos = Mathf.Cos(angle);
                     float sin = -Mathf.Sin(angle);
-
                     float m = cos / sin;
                     Vector3 screenBounds = screenCenter;
                     screenBounds.x -= 20; screenBounds.y -= 20;
-
                     if (cos > 0) screenPos = new Vector3(screenBounds.y / m, screenBounds.y, 0);
                     else screenPos = new Vector3(-screenBounds.y / m, -screenBounds.y, 0);
-
                     if (screenPos.x > screenBounds.x) screenPos = new Vector3(screenBounds.x, screenBounds.x * m, 0);
                     else if (screenPos.x < -screenBounds.x) screenPos = new Vector3(-screenBounds.x, -screenBounds.x * m, 0);
-
                     screenPos += screenCenter;
                 }
 
                 screenPos.y = screenH - screenPos.y;
-
-                float w = 140; float h = 22;
+                float w = 160; float h = 22;
                 Rect r = new Rect(screenPos.x - w / 2, screenPos.y - h / 2, w, h);
 
-                GUI.Box(r, GUIContent.none, _styleBackground);
+                // ZMIANA: Zamiast GUI.Box używamy GUI.Label z tłem w stylu.
+                // GUI.Label nie blokuje kliknięć.
                 _styleLabel.normal.textColor = obj.Color;
                 GUI.Label(r, $"{obj.Label} [{dist:F0}m]", _styleLabel);
             }
