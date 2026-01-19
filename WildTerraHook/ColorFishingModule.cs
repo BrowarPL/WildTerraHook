@@ -16,7 +16,6 @@ namespace WildTerraHook
             FISHING,
             COMBAT_PREPARE,
             COMBAT_FIGHT,
-            SKINNING,
             REQUIPPING,
             CASTING_ROD,
             CAST_COOLDOWN
@@ -29,7 +28,6 @@ namespace WildTerraHook
         private bool _isFishingActive = false;
         private float _stateTimer = -1f;
 
-        // Snajper: Koordynaty
         private Vector3 _savedCastPoint;
         private Vector3 _savedPlayerPos;
         private Quaternion _savedPlayerRot;
@@ -37,11 +35,9 @@ namespace WildTerraHook
 
         private int _castAttempts = 0;
 
-        // Dynamiczne ID Skilli
         private int _fishingSkillIndex = -1;
         private int _combatSkillIndex = -1;
 
-        // Refleksja
         private MethodInfo _actionTargetMethod;
         private MethodInfo _skillToPointMethod;
         private MethodInfo _abilityToPointMethod;
@@ -49,7 +45,7 @@ namespace WildTerraHook
         private MethodInfo _setTargetMethod;
         private FieldInfo _uiPanelField;
 
-        private string _debugMsg = "ZARZUĆ RĘCZNIE ABY ROZPOCZĄĆ...";
+        private string _debugMsg = "ZARZUĆ RĘCZNIE...";
 
         public void OnDisable()
         {
@@ -65,19 +61,17 @@ namespace WildTerraHook
         {
             if (!Settings.AutoFishColor) return;
 
-            var wtPlayer = global::Player.localPlayer as WTPlayer;
-            var fishingUI = WTUIFishingActions.instance;
+            var wtPlayer = global::Player.localPlayer as global::WTPlayer; // FIX namespace
+            var fishingUI = global::WTUIFishingActions.instance; // FIX namespace
 
             if (wtPlayer == null) return;
             if (_actionTargetMethod == null) ScanMethods(wtPlayer);
 
-            // SKANOWANIE SKILLI (Tylko raz)
             if (_fishingSkillIndex == -1 || _combatSkillIndex == -1) FindSkills(wtPlayer);
 
             bool isFishing = wtPlayer.IsFishing();
             bool isUI = IsUIReal();
 
-            // --- 1. KALIBRACJA ---
             if (!_hasCalibration)
             {
                 if (isFishing)
@@ -101,10 +95,8 @@ namespace WildTerraHook
                 }
             }
 
-            // --- 2. DETEKCJA KRABA ---
             if (_hasCalibration && (_currentState == BotState.FISHING || _currentState == BotState.CASTING_ROD))
             {
-                // Nawet w trakcie rzucania, jeśli krab nas bije, musimy zareagować
                 if (Time.time > _stateTimer && wtPlayer.target != null && wtPlayer.target.name.IndexOf("crab", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     if (wtPlayer.target.health > 0)
@@ -117,16 +109,15 @@ namespace WildTerraHook
                 }
             }
 
-            // --- 3. WATCHDOG ---
             if (_currentState == BotState.FISHING && Time.time > _stateTimer)
             {
-                if (isFishing && !isUI) // Zombie glitch
+                if (isFishing && !isUI)
                 {
                     wtPlayer.CmdFishingUse(FishingUse.DragOut);
                     ForceRecast();
                     return;
                 }
-                if (!isFishing && !isUI) // Idle glitch
+                if (!isFishing && !isUI)
                 {
                     ForceRecast();
                     return;
@@ -148,7 +139,7 @@ namespace WildTerraHook
             }
         }
 
-        private void ScanMethods(WTPlayer player)
+        private void ScanMethods(global::WTPlayer player)
         {
             var methods = player.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             foreach (var m in methods)
@@ -159,55 +150,42 @@ namespace WildTerraHook
                 if (m.Name == "CmdSkillToPoint") _skillToPointMethod = m;
                 if (m.Name == "CmdUseInventoryItem") _useItemMethod = m;
             }
-            _uiPanelField = typeof(WTUIFishingActions).GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
+            _uiPanelField = typeof(global::WTUIFishingActions).GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
         }
 
-        private void FindSkills(WTPlayer player)
+        private void FindSkills(global::WTPlayer player)
         {
             if (player.skills == null) return;
 
-            // Szukamy najlepszych skilli. 
-            // Attack ID 76 może być specyficzny dla siekiery, więc szukamy dynamicznie.
-            Debug.Log("--- SKANOWANIE SKILLI ---");
             for (int i = 0; i < player.skills.Count; i++)
             {
                 var skillData = player.skills[i].data;
                 if (skillData == null) continue;
-
                 string sName = skillData.name.ToLower();
-                Debug.Log($"Skill [{i}]: {skillData.name}");
 
-                // 1. Wędka
                 if (sName.Contains("fishing")) _fishingSkillIndex = i;
 
-                // 2. Atak Zwykły
                 if (!sName.Contains("fishing") && !sName.Contains("passive") && !sName.Contains("armor"))
                 {
                     bool isBasic = sName.Contains("attack") || sName.Contains("hit") || sName.Contains("slash") || sName.Contains("strike");
-                    // Odrzucamy "Throw" (rzucanie bronią), "Taunt" itp.
                     bool isSpecial = sName.Contains("throw") || sName.Contains("rage") || sName.Contains("taunt") || sName.Contains("shout");
 
-                    if (isBasic && !isSpecial)
-                    {
-                        _combatSkillIndex = i;
-                        Debug.Log($"-> Znaleziono Atak: {skillData.name} (ID: {i})");
-                    }
+                    if (isBasic && !isSpecial) _combatSkillIndex = i;
                 }
             }
 
-            // Fallbacki
             if (_fishingSkillIndex == -1) _fishingSkillIndex = 8;
             if (_combatSkillIndex == -1) _combatSkillIndex = 0;
         }
 
         private bool IsUIReal()
         {
-            if (WTUICastBar.instance != null && WTUICastBar.instance.IsShow()) return true;
-            if (WTUIFishingActions.instance != null && _uiPanelField != null)
+            if (global::WTUICastBar.instance != null && global::WTUICastBar.instance.IsShow()) return true;
+            if (global::WTUIFishingActions.instance != null && _uiPanelField != null)
             {
                 try
                 {
-                    GameObject panel = _uiPanelField.GetValue(WTUIFishingActions.instance) as GameObject;
+                    GameObject panel = _uiPanelField.GetValue(global::WTUIFishingActions.instance) as GameObject;
                     if (panel != null && panel.activeSelf) return true;
                 }
                 catch { }
@@ -231,105 +209,71 @@ namespace WildTerraHook
             _castAttempts = 0;
         }
 
-        // --- WALKA ---
-        private void HandleCombatPrepare(WTPlayer player)
+        private void HandleCombatPrepare(global::WTPlayer player)
         {
             if (Time.time < _stateTimer) return;
-
-            // Wyjmij broń
             if (_useItemMethod != null) _useItemMethod.Invoke(player, new object[] { 0 });
-
             _currentState = BotState.COMBAT_FIGHT;
-            _stateTimer = Time.time + 1.0f; // Szybciej
+            _stateTimer = Time.time + 1.0f;
         }
 
-        private void HandleCombatFight(WTPlayer player)
+        private void HandleCombatFight(global::WTPlayer player)
         {
             if (Time.time < _stateTimer) return;
-
             if (player.target == null || player.target.health <= 0)
             {
-                Debug.Log("[BOT] Wróg pokonany. Powrót.");
                 _currentState = BotState.REQUIPPING;
-                _stateTimer = Time.time + 0.2f; // Szybki powrót
+                _stateTimer = Time.time + 0.2f;
                 return;
             }
-
-            // Client rotation
             player.transform.LookAt(player.target.transform.position);
 
             if (player.target.netIdentity != null)
             {
-                // Namierz
                 if (_setTargetMethod != null)
                     _setTargetMethod.Invoke(player, new object[] { player.target.netIdentity });
 
-                // Atak w punkt (Skill 76 lub inny znaleziony)
                 if (_abilityToPointMethod != null)
-                {
                     _abilityToPointMethod.Invoke(player, new object[] { _combatSkillIndex, player.target.transform.position });
-                }
                 else
-                {
                     player.CmdUseSkill(_combatSkillIndex);
-                }
             }
-
             _stateTimer = Time.time + 0.8f;
         }
 
-        // --- POWRÓT ---
-        private void HandleRequipping(WTPlayer player)
+        private void HandleRequipping(global::WTPlayer player)
         {
             if (Time.time < _stateTimer) return;
-
             if (_hasCalibration)
             {
                 player.transform.position = _savedPlayerPos;
                 player.transform.rotation = _savedPlayerRot;
             }
-
-            // Zakładamy wędkę
             player.CmdUseSkill(_fishingSkillIndex);
-
             _currentState = BotState.CASTING_ROD;
-            _stateTimer = Time.time + 2.0f; // Czas na wyjęcie wędki
+            _stateTimer = Time.time + 2.0f;
             _castAttempts = 0;
         }
 
-        // --- ZARZUCANIE ---
-        private void HandleCastingRod(WTPlayer player)
+        private void HandleCastingRod(global::WTPlayer player)
         {
             if (Time.time < _stateTimer) return;
-
             if (player.IsFishing() && IsUIReal())
             {
-                Debug.Log("[BOT] Sukces! Wędka w wodzie.");
                 EnterFishingState();
                 return;
             }
 
             if (_castAttempts < 5)
             {
-                Debug.Log($"[BOT] Rzut Wędką (ID: {_fishingSkillIndex})");
-
                 if (_hasCalibration) player.transform.rotation = _savedPlayerRot;
-
                 if (_abilityToPointMethod != null)
-                {
                     _abilityToPointMethod.Invoke(player, new object[] { _fishingSkillIndex, _savedCastPoint });
-                }
                 else
-                {
                     player.CmdUseSkill(_fishingSkillIndex);
-                }
 
                 _castAttempts++;
-
-                // PRZEJŚCIE DO COOLDOWNU
                 _currentState = BotState.CAST_COOLDOWN;
-
-                // *** ZMIANA: Skrócono czas blokady do 1.0s ***
                 _stateTimer = Time.time + 1.0f;
             }
             else
@@ -340,42 +284,27 @@ namespace WildTerraHook
             }
         }
 
-        private void HandleCastCooldown(WTPlayer player)
+        private void HandleCastCooldown(global::WTPlayer player)
         {
             if (Time.time < _stateTimer) return;
-
-            // Po 1 sekundzie sprawdzamy czy łowimy.
-            if (player.IsFishing())
-            {
-                EnterFishingState();
-            }
-            else
-            {
-                // Jeśli nie łowimy, wracamy do prób rzutu
-                _currentState = BotState.CASTING_ROD;
-            }
+            if (player.IsFishing()) EnterFishingState();
+            else _currentState = BotState.CASTING_ROD;
         }
 
-        // --- ŁOWIENIE ---
-        private void HandleFishing(WTPlayer player, WTUIFishingActions ui)
+        private void HandleFishing(global::WTPlayer player, global::WTUIFishingActions ui)
         {
             if (_castStartTime == 0) _castStartTime = Time.time;
-
             if (!player.IsFishing())
             {
-                Debug.Log("[BOT] Koniec łowienia. Restart...");
                 ForceRecast();
                 return;
             }
-
             _isFishingActive = true;
             if (ui == null) return;
 
-            // Timer 10s
             if (Time.time - _castStartTime > 2.0f)
             {
                 var actions = GetField<List<FishBite>>(ui, "fishActions");
-
                 if (actions == null || actions.Count == 0)
                 {
                     if (Time.time - _castStartTime > Settings.FishingTimeout)
@@ -390,7 +319,6 @@ namespace WildTerraHook
                     {
                         _lastActionCount = actions.Count;
                         _castStartTime = Time.time;
-
                         Color32 success = GetField<Color32>(ui, "successButtonColor");
                         if (IsActive(ui, "dragOutActionButtonImage", success)) player.CmdFishingUse(FishingUse.DragOut);
                         else if (IsActive(ui, "pullActionButtonImage", success)) player.CmdFishingUse(FishingUse.Pull);
