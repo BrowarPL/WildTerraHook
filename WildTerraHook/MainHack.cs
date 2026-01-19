@@ -24,7 +24,7 @@ namespace WildTerraHook
         private Rect _menuRect = new Rect(30, 30, 240, 240);
         private Rect _analyzerRect = new Rect(280, 30, 450, 600);
         private Rect _debugRect = new Rect(30, 280, 350, 200);
-        private Rect _espRect = new Rect(500, 30, 320, 500); // Dodano definicję
+        private Rect _espRect = new Rect(500, 30, 320, 500);
 
         public static Type FindType(string name)
         {
