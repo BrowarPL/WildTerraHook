@@ -17,7 +17,8 @@ namespace WildTerraHook
         private GameObject _playerLightObj;
 
         // Cache
-        private global::CameraMMO _cachedCam;
+        private MonoBehaviour _activeCameraScript; // Przechowuje WTRPGCamera lub CameraMMO
+        private bool _isWTRPG = false;
         private float _cacheTimer = 0f;
 
         // --- GUI ---
@@ -29,9 +30,9 @@ namespace WildTerraHook
 
             GUILayout.Label("<b>INNE FUNKCJE</b>");
 
-            // Status Kamery (Debug)
-            if (_cachedCam != null)
-                GUILayout.Label($"Kamera: OK | Zoom: {_cachedCam.distance:F1}/{_cachedCam.maxDistance:F1}");
+            // Status Kamery
+            if (_activeCameraScript != null)
+                GUILayout.Label($"Kamera: {_activeCameraScript.GetType().Name} [OK]");
             else
                 GUILayout.Label("Kamera: Szukanie...");
 
@@ -40,7 +41,7 @@ namespace WildTerraHook
             if (newCam != _cameraUnlock)
             {
                 _cameraUnlock = newCam;
-                if (!_cameraUnlock) RevertCameraUnlock(); // Reset przy wyłączeniu
+                if (!_cameraUnlock) RevertCameraUnlock();
             }
 
             // 2. WIECZNY DZIEŃ
@@ -70,50 +71,99 @@ namespace WildTerraHook
         // --- LOGIKA KAMERY ---
         private void ApplyCameraUnlock()
         {
-            // Odśwież cache co 1s jeśli zgubiono kamerę
-            if (_cachedCam == null || Time.time > _cacheTimer)
+            // 1. Znajdź kamerę (co 1s)
+            if (_activeCameraScript == null || Time.time > _cacheTimer)
             {
-                // PRÓBA 1: FindObjectOfType
-                _cachedCam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
-
-                // PRÓBA 2: Camera.main (Pewniejsza)
-                if (_cachedCam == null && Camera.main != null)
-                {
-                    _cachedCam = Camera.main.GetComponent<global::CameraMMO>();
-                }
-
+                FindCameraScript();
                 _cacheTimer = Time.time + 1.0f;
             }
 
-            if (_cachedCam != null)
+            if (_activeCameraScript != null)
             {
-                // Zapisz wartości domyślne (tylko raz)
-                if (_defaultMaxDist == -1f)
+                if (_isWTRPG)
                 {
-                    _defaultMaxDist = _cachedCam.maxDistance;
-                    _defaultZoomSpeed = _cachedCam.zoomSpeedMouse;
-                }
+                    // Obsługa WTRPGCamera (Namespace: JohnStairs.RCC.ThirdPerson)
+                    var rpgCam = _activeCameraScript as JohnStairs.RCC.ThirdPerson.WTRPGCamera;
+                    if (rpgCam != null)
+                    {
+                        // Zapisz domyślne
+                        if (_defaultMaxDist == -1f) _defaultMaxDist = rpgCam.MaxDistance;
 
-                // Aplikuj hack (Wymuś max dystans i prędkość)
-                if (_cachedCam.maxDistance < 150f)
-                {
-                    _cachedCam.maxDistance = 150f;
-                    _cachedCam.zoomSpeedMouse = 10.0f; // Bardzo szybki zoom
+                        // Hack
+                        if (rpgCam.MaxDistance < 150f)
+                        {
+                            rpgCam.MaxDistance = 150f;
+                            // Opcjonalnie: Zwiększ czułość
+                            rpgCam.ZoomSensitivity = 30f;
+                        }
+                    }
                 }
+                else
+                {
+                    // Obsługa CameraMMO (Fallback)
+                    var mmoCam = _activeCameraScript as global::CameraMMO;
+                    if (mmoCam != null)
+                    {
+                        if (_defaultMaxDist == -1f)
+                        {
+                            _defaultMaxDist = mmoCam.maxDistance;
+                            _defaultZoomSpeed = mmoCam.zoomSpeedMouse;
+                        }
+
+                        if (mmoCam.maxDistance < 150f)
+                        {
+                            mmoCam.maxDistance = 150f;
+                            mmoCam.zoomSpeedMouse = 5.0f;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void FindCameraScript()
+        {
+            // Próba 1: WTRPGCamera (Najbardziej prawdopodobna)
+            var rpg = JohnStairs.RCC.ThirdPerson.WTRPGCamera.instance;
+            if (rpg == null) rpg = UnityEngine.Object.FindObjectOfType<JohnStairs.RCC.ThirdPerson.WTRPGCamera>();
+
+            if (rpg != null)
+            {
+                _activeCameraScript = rpg;
+                _isWTRPG = true;
+                return;
+            }
+
+            // Próba 2: CameraMMO
+            var mmo = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
+            if (mmo != null)
+            {
+                _activeCameraScript = mmo;
+                _isWTRPG = false;
+                return;
             }
         }
 
         private void RevertCameraUnlock()
         {
-            if (_cachedCam != null && _defaultMaxDist != -1f)
+            if (_activeCameraScript != null && _defaultMaxDist != -1f)
             {
-                _cachedCam.maxDistance = _defaultMaxDist;
-                _cachedCam.zoomSpeedMouse = _defaultZoomSpeed;
-
-                // Przywróć dystans jeśli jesteśmy za daleko
-                if (_cachedCam.distance > _defaultMaxDist)
-                    _cachedCam.distance = _defaultMaxDist;
+                if (_isWTRPG)
+                {
+                    var rpgCam = _activeCameraScript as JohnStairs.RCC.ThirdPerson.WTRPGCamera;
+                    if (rpgCam != null) rpgCam.MaxDistance = _defaultMaxDist;
+                }
+                else
+                {
+                    var mmoCam = _activeCameraScript as global::CameraMMO;
+                    if (mmoCam != null)
+                    {
+                        mmoCam.maxDistance = _defaultMaxDist;
+                        mmoCam.zoomSpeedMouse = _defaultZoomSpeed;
+                    }
+                }
             }
+            // Reset flag
+            _defaultMaxDist = -1f;
         }
 
         // --- LOGIKA POGODY ---
@@ -121,7 +171,6 @@ namespace WildTerraHook
         {
             if (global::EnviroSky.instance != null)
             {
-                // SetTime wymaga intów
                 int years = global::EnviroSky.instance.GameTime.Years;
                 int days = global::EnviroSky.instance.GameTime.Days;
                 global::EnviroSky.instance.SetTime(years, days, 12, 0, 0);
@@ -140,12 +189,12 @@ namespace WildTerraHook
                 {
                     _playerLightObj = new GameObject("HackLight");
                     _playerLightObj.transform.SetParent(player.transform);
-                    _playerLightObj.transform.localPosition = new Vector3(0, 10, 0); // Wyżej dla lepszego zasięgu
+                    _playerLightObj.transform.localPosition = new Vector3(0, 10, 0);
 
                     Light l = _playerLightObj.AddComponent<Light>();
                     l.type = LightType.Point;
-                    l.range = 200f;       // Większy zasięg
-                    l.intensity = 2.0f;  // Jaśniej
+                    l.range = 200f;
+                    l.intensity = 2.0f;
                     l.color = Color.white;
                     l.shadows = LightShadows.None;
                 }
