@@ -10,7 +10,9 @@ namespace WildTerraHook
         public static bool AutoFishColor = false;
         public static float FishingTimeout = 10f;
         public static KeyCode MenuKey = KeyCode.Delete;
+
         public static bool ShowEspMenu = false;
+        public static bool ShowMiscMenu = false; // Nowe menu
     }
 
     public class Loader { public static void Init() { GameObject g = new GameObject("WT2_GlobalHook"); g.AddComponent<MainHack>(); UnityEngine.Object.DontDestroyOnLoad(g); } }
@@ -20,11 +22,13 @@ namespace WildTerraHook
         private PlayerAnalyzer _analyzer = new PlayerAnalyzer();
         private ColorFishingModule _colorBot = new ColorFishingModule();
         private ResourceEspModule _esp = new ResourceEspModule();
+        private MiscModule _misc = new MiscModule(); // Nowy moduł
 
-        private Rect _menuRect = new Rect(30, 30, 240, 240);
+        private Rect _menuRect = new Rect(30, 30, 240, 280); // Zwiększona wysokość
         private Rect _analyzerRect = new Rect(280, 30, 450, 600);
-        private Rect _debugRect = new Rect(30, 280, 350, 200);
+        private Rect _debugRect = new Rect(30, 320, 350, 200);
         private Rect _espRect = new Rect(500, 30, 320, 500);
+        private Rect _miscRect = new Rect(830, 30, 250, 250); // Okno Misc
 
         public static Type FindType(string name)
         {
@@ -39,6 +43,7 @@ namespace WildTerraHook
 
             _colorBot.Update();
             _esp.Update();
+            _misc.Update(); // Aktualizacja Misc (Zoom/Day)
 
             if (Input.GetKeyDown(KeyCode.End)) UnityEngine.Object.Destroy(this.gameObject);
         }
@@ -54,6 +59,10 @@ namespace WildTerraHook
             if (Settings.ShowEspMenu)
                 _espRect = GUI.Window(13, _espRect, (id) => { _esp.DrawMenu(); GUI.DragWindow(); }, "<b>ESP SETTINGS</b>");
 
+            // Nowe okno Misc
+            if (Settings.ShowMiscMenu)
+                _miscRect = GUI.Window(14, _miscRect, (id) => { _misc.DrawMenu(); GUI.DragWindow(); }, "<b>INNE FUNKCJE</b>");
+
             _esp.DrawESP();
         }
 
@@ -62,6 +71,9 @@ namespace WildTerraHook
             if (GUILayout.Button("ANALIZATOR", GUILayout.Height(30))) Settings.ShowAnalyzer = !Settings.ShowAnalyzer;
 
             if (GUILayout.Button("ESP MENU", GUILayout.Height(30))) Settings.ShowEspMenu = !Settings.ShowEspMenu;
+
+            // Przycisk Misc
+            if (GUILayout.Button("INNE FUNKCJE", GUILayout.Height(30))) Settings.ShowMiscMenu = !Settings.ShowMiscMenu;
 
             GUILayout.Space(10);
 
