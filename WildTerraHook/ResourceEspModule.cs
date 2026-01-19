@@ -7,29 +7,28 @@ namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- MENU (Domyślnie Wyłączone) ---
+        // --- MENU ---
         private bool _showResources = false;
         private bool _showMining = false;
         private bool _showGathering = false;
         private bool _showLumber = false;
-        private bool _showGodsend = false; // Nowa kategoria: Skrzynki
-        private bool _showOthers = false;  // Śmietniczek
+        private bool _showGodsend = false;
+        private bool _showOthers = false;
 
         private bool _showMobs = false;
         private bool _showAggressive = false;
         private bool _showRetaliating = false;
         private bool _showPassive = false;
 
-        // Słowniki surowców
+        // Słowniki
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _godsendToggles = new Dictionary<string, bool>();
 
-        // Zbiór znanych nazw (żeby nie dublować w Others)
         private HashSet<string> _knownResources = new HashSet<string>();
 
-        // --- LISTY MOBÓW ---
+        // Listy Mobów
         private List<string> _passiveNames = new List<string>() {
             "Hare", "Deer", "Stag", "Cow", "Chicken", "Sheep", "Pig",
             "Crow", "Seagull"
@@ -40,7 +39,6 @@ namespace WildTerraHook
             "Ancient ent", "Ancient Ent", "Ent"
         };
 
-        // Ignorowane obiekty ("Śmieci")
         private string[] _ignoreKeywords = {
             "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace",
             "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence",
@@ -52,9 +50,8 @@ namespace WildTerraHook
         // Cache
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
-        private float _scanInterval = 0.1f; // 100ms
+        private float _scanInterval = 0.1f;
 
-        // GUI
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
@@ -73,11 +70,9 @@ namespace WildTerraHook
 
         private void InitializeLists()
         {
-            // Mining
             string[] mining = { "Rock", "Copper", "Tin", "Limestone", "Coal", "Sulfur", "Iron", "Marblestone", "Arsenic", "Zuperit", "Mortuus", "Sangit" };
             foreach (var s in mining) { _miningToggles[s] = false; AddToKnown(s); }
 
-            // Gathering (Zaktualizowane nazwy wewnętrzne)
             string[] gathering = {
                 "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas",
                 "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile",
@@ -87,19 +82,17 @@ namespace WildTerraHook
             };
             foreach (var s in gathering) { _gatheringToggles[s] = false; AddToKnown(s); }
 
-            // Lumber
             string[] lumber = { "Apple tree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
             foreach (var s in lumber) { _lumberToggles[s] = false; AddToKnown(s); }
 
-            // Godsend (Skrzynki)
-            string[] godsend = { "Godsend" }; // Szuka wszystkiego co ma "Godsend" w nazwie
+            string[] godsend = { "Godsend" };
             foreach (var s in godsend) { _godsendToggles[s] = false; AddToKnown(s); }
         }
 
         private void AddToKnown(string s)
         {
             _knownResources.Add(s);
-            _knownResources.Add(s.Replace(" ", "")); // Wersja bez spacji
+            _knownResources.Add(s.Replace(" ", ""));
         }
 
         public void Update()
@@ -127,24 +120,19 @@ namespace WildTerraHook
                         if (obj == null) continue;
                         string name = obj.name;
 
-                        // Pomijamy Moby i Graczy
-                        if (obj is global::WTMob) continue;
+                        // FIX: Usunięto 'obj is WTMob' bo WTMob nie dziedziczy po WTObject.
+                        // Zamiast tego sprawdzamy czy nazwa sugeruje gracza lub ma komponent Monster (jeśli jest dostępny, ale tutaj wystarczy nazwa)
                         if (name.Contains("Player") || name.Contains("Character")) continue;
 
-                        // Filtr śmieci
                         if (IsIgnored(name)) continue;
 
                         bool matched = false;
 
-                        // Standardowe kategorie
                         if (_showMining && CheckAndAddResource(name, obj.transform.position, _miningToggles, Color.gray)) matched = true;
                         else if (_showGathering && CheckAndAddResource(name, obj.transform.position, _gatheringToggles, Color.green)) matched = true;
                         else if (_showLumber && CheckAndAddResource(name, obj.transform.position, _lumberToggles, new Color(0.6f, 0.3f, 0f))) matched = true;
-
-                        // Godsend (Fioletowy)
                         else if (_showGodsend && CheckAndAddResource(name, obj.transform.position, _godsendToggles, new Color(0.8f, 0f, 1f))) matched = true;
 
-                        // Kategoria OTHERS (Tylko jeśli nie znaleziono wyżej i włączona)
                         if (!matched && _showOthers)
                         {
                             if (!IsKnownResource(name))
@@ -186,7 +174,6 @@ namespace WildTerraHook
                 return;
             }
 
-            // Wszystko inne -> Aggressive
             if (_showAggressive)
             {
                 string prefix = "";
@@ -282,14 +269,10 @@ namespace WildTerraHook
                 if (_showMining = GUILayout.Toggle(_showMining, "Mining")) DrawDictionary(_miningToggles);
                 if (_showGathering = GUILayout.Toggle(_showGathering, "Gathering")) DrawDictionary(_gatheringToggles);
                 if (_showLumber = GUILayout.Toggle(_showLumber, "Lumberjacking")) DrawDictionary(_lumberToggles);
-
                 GUILayout.Space(5);
-                // Godsend przed Others
                 if (_showGodsend = GUILayout.Toggle(_showGodsend, "Godsend (Chests)")) DrawDictionary(_godsendToggles);
-
                 GUILayout.Space(5);
                 _showOthers = GUILayout.Toggle(_showOthers, "Others (Uncategorized)");
-
                 GUILayout.EndVertical(); GUILayout.EndHorizontal();
             }
 

@@ -9,11 +9,10 @@ namespace WildTerraHook
         // --- USTAWIENIA ---
         private bool _cameraUnlock = false;
         private bool _eternalDay = false;
-        private bool _brightPlayer = false; // Dodatkowe światło na graczu
+        private bool _brightPlayer = false;
 
-        // --- STARE WARTOŚCI (Do przywrócenia) ---
+        // --- ZMIENNE POMOCNICZE ---
         private float _defaultMaxDist = -1f;
-        private bool _isLightCreated = false;
         private GameObject _playerLightObj;
 
         // --- GUI ---
@@ -37,7 +36,7 @@ namespace WildTerraHook
             // 2. WIECZNY DZIEŃ
             _eternalDay = GUILayout.Toggle(_eternalDay, "Wieczny Dzień (Godz. 12:00)");
 
-            // 3. ŚWIATŁO GRACZA (Latarka)
+            // 3. ŚWIATŁO GRACZA
             bool newLight = GUILayout.Toggle(_brightPlayer, "Światło Gracza (Latarka)");
             if (newLight != _brightPlayer)
             {
@@ -50,7 +49,6 @@ namespace WildTerraHook
 
         public void Update()
         {
-            // Utrzymywanie stanu w każdej klatce (dla pewności)
             if (_eternalDay)
             {
                 ForceDayTime();
@@ -58,7 +56,6 @@ namespace WildTerraHook
 
             if (_cameraUnlock)
             {
-                // Ciągłe wymuszanie, bo gra może próbować to cofnąć przy zmianie strefy
                 ApplyCameraUnlock();
             }
         }
@@ -66,15 +63,12 @@ namespace WildTerraHook
         // --- LOGIKA KAMERY ---
         private void ApplyCameraUnlock()
         {
-            var cam = global::CameraMMO.instance; // Używamy static instance jeśli dostępna, lub Find
-            if (cam == null) cam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
+            // FIX: CameraMMO nie ma 'instance', używamy FindObjectOfType
+            var cam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
 
             if (cam != null)
             {
-                // Zapisz domyślną wartość tylko raz
                 if (_defaultMaxDist == -1f) _defaultMaxDist = cam.maxDistance;
-
-                // Ustaw duży dystans
                 if (cam.maxDistance < 100f) cam.maxDistance = 100f;
             }
         }
@@ -93,9 +87,10 @@ namespace WildTerraHook
         {
             if (global::EnviroSky.instance != null)
             {
-                // EnviroSky używa internalHour lub GameTime.Hours
-                // Ustawiamy sztywno na 12:00
-                global::EnviroSky.instance.SetTime(global::EnviroSky.instance.GameTime.Years, global::EnviroSky.instance.GameTime.Days, 12.0f, 0f, 0f);
+                // FIX: Rzutowanie na int, bo SetTime wymaga intów
+                int years = global::EnviroSky.instance.GameTime.Years;
+                int days = global::EnviroSky.instance.GameTime.Days;
+                global::EnviroSky.instance.SetTime(years, days, 12, 0, 0);
             }
         }
 
@@ -111,7 +106,7 @@ namespace WildTerraHook
                 {
                     _playerLightObj = new GameObject("HackLight");
                     _playerLightObj.transform.SetParent(player.transform);
-                    _playerLightObj.transform.localPosition = new Vector3(0, 3, 0); // 3m nad głową
+                    _playerLightObj.transform.localPosition = new Vector3(0, 3, 0);
 
                     Light l = _playerLightObj.AddComponent<Light>();
                     l.type = LightType.Point;

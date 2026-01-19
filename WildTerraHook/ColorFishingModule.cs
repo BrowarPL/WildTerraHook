@@ -25,8 +25,7 @@ namespace WildTerraHook
 
         private int _lastActionCount = -1;
         private float _castStartTime = 0f;
-        private bool _isFishingActive = false;
-        private float _stateTimer = -1f;
+        private float _stateTimer = -1f; // Usunięto _isFishingActive
 
         private Vector3 _savedCastPoint;
         private Vector3 _savedPlayerPos;
@@ -51,7 +50,6 @@ namespace WildTerraHook
         {
             _hasCalibration = false;
             _currentState = BotState.WAITING_FOR_MANUAL;
-            _isFishingActive = false;
             _fishingSkillIndex = -1;
             _combatSkillIndex = -1;
             Debug.Log("[BOT] RESET.");
@@ -61,8 +59,8 @@ namespace WildTerraHook
         {
             if (!Settings.AutoFishColor) return;
 
-            var wtPlayer = global::Player.localPlayer as global::WTPlayer; // FIX namespace
-            var fishingUI = global::WTUIFishingActions.instance; // FIX namespace
+            var wtPlayer = global::Player.localPlayer as global::WTPlayer;
+            var fishingUI = global::WTUIFishingActions.instance;
 
             if (wtPlayer == null) return;
             if (_actionTargetMethod == null) ScanMethods(wtPlayer);
@@ -196,7 +194,7 @@ namespace WildTerraHook
         private void EnterFishingState()
         {
             _currentState = BotState.FISHING;
-            _isFishingActive = true;
+            //_isFishingActive = true; // Usunięto
             _castStartTime = Time.time;
             _lastActionCount = -1;
         }
@@ -205,7 +203,7 @@ namespace WildTerraHook
         {
             _currentState = BotState.CASTING_ROD;
             _stateTimer = Time.time + 1.0f;
-            _isFishingActive = false;
+            //_isFishingActive = false; // Usunięto
             _castAttempts = 0;
         }
 
@@ -299,7 +297,7 @@ namespace WildTerraHook
                 ForceRecast();
                 return;
             }
-            _isFishingActive = true;
+            //_isFishingActive = true; // Usunięto
             if (ui == null) return;
 
             if (Time.time - _castStartTime > 2.0f)
