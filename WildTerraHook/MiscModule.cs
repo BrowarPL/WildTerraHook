@@ -13,7 +13,12 @@ namespace WildTerraHook
 
         // --- ZMIENNE POMOCNICZE ---
         private float _defaultMaxDist = -1f;
+        private float _defaultZoomSpeed = -1f;
         private GameObject _playerLightObj;
+
+        // Cache
+        private global::CameraMMO _cachedCam;
+        private float _cacheTimer = 0f;
 
         // --- GUI ---
         private Vector2 _scrollPos;
@@ -24,20 +29,25 @@ namespace WildTerraHook
 
             GUILayout.Label("<b>INNE FUNKCJE</b>");
 
+            // Status Kamery (Debug)
+            if (_cachedCam != null)
+                GUILayout.Label($"Kamera: OK | Zoom: {_cachedCam.distance:F1}/{_cachedCam.maxDistance:F1}");
+            else
+                GUILayout.Label("Kamera: Szukanie...");
+
             // 1. KAMERA
-            bool newCam = GUILayout.Toggle(_cameraUnlock, "Odblokuj Zoom Kamery (100m)");
+            bool newCam = GUILayout.Toggle(_cameraUnlock, "Odblokuj Zoom (Max 150)");
             if (newCam != _cameraUnlock)
             {
                 _cameraUnlock = newCam;
-                if (_cameraUnlock) ApplyCameraUnlock();
-                else RevertCameraUnlock();
+                if (!_cameraUnlock) RevertCameraUnlock(); // Reset przy wyłączeniu
             }
 
             // 2. WIECZNY DZIEŃ
             _eternalDay = GUILayout.Toggle(_eternalDay, "Wieczny Dzień (Godz. 12:00)");
 
             // 3. ŚWIATŁO GRACZA
-            bool newLight = GUILayout.Toggle(_brightPlayer, "Światło Gracza (Latarka)");
+            bool newLight = GUILayout.Toggle(_brightPlayer, "Latarka Gracza");
             if (newLight != _brightPlayer)
             {
                 _brightPlayer = newLight;
@@ -49,10 +59,7 @@ namespace WildTerraHook
 
         public void Update()
         {
-            if (_eternalDay)
-            {
-                ForceDayTime();
-            }
+            if (_eternalDay) ForceDayTime();
 
             if (_cameraUnlock)
             {
@@ -63,22 +70,37 @@ namespace WildTerraHook
         // --- LOGIKA KAMERY ---
         private void ApplyCameraUnlock()
         {
-            // FIX: CameraMMO nie ma 'instance', używamy FindObjectOfType
-            var cam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
-
-            if (cam != null)
+            // Odśwież cache co 1s jeśli zgubiono kamerę
+            if (_cachedCam == null || Time.time > _cacheTimer)
             {
-                if (_defaultMaxDist == -1f) _defaultMaxDist = cam.maxDistance;
-                if (cam.maxDistance < 100f) cam.maxDistance = 100f;
+                _cachedCam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
+                _cacheTimer = Time.time + 1.0f;
+            }
+
+            if (_cachedCam != null)
+            {
+                // Zapisz wartości domyślne (tylko raz)
+                if (_defaultMaxDist == -1f)
+                {
+                    _defaultMaxDist = _cachedCam.maxDistance;
+                    _defaultZoomSpeed = _cachedCam.zoomSpeedMouse;
+                }
+
+                // Aplikuj hack (Wymuś max dystans i prędkość)
+                if (_cachedCam.maxDistance < 150f)
+                {
+                    _cachedCam.maxDistance = 150f;
+                    _cachedCam.zoomSpeedMouse = 5.0f; // 5x szybszy zoom dla wygody
+                }
             }
         }
 
         private void RevertCameraUnlock()
         {
-            var cam = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
-            if (cam != null && _defaultMaxDist != -1f)
+            if (_cachedCam != null && _defaultMaxDist != -1f)
             {
-                cam.maxDistance = _defaultMaxDist;
+                _cachedCam.maxDistance = _defaultMaxDist;
+                _cachedCam.zoomSpeedMouse = _defaultZoomSpeed;
             }
         }
 
@@ -87,7 +109,7 @@ namespace WildTerraHook
         {
             if (global::EnviroSky.instance != null)
             {
-                // FIX: Rzutowanie na int, bo SetTime wymaga intów
+                // SetTime wymaga intów
                 int years = global::EnviroSky.instance.GameTime.Years;
                 int days = global::EnviroSky.instance.GameTime.Days;
                 global::EnviroSky.instance.SetTime(years, days, 12, 0, 0);
