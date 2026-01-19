@@ -21,13 +21,34 @@ namespace WildTerraHook
         private bool _showRetaliating = false;
         private bool _showPassive = false;
 
-        // Słowniki
+        // Słowniki surowców
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
-        private Dictionary<string, bool> _mobSpecificToggles = new Dictionary<string, bool>();
 
-        // Ignorowane (Śmieci, które mogą mieć w nazwie "Iron" itp.)
+        // Listy definicji Mobów (Nazwy do dopasowania)
+        // Priorytet: Boss > Elite > Passive > Retaliating > Aggressive
+
+        private List<string> _bossNames = new List<string>() {
+            "Giant crab", "Angry black bear", "Ancient ent", "Swamp serpent",
+            "Barghest", "Prospector overseer", "Crocodile", "Captive master",
+            "Black giant crab", "Giant scorpion", "Entity of Cthulhu", "King", "Queen", "Boss"
+        };
+
+        private List<string> _eliteNames = new List<string>() {
+            "Zombie tusker", "Large furious reaper", "Huge boar", "Wolf leader",
+            "Bear", "Large Dark wolf", "Black scorpion", "Elite", "Leader"
+        };
+
+        private List<string> _passiveNames = new List<string>() {
+            "Hare", "Deer", "Stag", "Cow", "Chicken", "Sheep", "Pig"
+        };
+
+        private List<string> _retaliatingNames = new List<string>() {
+            "Fox", "Goat", "Silver Fox", "Boar", "Moose"
+        };
+
+        // Ignorowane obiekty ("Śmieci")
         private string[] _ignoreKeywords = {
             "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace",
             "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence",
@@ -37,7 +58,7 @@ namespace WildTerraHook
         // Cache
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
-        private float _scanInterval = 0.1f; // 100ms (płynne odświeżanie)
+        private float _scanInterval = 0.1f; // 100ms
 
         // GUI
         private GUIStyle _styleLabel;
@@ -49,6 +70,7 @@ namespace WildTerraHook
             public Vector3 Position;
             public string Label;
             public Color Color;
+            public bool IsImportant; // Bossy i Elity będą większe
         }
 
         public ResourceEspModule()
@@ -61,15 +83,11 @@ namespace WildTerraHook
             string[] mining = { "Rock", "Copper", "Tin", "Limestone", "Coal", "Sulfur", "Iron", "Marblestone", "Arsenic", "Zuperit", "Mortuus", "Sangit" };
             foreach (var s in mining) _miningToggles[s] = false;
 
-            // Dodano "GreyAmanita" bez spacji do sprawdzania w logice
             string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "Russalas", "Grey amanita", "Fly agaric", "Sticks pile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "Nettles", "Clay", "Hazel", "Greenary", "Ligonberry", "Beehive", "Swamp thorn", "Mountain sage", "Wolf berries", "Chelidonium", "Sand" };
             foreach (var s in gathering) _gatheringToggles[s] = false;
 
             string[] lumber = { "Apple tree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
             foreach (var s in lumber) _lumberToggles[s] = false;
-
-            string[] mobs = { "Fox", "Goat", "Hare", "Deer", "Stag", "Wolf", "Bear", "Boar", "Silver Fox" };
-            foreach (var s in mobs) _mobSpecificToggles[s] = false;
         }
 
         public void Update()
@@ -88,7 +106,7 @@ namespace WildTerraHook
 
             try
             {
-                // 1. SUROWCE -> Szukamy global::WTObject (nie GatherItem!)
+                // 1. SUROWCE
                 if (_showResources)
                 {
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
@@ -99,58 +117,75 @@ namespace WildTerraHook
 
                         if (IsIgnored(name)) continue;
 
-                        if (_showMining) CheckAndAdd(name, obj.transform.position, _miningToggles, Color.gray);
-                        if (_showGathering) CheckAndAdd(name, obj.transform.position, _gatheringToggles, Color.green);
-                        if (_showLumber) CheckAndAdd(name, obj.transform.position, _lumberToggles, new Color(0.6f, 0.3f, 0f));
+                        if (_showMining) CheckAndAddResource(name, obj.transform.position, _miningToggles, Color.gray);
+                        if (_showGathering) CheckAndAddResource(name, obj.transform.position, _gatheringToggles, Color.green);
+                        if (_showLumber) CheckAndAddResource(name, obj.transform.position, _lumberToggles, new Color(0.6f, 0.3f, 0f));
                     }
                 }
 
-                // 2. MOBY -> Szukamy global::WTMob
+                // 2. MOBY
                 if (_showMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
                     foreach (var mob in mobs)
                     {
                         if (mob == null || mob.health <= 0) continue;
-
-                        string name = mob.name;
-                        bool isBoss = name.ToLower().Contains("boss") || name.Contains("King") || name.Contains("Queen");
-                        bool isElite = name.ToLower().Contains("elite") || name.ToLower().Contains("leader");
-
-                        if (_showBosses && isBoss) { AddCache(mob.transform.position, $"[BOSS] {name}", Color.red); continue; }
-                        if (_showElites && isElite) { AddCache(mob.transform.position, $"[ELITE] {name}", new Color(1f, 0.5f, 0f)); continue; }
-
-                        bool matched = false;
-                        foreach (var pair in _mobSpecificToggles)
-                        {
-                            if (pair.Value && ContainsIgnoreCase(name, pair.Key))
-                            {
-                                Color c = Color.red;
-                                if (IsRetaliating(pair.Key))
-                                {
-                                    if (!_showRetaliating) { matched = true; break; }
-                                    c = Color.yellow;
-                                }
-                                else if (IsPassive(pair.Key))
-                                {
-                                    if (!_showPassive) { matched = true; break; }
-                                    c = Color.cyan;
-                                }
-
-                                AddCache(mob.transform.position, name, c);
-                                matched = true;
-                                break;
-                            }
-                        }
-
-                        if (!matched && _showAggressive && !isBoss && !isElite)
-                        {
-                            AddCache(mob.transform.position, name, Color.red);
-                        }
+                        ProcessMob(mob);
                     }
                 }
             }
             catch { }
+        }
+
+        private void ProcessMob(global::WTMob mob)
+        {
+            string name = mob.name;
+            Vector3 pos = mob.transform.position;
+
+            // --- KATEGORYZACJA (Priorytety) ---
+
+            // 1. BOSS
+            if (MatchesList(name, _bossNames))
+            {
+                if (_showBosses) AddCache(pos, $"[BOSS] {name}", Color.red, true);
+                return; // Znaleziono, koniec
+            }
+
+            // 2. ELITE
+            if (MatchesList(name, _eliteNames))
+            {
+                if (_showElites) AddCache(pos, $"[ELITE] {name}", new Color(1f, 0.5f, 0f), true); // Orange
+                return;
+            }
+
+            // 3. PASSIVE
+            if (MatchesList(name, _passiveNames))
+            {
+                if (_showPassive) AddCache(pos, name, Color.cyan, false);
+                return;
+            }
+
+            // 4. RETALIATING
+            if (MatchesList(name, _retaliatingNames))
+            {
+                if (_showRetaliating) AddCache(pos, name, Color.yellow, false);
+                return;
+            }
+
+            // 5. AGGRESSIVE (Wszystko inne)
+            if (_showAggressive)
+            {
+                AddCache(pos, name, Color.red, false);
+            }
+        }
+
+        private bool MatchesList(string name, List<string> list)
+        {
+            foreach (var entry in list)
+            {
+                if (name.IndexOf(entry, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+            return false;
         }
 
         private bool IsIgnored(string name)
@@ -160,16 +195,16 @@ namespace WildTerraHook
             return false;
         }
 
-        private void CheckAndAdd(string objName, Vector3 pos, Dictionary<string, bool> toggles, Color color)
+        private void CheckAndAddResource(string objName, Vector3 pos, Dictionary<string, bool> toggles, Color color)
         {
             foreach (var pair in toggles)
             {
                 if (pair.Value)
                 {
-                    // Szukamy normalnie oraz bez spacji (fix dla Grey Amanita -> GreyAmanita)
+                    // Szukamy nazwy normalnie i bez spacji (fix dla Grey Amanita)
                     if (ContainsIgnoreCase(objName, pair.Key) || ContainsIgnoreCase(objName, pair.Key.Replace(" ", "")))
                     {
-                        AddCache(pos, pair.Key, color);
+                        AddCache(pos, pair.Key, color, false);
                         return;
                     }
                 }
@@ -181,21 +216,18 @@ namespace WildTerraHook
             return source.IndexOf(toCheck, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private void AddCache(Vector3 pos, string label, Color col)
+        private void AddCache(Vector3 pos, string label, Color col, bool important)
         {
-            _cachedObjects.Add(new CachedObject { Position = pos, Label = label, Color = col });
+            _cachedObjects.Add(new CachedObject { Position = pos, Label = label, Color = col, IsImportant = important });
         }
 
-        private bool IsRetaliating(string name) { return name == "Fox" || name == "Goat" || name.Contains("Silver Fox") || name == "Boar"; }
-        private bool IsPassive(string name) { return name == "Hare" || name == "Deer" || name == "Stag"; }
-
-        // --- RYSOWANIE GUI ---
+        // --- GUI ---
         private void CreateStyles()
         {
             if (_bgTexture == null)
             {
                 _bgTexture = new Texture2D(1, 1);
-                _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.7f)); // Ciemne tło (70% czerni)
+                _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.7f));
                 _bgTexture.Apply();
             }
             if (_styleBackground == null)
@@ -235,13 +267,9 @@ namespace WildTerraHook
                 GUILayout.BeginHorizontal(); GUILayout.Space(15); GUILayout.BeginVertical();
                 _showBosses = GUILayout.Toggle(_showBosses, "Bosses");
                 _showElites = GUILayout.Toggle(_showElites, "Elites");
-                _showAggressive = GUILayout.Toggle(_showAggressive, "Aggressive (Rest)");
-
+                _showAggressive = GUILayout.Toggle(_showAggressive, "Aggressive (Others)");
                 _showRetaliating = GUILayout.Toggle(_showRetaliating, "Retaliating");
-                if (_showRetaliating) DrawSpecificMobToggles(new string[] { "Fox", "Silver Fox", "Goat", "Boar" });
-
                 _showPassive = GUILayout.Toggle(_showPassive, "Non-Aggressive");
-                if (_showPassive) DrawSpecificMobToggles(new string[] { "Hare", "Deer", "Stag" });
                 GUILayout.EndVertical(); GUILayout.EndHorizontal();
             }
             GUILayout.EndScrollView();
@@ -255,40 +283,87 @@ namespace WildTerraHook
             GUILayout.EndVertical(); GUILayout.EndHorizontal();
         }
 
-        private void DrawSpecificMobToggles(string[] filter)
-        {
-            GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
-            foreach (var key in filter)
-            {
-                if (_mobSpecificToggles.ContainsKey(key))
-                    _mobSpecificToggles[key] = GUILayout.Toggle(_mobSpecificToggles[key], key);
-            }
-            GUILayout.EndVertical(); GUILayout.EndHorizontal();
-        }
-
         public void DrawESP()
         {
             CreateStyles();
             Camera cam = Camera.main;
             if (cam == null) return;
 
+            float screenW = Screen.width;
+            float screenH = Screen.height;
+            Vector3 camPos = cam.transform.position;
+            Vector3 camFwd = cam.transform.forward;
+
             foreach (var obj in _cachedObjects)
             {
-                Vector3 screenPos = cam.WorldToScreenPoint(obj.Position);
-                if (screenPos.z > 0)
-                {
-                    screenPos.y = Screen.height - screenPos.y;
-                    float dist = Vector3.Distance(cam.transform.position, obj.Position);
+                // Oblicz dystans
+                float dist = Vector3.Distance(camPos, obj.Position);
+                if (dist > 250) continue; // Limit rysowania
 
-                    if (dist < 150)
+                // Zamiana na pozycję ekranową
+                Vector3 screenPos = cam.WorldToScreenPoint(obj.Position);
+                bool isBehind = screenPos.z < 0;
+
+                // --- OFF-SCREEN LOGIC ---
+                // Jeśli obiekt jest za kamerą LUB poza widokiem ekranu
+                bool isOffScreen = isBehind ||
+                                   screenPos.x < 0 || screenPos.x > screenW ||
+                                   screenPos.y < 0 || screenPos.y > screenH;
+
+                if (isOffScreen)
+                {
+                    // Jeśli jest za nami, odwracamy współrzędne
+                    if (isBehind)
                     {
-                        float w = 120; float h = 20;
-                        Rect r = new Rect(screenPos.x - w / 2, screenPos.y - h / 2, w, h);
-                        GUI.Box(r, GUIContent.none, _styleBackground);
-                        _styleLabel.normal.textColor = obj.Color;
-                        GUI.Label(r, $"{obj.Label} [{dist:F0}m]", _styleLabel);
+                        screenPos.x *= -1;
+                        screenPos.y *= -1;
                     }
+
+                    // Przesuwamy środek układu współrzędnych na środek ekranu do obliczeń
+                    Vector3 screenCenter = new Vector3(screenW / 2, screenH / 2, 0);
+                    screenPos -= screenCenter;
+
+                    // Znajdujemy kąt
+                    float angle = Mathf.Atan2(screenPos.y, screenPos.x);
+                    angle -= 90 * Mathf.Deg2Rad;
+
+                    float cos = Mathf.Cos(angle);
+                    float sin = -Mathf.Sin(angle);
+
+                    // Pozycja na krawędzi (m = y/x)
+                    screenPos = screenCenter + new Vector3(sin * 150, cos * 150); // Wstępny wektor kierunkowy
+
+                    // Dokładne przyklejenie do krawędzi (Clamp)
+                    // y = mx + b -> mapowanie wektora na ramkę ekranu
+                    float m = cos / sin;
+
+                    Vector3 screenBounds = screenCenter * 0.9f; // Margines 10%
+
+                    // Obliczamy punkt przecięcia z ramką
+                    if (cos > 0) screenPos = new Vector3(screenBounds.y / m, screenBounds.y, 0);
+                    else screenPos = new Vector3(-screenBounds.y / m, -screenBounds.y, 0);
+
+                    // Jeśli wyszło poza boki X, korygujemy
+                    if (screenPos.x > screenBounds.x) screenPos = new Vector3(screenBounds.x, screenBounds.x * m, 0);
+                    else if (screenPos.x < -screenBounds.x) screenPos = new Vector3(-screenBounds.x, -screenBounds.x * m, 0);
+
+                    screenPos += screenCenter; // Wracamy do układu ekranu
                 }
+
+                // Odwracamy Y dla GUI (Unity Legacy GUI ma 0 na górze)
+                screenPos.y = screenH - screenPos.y;
+
+                // Rysowanie
+                float w = 140;
+                float h = 22;
+                if (obj.IsImportant) { w = 160; h = 26; _styleLabel.fontSize = 13; } // Bossy większe
+                else { _styleLabel.fontSize = 11; }
+
+                Rect r = new Rect(screenPos.x - w / 2, screenPos.y - h / 2, w, h);
+
+                GUI.Box(r, GUIContent.none, _styleBackground);
+                _styleLabel.normal.textColor = obj.Color;
+                GUI.Label(r, $"{obj.Label} [{dist:F0}m]", _styleLabel);
             }
         }
     }
