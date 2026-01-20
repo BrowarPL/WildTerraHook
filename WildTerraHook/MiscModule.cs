@@ -12,183 +12,194 @@ namespace WildTerraHook
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
-        // --- LATARKA (Parametry domyślne na życzenie: 2.0 / 1000) ---
+        // --- LATARKA (Domyślnie: Moc 2, Zasięg 1000) ---
         public float LightIntensity = 2.0f;
         public float LightRange = 1000f;
         private GameObject _lightObject;
 
-        // --- KAMERA (Zoom Hack) ---
-        public float MaxZoomDistance = 60f; // Startowa wartość na suwaku (Standard gry to ~15-40)
-        public float CameraAngle = 45f;     // Kąt widzenia (góra/dół)
+        // --- KAMERA (FOV & ZOOM) ---
+        public float CameraFov = 60f;
+        public float MaxZoomDistance = 60f; // Standardowo ~40, suwak do 200
+        public float CameraAngle = 80f;     // Kąt patrzenia (góra/dół), odblokowanie kamery
 
-        // Cache (Mechanizm refleksji, aby kod był odporny na błędy using)
-        private float _cacheTimer = 0f;
-        private MonoBehaviour _activeCameraScript;
-        private bool _isWTRPG = false;
-        private Type _rpgType;
-        private Type _mmoType;
+        private float _defaultFov = 60f;
+        private bool _defaultsInitialized = false;
 
-        // Informacja dla użytkownika w menu
-        private string _camStatus = "Szukanie...";
+        // Cache Typów i Instancji (Reflection)
+        private Type _rpgCameraType;
+        private Type _mmoCameraType;
+        private MonoBehaviour _cachedCameraScript;
+        private bool _isRpgMode = false;
+        private float _checkTimer = 0f;
 
-        // Metoda UPDATE (wywoływana z MainHack)
+        // --- UPDATE ---
         public void Update()
         {
             if (global::Player.localPlayer == null) return;
 
-            // 1. Eternal Day (Wersja działająca: SetTime)
-            if (EternalDayEnabled)
+            // 1. Eternal Day
+            if (EternalDayEnabled && global::EnviroSky.instance != null)
             {
-                if (global::EnviroSky.instance != null)
-                {
-                    int years = global::EnviroSky.instance.GameTime.Years;
-                    int days = global::EnviroSky.instance.GameTime.Days;
-                    global::EnviroSky.instance.SetTime(years, days, 12, 0, 0);
-                }
+                global::EnviroSky.instance.SetTime(global::EnviroSky.instance.GameTime.Years, global::EnviroSky.instance.GameTime.Days, 12, 0, 0);
             }
 
-            // 2. No Fog (Wersja działająca: Agresywne RenderSettings)
+            // 2. No Fog
             if (NoFogEnabled)
             {
                 RenderSettings.fog = false;
                 RenderSettings.fogDensity = 0.0f;
                 RenderSettings.fogStartDistance = 100000f;
                 RenderSettings.fogEndDistance = 200000f;
-                RenderSettings.fogMode = FogMode.Linear;
             }
 
-            // 3. Latarka (Bright Player)
+            // 3. Latarka
             HandleBrightPlayer();
 
-            // 4. Zoom Hack i Kąt Kamery
-            HandleCameraLogic();
+            // 4. FOV (Przywrócone!)
+            HandleFov();
+
+            // 5. Zoom Hack
+            if (ZoomHackEnabled)
+            {
+                HandleZoomHack();
+            }
         }
 
-        // --- LOGIKA KAMERY (Twoja logika + Reflection) ---
-        private void HandleCameraLogic()
+        // --- LOGIKA FOV ---
+        private void HandleFov()
         {
-            // Co 1 sekundę próbujemy odświeżyć referencję do kamery, jeśli jej nie mamy
-            if (_activeCameraScript == null || Time.time > _cacheTimer)
+            if (Camera.main != null)
             {
-                FindCameraScript();
-                _cacheTimer = Time.time + 1.0f;
-            }
-
-            // Jeśli mamy kamerę i włączony Zoom Hack -> Aplikujemy wartości
-            if (ZoomHackEnabled && _activeCameraScript != null)
-            {
-                try
+                // Zapamiętaj domyślne przy pierwszym uruchomieniu
+                if (!_defaultsInitialized)
                 {
-                    if (_isWTRPG)
-                    {
-                        // Obsługa: JohnStairs.RCC.ThirdPerson.WTRPGCamera
-                        // Ustawiamy MaxDistance
-                        SetProp(_activeCameraScript, "MaxDistance", MaxZoomDistance);
-
-                        // Zwiększamy czułość zoomu, żeby szybciej oddalać
-                        SetProp(_activeCameraScript, "ZoomSensitivity", 60f);
-
-                        // Odblokowujemy kąty patrzenia (góra/dół)
-                        SetProp(_activeCameraScript, "RotationYMin", CameraAngle);
-                        SetProp(_activeCameraScript, "RotationYMax", CameraAngle);
-                    }
-                    else
-                    {
-                        // Obsługa: CameraMMO
-                        // CameraMMO używa pól publicznych (Fields), nie właściwości (Properties)
-                        SetField(_activeCameraScript, "maxDistance", MaxZoomDistance);
-                        SetField(_activeCameraScript, "zoomSpeedMouse", 5.0f);
-                        SetField(_activeCameraScript, "xMinAngle", -CameraAngle);
-                        SetField(_activeCameraScript, "xMaxAngle", CameraAngle);
-                    }
+                    _defaultFov = Camera.main.fieldOfView;
+                    if (CameraFov < 10) CameraFov = _defaultFov;
+                    _defaultsInitialized = true;
                 }
-                catch { }
+
+                // Aplikuj FOV jeśli jest inny niż obecny
+                if (Math.Abs(Camera.main.fieldOfView - CameraFov) > 0.1f)
+                {
+                    Camera.main.fieldOfView = CameraFov;
+                }
             }
         }
 
-        private void FindCameraScript()
+        // --- LOGIKA ZOOM HACK ---
+        private void HandleZoomHack()
         {
-            // Inicjalizacja typów (raz)
-            if (_rpgType == null) _rpgType = Type.GetType("JohnStairs.RCC.ThirdPerson.WTRPGCamera, Assembly-CSharp");
-            if (_mmoType == null) _mmoType = Type.GetType("CameraMMO, Assembly-CSharp");
-
-            _activeCameraScript = null;
-            _camStatus = "<color=red>Brak kamery</color>";
-
-            // 1. Sprawdzamy RPG Camera (Priorytet: instance, potem FindObject)
-            if (_rpgType != null)
+            // Co 1 sekundę sprawdzamy czy mamy dobrą referencję do kamery
+            if (Time.time > _checkTimer)
             {
-                // Próba pobrania statycznej instancji 'instance'
-                var instanceProp = _rpgType.GetField("instance", BindingFlags.Public | BindingFlags.Static);
-                if (instanceProp != null)
+                FindCamera();
+                _checkTimer = Time.time + 1.0f;
+            }
+
+            if (_cachedCameraScript != null)
+            {
+                ApplyZoomValues(_cachedCameraScript);
+            }
+        }
+
+        private void FindCamera()
+        {
+            // 1. Inicjalizacja Typów (tylko raz)
+            if (_rpgCameraType == null) _rpgCameraType = Type.GetType("JohnStairs.RCC.ThirdPerson.WTRPGCamera, Assembly-CSharp");
+            if (_mmoCameraType == null) _mmoCameraType = Type.GetType("CameraMMO, Assembly-CSharp");
+
+            // 2. Próba znalezienia RPG Camera (Priorytet)
+            if (_rpgCameraType != null)
+            {
+                // Sprawdzamy statyczną instancję 'instance'
+                var field = _rpgCameraType.GetField("instance", BindingFlags.Public | BindingFlags.Static);
+                if (field != null)
                 {
-                    var inst = instanceProp.GetValue(null) as MonoBehaviour;
-                    if (inst != null)
+                    var instance = field.GetValue(null) as MonoBehaviour;
+                    if (instance != null)
                     {
-                        _activeCameraScript = inst;
-                        _isWTRPG = true;
-                        _camStatus = "<color=green>RPG Cam (Instance)</color>";
+                        _cachedCameraScript = instance;
+                        _isRpgMode = true;
                         return;
                     }
                 }
 
-                // Fallback: Szukanie na scenie
-                var obj = UnityEngine.Object.FindObjectOfType(_rpgType) as MonoBehaviour;
+                // Fallback: FindObjectOfType
+                var obj = UnityEngine.Object.FindObjectOfType(_rpgCameraType) as MonoBehaviour;
                 if (obj != null)
                 {
-                    _activeCameraScript = obj;
-                    _isWTRPG = true;
-                    _camStatus = "<color=yellow>RPG Cam (Found)</color>";
+                    _cachedCameraScript = obj;
+                    _isRpgMode = true;
                     return;
                 }
             }
 
-            // 2. Sprawdzamy MMO Camera
-            if (_mmoType != null)
+            // 3. Próba znalezienia MMO Camera
+            if (_mmoCameraType != null)
             {
-                var obj = UnityEngine.Object.FindObjectOfType(_mmoType) as MonoBehaviour;
+                var obj = UnityEngine.Object.FindObjectOfType(_mmoCameraType) as MonoBehaviour;
                 if (obj != null)
                 {
-                    _activeCameraScript = obj;
-                    _isWTRPG = false;
-                    _camStatus = "<color=cyan>MMO Cam</color>";
+                    _cachedCameraScript = obj;
+                    _isRpgMode = false;
                     return;
                 }
             }
         }
 
-        // --- POMOCNICY REFLECTION (Unikanie błędów kompilacji) ---
-        private void SetProp(object obj, string name, object val)
+        private void ApplyZoomValues(object cameraScript)
         {
-            if (obj == null) return;
-            var prop = obj.GetType().GetProperty(name);
-            if (prop != null && prop.CanWrite) prop.SetValue(obj, val, null);
-        }
+            try
+            {
+                if (_isRpgMode && _rpgCameraType != null)
+                {
+                    // WTRPGCamera: Ustawiamy MaxDistance
+                    var maxDistProp = _rpgCameraType.GetProperty("MaxDistance");
+                    if (maxDistProp != null) maxDistProp.SetValue(cameraScript, MaxZoomDistance, null);
 
-        private void SetField(object obj, string name, object val)
-        {
-            if (obj == null) return;
-            var field = obj.GetType().GetField(name);
-            if (field != null) field.SetValue(obj, val);
+                    // WTRPGCamera: Odblokowanie kątów (RotationYMin/Max)
+                    var rotMin = _rpgCameraType.GetProperty("RotationYMin");
+                    var rotMax = _rpgCameraType.GetProperty("RotationYMax");
+
+                    // Ustawiamy szeroki zakres kątów (np. 80 stopni w górę i w dół)
+                    if (rotMin != null) rotMin.SetValue(cameraScript, CameraAngle, null);
+                    if (rotMax != null) rotMax.SetValue(cameraScript, CameraAngle, null);
+
+                    // WTRPGCamera: Sensitivity (dla wygody)
+                    var zoomSens = _rpgCameraType.GetProperty("ZoomSensitivity");
+                    if (zoomSens != null) zoomSens.SetValue(cameraScript, 60f, null);
+                }
+                else if (!_isRpgMode && _mmoCameraType != null)
+                {
+                    // CameraMMO: Pola są publiczne (fields), nie properties
+                    var distField = _mmoCameraType.GetField("maxDistance");
+                    if (distField != null) distField.SetValue(cameraScript, MaxZoomDistance);
+
+                    // CameraMMO: Kąty
+                    var minAngle = _mmoCameraType.GetField("xMinAngle");
+                    var maxAngle = _mmoCameraType.GetField("xMaxAngle");
+
+                    if (minAngle != null) minAngle.SetValue(cameraScript, -CameraAngle);
+                    if (maxAngle != null) maxAngle.SetValue(cameraScript, CameraAngle);
+                }
+            }
+            catch { }
         }
 
         // --- LATARKA ---
         private void HandleBrightPlayer()
         {
-            if (global::Player.localPlayer == null) return;
-
             if (BrightPlayerEnabled)
             {
                 if (_lightObject == null)
                 {
                     _lightObject = new GameObject("HackLight");
                     _lightObject.transform.SetParent(global::Player.localPlayer.transform);
-                    _lightObject.transform.localPosition = new Vector3(0, 5f, 0); // 5m nad graczem
-
+                    _lightObject.transform.localPosition = new Vector3(0, 5f, 0);
                     var l = _lightObject.AddComponent<Light>();
                     l.type = LightType.Point;
-                    l.color = Color.white;
                     l.shadows = LightShadows.None;
+                    l.color = Color.white;
                 }
 
                 var lightComp = _lightObject.GetComponent<Light>();
@@ -197,7 +208,6 @@ namespace WildTerraHook
                     lightComp.intensity = LightIntensity;
                     lightComp.range = LightRange;
                 }
-
                 if (!_lightObject.activeSelf) _lightObject.SetActive(true);
             }
             else
@@ -210,7 +220,7 @@ namespace WildTerraHook
             }
         }
 
-        // --- RYSOWANIE MENU ---
+        // --- MENU ---
         public void DrawMenu()
         {
             GUILayout.BeginVertical("box");
@@ -240,28 +250,31 @@ namespace WildTerraHook
             GUILayout.Space(5);
 
             // Zoom Hack
-            ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, "Zoom Hack & Kąt");
-            GUILayout.Label($"Status Kamery: {_camStatus}"); // Debug info dla Ciebie
-
+            ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, "Zoom Hack (Odblokuj Kamerę)");
             if (ZoomHackEnabled)
             {
-                // Suwak Zoomu (Dystans)
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Max Zoom: {MaxZoomDistance:F0}", GUILayout.Width(80));
                 MaxZoomDistance = GUILayout.HorizontalSlider(MaxZoomDistance, 20f, 200f);
                 GUILayout.EndHorizontal();
 
-                // Suwak Kąta (Ważne dla odblokowania kamery!)
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Max Kąt: {CameraAngle:F0}", GUILayout.Width(80));
+                GUILayout.Label($"Kąt (Unlock): {CameraAngle:F0}", GUILayout.Width(80));
                 CameraAngle = GUILayout.HorizontalSlider(CameraAngle, 10f, 89f);
                 GUILayout.EndHorizontal();
             }
 
+            // FOV
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"FOV: {CameraFov:F0}", GUILayout.Width(60));
+            CameraFov = GUILayout.HorizontalSlider(CameraFov, 30f, 120f);
+            GUILayout.EndHorizontal();
+
             if (GUILayout.Button("Reset Domyślne"))
             {
+                CameraFov = _defaultFov;
                 MaxZoomDistance = 40f;
-                CameraAngle = 45f;
+                CameraAngle = 80f;
                 LightIntensity = 2.0f;
                 LightRange = 1000f;
             }
