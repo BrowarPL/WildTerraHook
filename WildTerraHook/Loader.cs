@@ -6,20 +6,20 @@ namespace WildTerraHook
     {
         private static GameObject _loadObject;
 
-        // Tę metodę wywoła Twój injector
+        // Tę metodę musi wywołać Injector!
         public static void Init()
         {
-            // Sprawdź, czy hack już nie działa, aby nie stworzyć duplikatów
+            // Zabezpieczenie przed podwójnym załadowaniem
             if (GameObject.Find("WildTerraHook_Loader") != null) return;
 
-            // Tworzymy pusty obiekt w świecie gry
+            // 1. Tworzymy pusty obiekt w grze
             _loadObject = new GameObject();
             _loadObject.name = "WildTerraHook_Loader";
 
-            // Dodajemy do niego nasz główny skrypt MainHack
+            // 2. Dodajemy do niego nasz główny skrypt (MainHack)
             _loadObject.AddComponent<MainHack>();
 
-            // Mówimy Unity, aby nie niszczyło tego obiektu przy zmianie sceny (ładowaniu mapy)
+            // 3. Zapobiegamy niszczeniu obiektu przy zmianie mapy
             UnityEngine.Object.DontDestroyOnLoad(_loadObject);
         }
 
@@ -28,6 +28,7 @@ namespace WildTerraHook
             if (_loadObject != null)
             {
                 UnityEngine.Object.Destroy(_loadObject);
+                _loadObject = null;
             }
         }
     }
