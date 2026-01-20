@@ -1,35 +1,32 @@
 ﻿using System;
 using System.IO;
+using System.Globalization;
 using UnityEngine;
 
 namespace WildTerraHook
 {
-    // Prosta klasa do serializacji JSON
-    [Serializable]
-    public class ConfigData
-    {
-        // --- Kolory MOBÓW ---
-        public Color MobAggressive = Color.red;
-        public Color MobPassive = Color.green;
-        public Color MobFleeing = new Color(1f, 0.64f, 0f); // Pomarańczowy
-
-        // --- Kolory SUROWCÓW ---
-        public Color ResLumber = new Color(0.6f, 0.4f, 0.2f); // Brązowy
-        public Color ResGather = Color.white;
-        public Color ResMining = Color.gray;
-    }
-
     public static class ConfigManager
     {
-        public static ConfigData Settings = new ConfigData();
+        // Struktura przechowująca kolory (dostępna publicznie)
+        public static class Colors
+        {
+            public static Color MobAggressive = Color.red;
+            public static Color MobPassive = Color.green;
+            public static Color MobFleeing = new Color(1f, 0.64f, 0f); // Orange
+
+            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f); // Brown
+            public static Color ResMining = Color.gray;
+            public static Color ResGather = Color.white;
+        }
+
         private static string _folderPath;
         private static string _filePath;
 
         static ConfigManager()
         {
-            // %appdata%/WildTerraHook/config.json
+            // %appdata%/WildTerraHook/config.txt
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
-            _filePath = Path.Combine(_folderPath, "config.json");
+            _filePath = Path.Combine(_folderPath, "config.txt");
 
             Load();
         }
@@ -39,8 +36,17 @@ namespace WildTerraHook
             try
             {
                 if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
-                string json = JsonUtility.ToJson(Settings, true);
-                File.WriteAllText(_filePath, json);
+
+                using (StreamWriter sw = new StreamWriter(_filePath))
+                {
+                    sw.WriteLine($"MobAggressive={ColorToString(Colors.MobAggressive)}");
+                    sw.WriteLine($"MobPassive={ColorToString(Colors.MobPassive)}");
+                    sw.WriteLine($"MobFleeing={ColorToString(Colors.MobFleeing)}");
+
+                    sw.WriteLine($"ResLumber={ColorToString(Colors.ResLumber)}");
+                    sw.WriteLine($"ResMining={ColorToString(Colors.ResMining)}");
+                    sw.WriteLine($"ResGather={ColorToString(Colors.ResGather)}");
+                }
             }
             catch (Exception ex)
             {
@@ -50,23 +56,61 @@ namespace WildTerraHook
 
         public static void Load()
         {
+            if (!File.Exists(_filePath))
+            {
+                Save(); // Zapisz domyślne jeśli brak pliku
+                return;
+            }
+
             try
             {
-                if (File.Exists(_filePath))
+                string[] lines = File.ReadAllLines(_filePath);
+                foreach (string line in lines)
                 {
-                    string json = File.ReadAllText(_filePath);
-                    Settings = JsonUtility.FromJson<ConfigData>(json);
-                }
-                else
-                {
-                    // Zapisz domyślne jeśli nie ma pliku
-                    Save();
+                    if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
+
+                    string[] parts = line.Split('=');
+                    string key = parts[0].Trim();
+                    string value = parts[1].Trim();
+
+                    Color col = StringToColor(value);
+
+                    if (key == "MobAggressive") Colors.MobAggressive = col;
+                    else if (key == "MobPassive") Colors.MobPassive = col;
+                    else if (key == "MobFleeing") Colors.MobFleeing = col;
+                    else if (key == "ResLumber") Colors.ResLumber = col;
+                    else if (key == "ResMining") Colors.ResMining = col;
+                    else if (key == "ResGather") Colors.ResGather = col;
                 }
             }
             catch
             {
-                Settings = new ConfigData();
+                // W razie błędu zostajemy przy domyślnych
             }
+        }
+
+        // --- Helpery ---
+        private static string ColorToString(Color c)
+        {
+            return $"{c.r.ToString(CultureInfo.InvariantCulture)},{c.g.ToString(CultureInfo.InvariantCulture)},{c.b.ToString(CultureInfo.InvariantCulture)},{c.a.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        private static Color StringToColor(string s)
+        {
+            try
+            {
+                string[] split = s.Split(',');
+                if (split.Length >= 3)
+                {
+                    float r = float.Parse(split[0], CultureInfo.InvariantCulture);
+                    float g = float.Parse(split[1], CultureInfo.InvariantCulture);
+                    float b = float.Parse(split[2], CultureInfo.InvariantCulture);
+                    float a = split.Length > 3 ? float.Parse(split[3], CultureInfo.InvariantCulture) : 1f;
+                    return new Color(r, g, b, a);
+                }
+            }
+            catch { }
+            return Color.white; // Fallback
         }
     }
 }

@@ -8,6 +8,8 @@ namespace WildTerraHook
     public class ResourceEspModule
     {
         // --- MENU ---
+        public bool EspEnabled = false; // Główny przełącznik
+
         private bool _showResources = false;
         private bool _showMining = false;
         private bool _showGathering = false;
@@ -23,7 +25,7 @@ namespace WildTerraHook
         // Menu Kolorów
         private bool _showColorMenu = false;
 
-        // Słowniki
+        // Słowniki (zachowane z oryginału)
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -37,7 +39,7 @@ namespace WildTerraHook
             "Crow", "Seagull"
         };
 
-        // Usunąłem lisy stąd, aby obsłużyć je ręcznie (LargeFox vs Fox)
+        // UWAGA: Usunięto "Fox" stąd, aby obsłużyć go ręcznie w kodzie
         private List<string> _retaliatingNames = new List<string>() {
             "Goat", "Boar", "Moose", "Horse",
             "Ancient ent", "Ancient Ent", "Ent"
@@ -54,8 +56,9 @@ namespace WildTerraHook
         // Cache
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
-        private float _scanInterval = 0.5f; // Zwiększyłem lekko interwał dla wydajności
+        private float _scanInterval = 0.5f;
 
+        // GUI Styles
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
@@ -99,9 +102,10 @@ namespace WildTerraHook
             _knownResources.Add(s.Replace(" ", ""));
         }
 
+        // Ta metoda musi być wywoływana z MainHack.Update()
         public void Update()
         {
-            if (Time.time - _lastScanTime > _scanInterval)
+            if (EspEnabled && Time.time - _lastScanTime > _scanInterval)
             {
                 ScanObjects();
                 _lastScanTime = Time.time;
@@ -111,6 +115,7 @@ namespace WildTerraHook
         private void ScanObjects()
         {
             _cachedObjects.Clear();
+            if (!EspEnabled) return;
             if (!_showResources && !_showMobs) return;
 
             try
@@ -129,10 +134,10 @@ namespace WildTerraHook
 
                         bool matched = false;
 
-                        // Używamy kolorów z ConfigManager
-                        if (_showMining && CheckAndAddResource(name, obj.transform.position, _miningToggles, ConfigManager.Settings.ResMining)) matched = true;
-                        else if (_showGathering && CheckAndAddResource(name, obj.transform.position, _gatheringToggles, ConfigManager.Settings.ResGather)) matched = true;
-                        else if (_showLumber && CheckAndAddResource(name, obj.transform.position, _lumberToggles, ConfigManager.Settings.ResLumber)) matched = true;
+                        // Pobieramy kolory z ConfigManager.Colors
+                        if (_showMining && CheckAndAddResource(name, obj.transform.position, _miningToggles, ConfigManager.Colors.ResMining)) matched = true;
+                        else if (_showGathering && CheckAndAddResource(name, obj.transform.position, _gatheringToggles, ConfigManager.Colors.ResGather)) matched = true;
+                        else if (_showLumber && CheckAndAddResource(name, obj.transform.position, _lumberToggles, ConfigManager.Colors.ResLumber)) matched = true;
                         else if (_showGodsend && CheckAndAddResource(name, obj.transform.position, _godsendToggles, new Color(0.8f, 0f, 1f))) matched = true;
 
                         if (!matched && _showOthers)
@@ -164,38 +169,41 @@ namespace WildTerraHook
             string name = mob.name;
             Vector3 pos = mob.transform.position;
 
-            // Logika Lisów (LargeFox = Agresywny, Fox = Retaliating)
-            if (name.Contains("LargeFox"))
+            // --- Logika Lisów ---
+            // LargeFox -> Agresywny (Czerwony)
+            if (name.IndexOf("LargeFox", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                if (_showAggressive) AddCache(pos, "[AGGRO] " + name, ConfigManager.Settings.MobAggressive);
+                if (_showAggressive) AddCache(pos, "[AGGRO] Large Fox", ConfigManager.Colors.MobAggressive);
                 return;
             }
-            if (name.Contains("Fox")) // Zwykły lis (Silver Fox itp)
+            // Zwykły Fox -> Oddający (Pomarańczowy)
+            if (name.IndexOf("Fox", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                if (_showRetaliating) AddCache(pos, name, ConfigManager.Settings.MobFleeing);
+                if (_showRetaliating) AddCache(pos, name, ConfigManager.Colors.MobFleeing);
                 return;
             }
 
+            // --- Standardowe listy ---
             if (MatchesList(name, _passiveNames))
             {
-                if (_showPassive) AddCache(pos, name, ConfigManager.Settings.MobPassive);
+                if (_showPassive) AddCache(pos, name, ConfigManager.Colors.MobPassive);
                 return;
             }
 
             if (MatchesList(name, _retaliatingNames))
             {
-                if (_showRetaliating) AddCache(pos, name, ConfigManager.Settings.MobFleeing);
+                if (_showRetaliating) AddCache(pos, name, ConfigManager.Colors.MobFleeing);
                 return;
             }
 
-            // Reszta to Agresywne
+            // Reszta traktowana jako agresywna
             if (_showAggressive)
             {
                 string prefix = "";
                 if (name.Contains("Boss") || name.Contains("King")) prefix = "[BOSS] ";
                 else if (name.Contains("Elite") || name.Contains("Leader")) prefix = "[ELITE] ";
 
-                AddCache(pos, prefix + name, ConfigManager.Settings.MobAggressive);
+                AddCache(pos, prefix + name, ConfigManager.Colors.MobAggressive);
             }
         }
 
@@ -248,7 +256,7 @@ namespace WildTerraHook
             _cachedObjects.Add(new CachedObject { Position = pos, Label = label, Color = col });
         }
 
-        // --- GUI ---
+        // --- GUI I RYSOWANIE ---
         private void CreateStyles()
         {
             if (_bgTexture == null)
@@ -274,50 +282,58 @@ namespace WildTerraHook
         }
 
         private Vector2 _scrollPos;
+
+        // Wywołaj to w MainHack.DrawMenu
         public void DrawMenu()
         {
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(400));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(450));
 
-            // --- RESOURCES ---
-            _showResources = GUILayout.Toggle(_showResources, "<b>RESOURCES</b>");
-            if (_showResources)
+            EspEnabled = GUILayout.Toggle(EspEnabled, "<b>[ WŁĄCZ / WYŁĄCZ ESP ]</b>");
+            GUILayout.Space(5);
+
+            if (EspEnabled)
             {
-                GUILayout.BeginHorizontal(); GUILayout.Space(15); GUILayout.BeginVertical();
-                if (_showMining = GUILayout.Toggle(_showMining, "Mining")) DrawDictionary(_miningToggles);
-                if (_showGathering = GUILayout.Toggle(_showGathering, "Gathering")) DrawDictionary(_gatheringToggles);
-                if (_showLumber = GUILayout.Toggle(_showLumber, "Lumberjacking")) DrawDictionary(_lumberToggles);
-                GUILayout.Space(5);
-                if (_showGodsend = GUILayout.Toggle(_showGodsend, "Godsend (Chests)")) DrawDictionary(_godsendToggles);
-                GUILayout.Space(5);
-                _showOthers = GUILayout.Toggle(_showOthers, "Others (Uncategorized)");
-                GUILayout.EndVertical(); GUILayout.EndHorizontal();
-            }
+                // --- RESOURCES ---
+                _showResources = GUILayout.Toggle(_showResources, "<b>ZASOBY (RESOURCES)</b>");
+                if (_showResources)
+                {
+                    GUILayout.BeginHorizontal(); GUILayout.Space(15); GUILayout.BeginVertical();
+                    if (_showMining = GUILayout.Toggle(_showMining, "Górnictwo (Mining)")) DrawDictionary(_miningToggles);
+                    if (_showGathering = GUILayout.Toggle(_showGathering, "Zbieractwo (Gathering)")) DrawDictionary(_gatheringToggles);
+                    if (_showLumber = GUILayout.Toggle(_showLumber, "Drwalnictwo (Lumber)")) DrawDictionary(_lumberToggles);
+                    GUILayout.Space(5);
+                    if (_showGodsend = GUILayout.Toggle(_showGodsend, "Godsend (Skrzynie)")) DrawDictionary(_godsendToggles);
+                    GUILayout.Space(5);
+                    _showOthers = GUILayout.Toggle(_showOthers, "Inne (Others)");
+                    GUILayout.EndVertical(); GUILayout.EndHorizontal();
+                }
 
-            GUILayout.Space(10);
+                GUILayout.Space(10);
 
-            // --- MOBS ---
-            _showMobs = GUILayout.Toggle(_showMobs, "<b>MOBS</b>");
-            if (_showMobs)
-            {
-                GUILayout.BeginHorizontal(); GUILayout.Space(15); GUILayout.BeginVertical();
-                _showAggressive = GUILayout.Toggle(_showAggressive, "Aggressive (Bosses/LargeFox/Elites)");
-                _showRetaliating = GUILayout.Toggle(_showRetaliating, "Retaliating (Horse/Ent/Goat/Fox)");
-                _showPassive = GUILayout.Toggle(_showPassive, "Non-Aggressive (Deer/Hare/Crow)");
-                GUILayout.EndVertical(); GUILayout.EndHorizontal();
-            }
+                // --- MOBS ---
+                _showMobs = GUILayout.Toggle(_showMobs, "<b>MOBY (MOBS)</b>");
+                if (_showMobs)
+                {
+                    GUILayout.BeginHorizontal(); GUILayout.Space(15); GUILayout.BeginVertical();
+                    _showAggressive = GUILayout.Toggle(_showAggressive, "Agresywne (Boss/LargeFox)");
+                    _showRetaliating = GUILayout.Toggle(_showRetaliating, "Oddające (Lis/Koń/Ent)");
+                    _showPassive = GUILayout.Toggle(_showPassive, "Pasywne (Zając/Jeleń)");
+                    GUILayout.EndVertical(); GUILayout.EndHorizontal();
+                }
 
-            GUILayout.Space(15);
+                GUILayout.Space(15);
 
-            // --- COLOR SETTINGS BUTTON ---
-            if (GUILayout.Button(_showColorMenu ? "Ukryj Ustawienia Kolorów" : "Edytuj Kolory ESP"))
-            {
-                _showColorMenu = !_showColorMenu;
-                if (!_showColorMenu) ConfigManager.Save(); // Zapisz przy zamknięciu
-            }
+                // --- KOLORY ---
+                if (GUILayout.Button(_showColorMenu ? "Ukryj Edytor Kolorów" : "Edytuj Kolory ESP"))
+                {
+                    _showColorMenu = !_showColorMenu;
+                    if (!_showColorMenu) ConfigManager.Save();
+                }
 
-            if (_showColorMenu)
-            {
-                DrawColorSettings();
+                if (_showColorMenu)
+                {
+                    DrawColorSettings();
+                }
             }
 
             GUILayout.EndScrollView();
@@ -329,15 +345,15 @@ namespace WildTerraHook
             GUILayout.Label("<b>Edytor Kolorów (Zapis w %appdata%)</b>");
 
             GUILayout.Label("-- Moby --");
-            DrawColorPicker("Agresywne (LargeFox/Boss)", ref ConfigManager.Settings.MobAggressive);
-            DrawColorPicker("Pasywne (Deer/Hare)", ref ConfigManager.Settings.MobPassive);
-            DrawColorPicker("Oddające (Fox/Goat)", ref ConfigManager.Settings.MobFleeing);
+            DrawColorPicker("Agresywne", ref ConfigManager.Colors.MobAggressive);
+            DrawColorPicker("Pasywne", ref ConfigManager.Colors.MobPassive);
+            DrawColorPicker("Oddające", ref ConfigManager.Colors.MobFleeing);
 
             GUILayout.Space(5);
             GUILayout.Label("-- Surowce --");
-            DrawColorPicker("Mining (Skały/Rudy)", ref ConfigManager.Settings.ResMining);
-            DrawColorPicker("Gathering (Zbieractwo)", ref ConfigManager.Settings.ResGather);
-            DrawColorPicker("Lumber (Drzewa)", ref ConfigManager.Settings.ResLumber);
+            DrawColorPicker("Mining", ref ConfigManager.Colors.ResMining);
+            DrawColorPicker("Gathering", ref ConfigManager.Colors.ResGather);
+            DrawColorPicker("Lumber", ref ConfigManager.Colors.ResLumber);
 
             if (GUILayout.Button("Zapisz Kolory")) ConfigManager.Save();
 
@@ -347,9 +363,11 @@ namespace WildTerraHook
         private void DrawColorPicker(string label, ref Color col)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(150));
+            GUILayout.Label(label, GUILayout.Width(100));
+
+            // Podgląd
             GUI.color = col;
-            GUILayout.Label("█", GUILayout.Width(20)); // Podgląd
+            GUILayout.Label("█", GUILayout.Width(20));
             GUI.color = Color.white;
 
             GUILayout.BeginVertical();
@@ -368,8 +386,11 @@ namespace WildTerraHook
             GUILayout.EndVertical(); GUILayout.EndHorizontal();
         }
 
+        // Ta metoda musi być wywoływana z MainHack.OnGUI (lub Update, zależnie jak masz zrobione renderowanie)
         public void DrawESP()
         {
+            if (!EspEnabled) return;
+
             CreateStyles();
             Camera cam = Camera.main;
             if (cam == null) return;
@@ -381,12 +402,12 @@ namespace WildTerraHook
             foreach (var obj in _cachedObjects)
             {
                 float dist = Vector3.Distance(camPos, obj.Position);
-                if (dist > 250) continue;
+                if (dist > 300) continue; // Limit rysowania
 
                 Vector3 screenPos = cam.WorldToScreenPoint(obj.Position);
                 bool isBehind = screenPos.z < 0;
 
-                // Offscreen Logic (Strzałki/Tekst na krawędziach)
+                // Offscreen Logic
                 bool isOffScreen = isBehind ||
                                    screenPos.x < 0 || screenPos.x > screenW ||
                                    screenPos.y < 0 || screenPos.y > screenH;
@@ -421,10 +442,9 @@ namespace WildTerraHook
                 float w = 200; float h = 22;
                 Rect r = new Rect(screenPos.x - w / 2, screenPos.y - h / 2, w, h);
 
-                // Ustawienie koloru tekstu dla danego obiektu
+                // Ustawienie koloru z cache (pobranego z ConfigManager)
                 _styleLabel.normal.textColor = obj.Color;
 
-                // Rysowanie
                 GUI.Label(r, $"{obj.Label} [{dist:F0}m]", _styleLabel);
             }
         }

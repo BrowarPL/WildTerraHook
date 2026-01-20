@@ -72,6 +72,10 @@
     <Reference Include="UnityEngine.InputModule">
       <HintPath>Z:\SteamLibrary\steamapps\common\Wild Terra 2\Wild-Terra-2_Data\Managed\UnityEngine.InputModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>Z:\SteamLibrary\steamapps\common\Wild Terra 2\Wild-Terra-2_Data\Managed\UnityEngine.JSONSerializeModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.PhysicsModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>Z:\SteamLibrary\steamapps\common\Wild Terra 2\Wild-Terra-2_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
