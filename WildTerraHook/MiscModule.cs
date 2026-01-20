@@ -4,120 +4,181 @@ using UnityEngine.AI;
 
 namespace WildTerraHook
 {
-    public class MiscModule : MonoBehaviour
+    public class MiscModule
     {
-        // Główny przełącznik funkcji
+        // --- USTAWIENIA ---
         public bool NoClipEnabled = false;
+        public bool EternalDayEnabled = false; // Przywróciłem zmienną, aby można było ją dodać do menu
 
-        // Cache komponentów
+        // --- CACHE ---
         private NavMeshAgent _agent;
         private Collider _collider;
         private bool _wasAgentEnabled;
         private bool _wasColliderEnabled;
 
-        private void Update()
-        {
-            // Bezpiecznik - jeśli nie ma gracza, nic nie robimy
-            if (Player.localPlayer == null) return;
+        // Przechowujemy gracza, żeby nie szukać go co klatkę
+        private global::Player _cachedPlayer;
 
+        // Ta metoda jest wywoływana przez MainHack.cs (wiersz 54)
+        public void Update()
+        {
+            // 1. Znalezienie gracza (jeśli zgubiony lub null)
+            if (_cachedPlayer == null)
+            {
+                // Próbujemy pobrać z oficjalnego statica (jeśli istnieje)
+                try
+                {
+                    if (global::Player.localPlayer != null)
+                        _cachedPlayer = global::Player.localPlayer;
+                }
+                catch { }
+
+                // Fallback: Szukamy na scenie jeśli static zawiódł
+                if (_cachedPlayer == null)
+                {
+                    var foundPlayers = UnityEngine.Object.FindObjectsOfType<global::Player>();
+                    if (foundPlayers != null && foundPlayers.Length > 0)
+                    {
+                        // Zakładamy, że pierwszy to nasz (w single player/simple multi to zadziała)
+                        _cachedPlayer = foundPlayers[0];
+                    }
+                }
+            }
+
+            // Jeśli nadal nie mamy gracza, przerywamy
+            if (_cachedPlayer == null) return;
+
+            // 2. Obsługa NoClip
             if (NoClipEnabled)
             {
-                HandleNoClip(Player.localPlayer);
+                HandleNoClip(_cachedPlayer);
             }
             else
             {
-                // Jeśli wyłączyliśmy NoClip, upewnij się, że komponenty gry wróciły do normy
-                RestoreState(Player.localPlayer);
+                RestoreState(_cachedPlayer);
+            }
+
+            // 3. Obsługa Eternal Day (Opcjonalnie - prosty przykład, jeśli gra używa EnviroSky)
+            if (EternalDayEnabled)
+            {
+                // To jest placeholder. Jeśli gra używa np. EnviroSky, można odkomentować:
+                /*
+                var sky = UnityEngine.Object.FindObjectOfType<EnviroSky>();
+                if (sky != null) sky.GameTime.Hours = 12f;
+                */
             }
         }
 
-        private void HandleNoClip(Player player)
+        // Ta metoda jest wywoływana przez MainHack.cs (wiersz 94)
+        public void DrawMenu()
         {
-            // 1. Pobieramy komponenty, jeśli ich nie mamy
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("<b>Misc Options</b>");
+
+            NoClipEnabled = GUILayout.Toggle(NoClipEnabled, "No Clip (Latanie / Przechodzenie)");
+            EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, "Eternal Day (Wymuś Dzień)");
+
+            GUILayout.EndVertical();
+        }
+
+        // --- LOGIKA NOCLIP ---
+
+        private void HandleNoClip(global::Player player)
+        {
+            // Pobieranie komponentów (lenistwo - tylko raz)
             if (_agent == null) _agent = player.GetComponent<NavMeshAgent>();
             if (_collider == null) _collider = player.GetComponent<Collider>();
 
-            // 2. Wyłączamy NavMeshAgenta, aby "odkleić" się od ziemi i limitów mapy
+            // Wyłączanie NavMeshAgent (kluczowe dla gór i wody)
             if (_agent != null && _agent.enabled)
             {
                 _wasAgentEnabled = true;
                 _agent.enabled = false;
             }
 
-            // 3. Wyłączamy kolizje, aby przechodzić przez ściany (opcjonalne, ale przydatne w jaskiniach)
+            // Wyłączanie kolizji (opcjonalne, pozwala przechodzić przez ściany)
             if (_collider != null && _collider.enabled)
             {
                 _wasColliderEnabled = true;
                 _collider.enabled = false;
             }
 
-            // 4. Logika poruszania się (Symulacja WSAD + Mysz)
             MovePlayer(player);
         }
 
-        private void MovePlayer(Player player)
+        private void MovePlayer(global::Player player)
         {
-            float currentSpeed = 5.0f; // Domyślna prędkość
+            float currentSpeed = 6.0f; // Bazowa prędkość
 
-            // Próbujemy pobrać legalną prędkość z agenta (nawet wyłączonego), aby serwer nie cofał
+            // Pobieramy legalną prędkość z agenta, jeśli istnieje, aby serwer nie cofał
             if (_agent != null)
             {
                 currentSpeed = _agent.speed;
             }
 
-            // Mnożnik dla sprintu (Left Shift) - uważaj, serwer może to wykryć, jeśli przesadzisz
+            // Sprint
             if (Input.GetKey(KeyCode.LeftShift))
             {
-                currentSpeed *= 1.5f;
+                currentSpeed *= 2.0f;
             }
 
             Vector3 moveDirection = Vector3.zero;
 
-            // Pobieramy kierunki kamery, aby sterowanie było intuicyjne
-            Transform camTransform = Camera.main.transform;
-            Vector3 forward = camTransform.forward;
-            Vector3 right = camTransform.right;
+            // Pobieramy kamerę, aby sterowanie było zgodne z widokiem
+            Transform camTransform = Camera.main != null ? Camera.main.transform : null;
 
-            // Resetujemy wpływ osi Y na ruch przód/tył, żeby nie "wbijać" się w ziemię patrząc w dół
-            forward.y = 0;
-            right.y = 0;
-            forward.Normalize();
-            right.Normalize();
+            if (camTransform != null)
+            {
+                Vector3 forward = camTransform.forward;
+                Vector3 right = camTransform.right;
 
-            // Obsługa klawiszy
-            if (Input.GetKey(KeyCode.W)) moveDirection += forward;
-            if (Input.GetKey(KeyCode.S)) moveDirection -= forward;
-            if (Input.GetKey(KeyCode.D)) moveDirection += right;
-            if (Input.GetKey(KeyCode.A)) moveDirection -= right;
+                // Ignorujemy pochylenie kamery dla ruchu WSAD
+                forward.y = 0;
+                right.y = 0;
+                forward.Normalize();
+                right.Normalize();
 
-            // Obsługa latania góra/dół (Spacja / Ctrl)
+                if (Input.GetKey(KeyCode.W)) moveDirection += forward;
+                if (Input.GetKey(KeyCode.S)) moveDirection -= forward;
+                if (Input.GetKey(KeyCode.D)) moveDirection += right;
+                if (Input.GetKey(KeyCode.A)) moveDirection -= right;
+            }
+            else
+            {
+                // Fallback: ruch względem świata
+                if (Input.GetKey(KeyCode.W)) moveDirection += Vector3.forward;
+                if (Input.GetKey(KeyCode.S)) moveDirection -= Vector3.forward;
+                if (Input.GetKey(KeyCode.D)) moveDirection += Vector3.right;
+                if (Input.GetKey(KeyCode.A)) moveDirection -= Vector3.left;
+            }
+
+            // Latanie góra/dół (Spacja / Ctrl)
             if (Input.GetKey(KeyCode.Space)) moveDirection += Vector3.up;
             if (Input.GetKey(KeyCode.LeftControl)) moveDirection -= Vector3.up;
 
-            // Aplikujemy ruch
+            // Aplikowanie ruchu bezpośrednio do Transform (omijanie fizyki)
             if (moveDirection != Vector3.zero)
             {
-                // Używamy transform.position zamiast Move(), aby ominąć fizykę
                 player.transform.position += moveDirection.normalized * currentSpeed * Time.deltaTime;
             }
         }
 
-        private void RestoreState(Player player)
+        private void RestoreState(global::Player player)
         {
-            // Przywracamy Agenta tylko jeśli my go wyłączyliśmy i jeśli jest blisko NavMesha
-            // (Inaczej gra może wyrzucić błąd, jeśli włączymy go nad przepaścią)
+            // Przywracamy Agenta tylko jeśli my go wyłączyliśmy
             if (_agent != null && !_agent.enabled && _wasAgentEnabled)
             {
-                // Sprawdzamy czy jesteśmy w ogóle na NavMesh'u, żeby nie crashować gry
                 NavMeshHit hit;
-                if (NavMesh.SamplePosition(player.transform.position, out hit, 2.0f, NavMesh.AllAreas))
+                // Szukamy bezpiecznego miejsca na ziemi w promieniu 10 jednostek
+                if (NavMesh.SamplePosition(player.transform.position, out hit, 10.0f, NavMesh.AllAreas))
                 {
-                    _agent.Warp(hit.position); // Bezpieczny powrót na siatkę
+                    _agent.Warp(hit.position); // Teleport na siatkę
                     _agent.enabled = true;
                     _wasAgentEnabled = false;
                 }
             }
 
+            // Przywracamy kolizje
             if (_collider != null && !_collider.enabled && _wasColliderEnabled)
             {
                 _collider.enabled = true;
