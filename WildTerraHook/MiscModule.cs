@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using System;
-using JohnStairs.RCC.ThirdPerson; // Wymagane do działania Zoom Hacka
+using JohnStairs.RCC.ThirdPerson;
 
 namespace WildTerraHook
 {
@@ -8,8 +8,8 @@ namespace WildTerraHook
     {
         // --- USTAWIENIA GŁÓWNE ---
         public bool EternalDayEnabled = false;
-        public bool BrightPlayerEnabled = false; // Latarka (lokalna)
-        public bool FullbrightEnabled = false;   // Jasność globalna (Ambient)
+        public bool BrightPlayerEnabled = false;
+        public bool FullbrightEnabled = false;
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
@@ -20,16 +20,18 @@ namespace WildTerraHook
 
         // --- KAMERA (Zoom & FOV) ---
         public float CameraFov = 60f;
-
-        // Suwaki Zoom Hacka
-        public float MaxZoomLimit = 100f;   // Limit oddalenia (wpływa też na kąt przy ziemi)
-        public float CameraAngle = 45f;     // Kąt patrzenia góra/dół (domyślnie 45)
-        public float ZoomSpeed = 60f;       // Czułość kółka myszy
+        public float MaxZoomLimit = 100f;
+        public float CameraAngle = 45f;
+        public float ZoomSpeed = 60f;
 
         private float _defaultFov = 60f;
         private bool _defaultsInitialized = false;
 
-        // --- CACHE ---
+        // --- FULLBRIGHT CACHE ---
+        private ShadowQuality _originalShadows; // Do zapamiętania ustawień gry
+        private bool _fullbrightActive = false; // Czy już aktywowaliśmy fullbright?
+
+        // --- KAMERA CACHE ---
         private WTRPGCamera _rpgCamera;
         private global::CameraMMO _mmoCamera;
         private float _cacheTimer = 0f;
@@ -58,14 +60,8 @@ namespace WildTerraHook
                 RenderSettings.fogEndDistance = 200000f;
             }
 
-            // 3. Fullbright (Globalna Jasność) - NOWOŚĆ
-            if (FullbrightEnabled)
-            {
-                // Ustawiamy światło otoczenia na czystą biel, co eliminuje cienie i ciemność
-                RenderSettings.ambientLight = Color.white;
-                // Opcjonalnie można wymusić tryb Flat, jeśli gra używa Trilight/Skybox
-                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            }
+            // 3. Fullbright (Jasność + Brak Cieni)
+            HandleFullbright();
 
             // 4. Latarka (Lokalna)
             HandleBrightPlayer();
@@ -77,6 +73,36 @@ namespace WildTerraHook
             if (ZoomHackEnabled)
             {
                 HandleZoomHack();
+            }
+        }
+
+        private void HandleFullbright()
+        {
+            if (FullbrightEnabled)
+            {
+                // Jeśli dopiero włączamy, zapamiętajmy oryginalne cienie (żeby nie psuć ustawień na stałe)
+                if (!_fullbrightActive)
+                {
+                    _originalShadows = QualitySettings.shadows;
+                    _fullbrightActive = true;
+                }
+
+                // 1. Światło otoczenia na MAX
+                RenderSettings.ambientLight = Color.white;
+                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+
+                // 2. WYŁĄCZAMY CIENIE (To daje największy efekt widoczności)
+                QualitySettings.shadows = ShadowQuality.Disable;
+            }
+            else
+            {
+                // Jeśli wyłączyliśmy opcję, przywróć cienie
+                if (_fullbrightActive)
+                {
+                    QualitySettings.shadows = _originalShadows;
+                    // Przywracanie ambientu jest trudne bez cache, ale gra (Enviro) zazwyczaj sama to nadpisze w następnej klatce
+                    _fullbrightActive = false;
+                }
             }
         }
 
@@ -105,23 +131,14 @@ namespace WildTerraHook
                 _cacheTimer = Time.time + 1.0f;
             }
 
-            // Obsługa RPG Camera (WTRPGCamera)
             if (_rpgCamera != null)
             {
-                // 1. Ustawienie limitu
                 _rpgCamera.MaxDistance = MaxZoomLimit;
-
-                // 2. Odblokowanie kątów (góra/dół)
                 _rpgCamera.RotationYMin = CameraAngle;
                 _rpgCamera.RotationYMax = CameraAngle;
-
-                // 3. Czułość zoomu
                 _rpgCamera.ZoomSensitivity = ZoomSpeed;
-
-                // 4. FIX: Wyłączamy tryb rozmowy z NPC
                 _rpgCamera.ReturnZoomFromNPC();
             }
-            // Obsługa MMO Camera (CameraMMO)
             else if (_mmoCamera != null)
             {
                 _mmoCamera.maxDistance = MaxZoomLimit;
@@ -201,7 +218,7 @@ namespace WildTerraHook
             // Pogoda i Światło
             EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, "Eternal Day (12:00)");
             NoFogEnabled = GUILayout.Toggle(NoFogEnabled, "No Fog (Usuń Mgłę)");
-            FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, "Fullbright (Jasność Otoczenia)"); // Nowy toggle
+            FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, "Fullbright (Bez Cieni)");
 
             GUILayout.Space(5);
 
@@ -226,19 +243,16 @@ namespace WildTerraHook
             ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, "Zoom Hack (Odblokuj)");
             if (ZoomHackEnabled)
             {
-                // 1. Limit Zoomu
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Limit Zoomu: {MaxZoomLimit:F0}", GUILayout.Width(100));
                 MaxZoomLimit = GUILayout.HorizontalSlider(MaxZoomLimit, 20f, 200f);
                 GUILayout.EndHorizontal();
 
-                // 2. Kąt
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Kąt (45 def): {CameraAngle:F0}", GUILayout.Width(100));
                 CameraAngle = GUILayout.HorizontalSlider(CameraAngle, 10f, 89f);
                 GUILayout.EndHorizontal();
 
-                // 3. Czułość Zoomu
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Czułość: {ZoomSpeed:F0}", GUILayout.Width(100));
                 ZoomSpeed = GUILayout.HorizontalSlider(ZoomSpeed, 10f, 200f);
