@@ -5,16 +5,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-// UWAGA: Mirror może nie być dostępny bezpośrednio, używamy global::
-// using Mirror; 
-
 namespace WildTerraHook
 {
     public class ColorFishingModule
     {
-        // --- KONFIGURACJA (Dostosowane do ConfigManager) ---
-        public bool Enabled = false;          // Odpowiednik Settings.AutoFishColor
-        public float FishingTimeout = 10.0f;  // Czas oczekiwania na branie
+        // --- KONFIGURACJA ---
+        public bool Enabled = false;
+        public float FishingTimeout = 10.0f;
 
         // --- STANY ---
         private enum BotState
@@ -30,7 +27,7 @@ namespace WildTerraHook
 
         private BotState _currentState = BotState.WAITING_FOR_MANUAL;
 
-        // --- ZMIENNE POMOCNICZE ---
+        // --- ZMIENNE ---
         private int _lastActionCount = -1;
         private float _castStartTime = 0f;
         private float _stateTimer = -1f;
@@ -41,11 +38,10 @@ namespace WildTerraHook
         private bool _hasCalibration = false;
 
         private int _castAttempts = 0;
-
         private int _fishingSkillIndex = -1;
         private int _combatSkillIndex = -1;
 
-        // --- REFLECTION CACHE ---
+        // --- REFLECTION ---
         private MethodInfo _actionTargetMethod;
         private MethodInfo _skillToPointMethod;
         private MethodInfo _abilityToPointMethod;
@@ -53,9 +49,7 @@ namespace WildTerraHook
         private MethodInfo _setTargetMethod;
         private FieldInfo _uiPanelField;
 
-        private string _debugMsg = "ZARZUĆ RĘCZNIE...";
-
-        // --- METODY PUBLICZNE DLA MAINHACK ---
+        private string _debugMsg = "";
 
         public void OnDisable()
         {
@@ -63,17 +57,15 @@ namespace WildTerraHook
             _currentState = BotState.WAITING_FOR_MANUAL;
             _fishingSkillIndex = -1;
             _combatSkillIndex = -1;
+            // Domyślny tekst po resecie
+            _debugMsg = Localization.Get("FISH_DEBUG_RESET");
         }
 
         public void Update()
         {
-            // Jeśli bot wyłączony w menu
             if (!Enabled) return;
 
             var wtPlayer = global::Player.localPlayer as global::WTPlayer;
-
-            // Pobieramy instancję UI przez Reflection lub Static (zależnie od gry)
-            // Zakładam, że WTUIFishingActions ma statyczną instancję 'instance'
             var fishingUI = global::WTUIFishingActions.instance;
 
             if (wtPlayer == null) return;
@@ -84,7 +76,7 @@ namespace WildTerraHook
             bool isFishing = wtPlayer.IsFishing();
             bool isUI = IsUIReal();
 
-            // KALIBRACJA: Gracz musi zarzucić wędkę raz ręcznie
+            // KALIBRACJA
             if (!_hasCalibration)
             {
                 if (isFishing)
@@ -99,23 +91,23 @@ namespace WildTerraHook
                     _hasCalibration = true;
 
                     EnterFishingState();
-                    _debugMsg = $"[BOT] Skalibrowano! Cel: {_savedCastPoint}";
+                    _debugMsg = $"{Localization.Get("FISH_DEBUG_CALIB")} {_savedCastPoint}";
                 }
                 else
                 {
-                    _debugMsg = "ZARZUĆ RĘCZNIE ABY ROZPOCZĄĆ!";
+                    _debugMsg = Localization.Get("FISH_DEBUG_MANUAL");
                     return;
                 }
             }
 
-            // OBRONA: Wykrywanie agresywnego moba (np. kraba)
+            // OBRONA
             if (_hasCalibration && (_currentState == BotState.FISHING || _currentState == BotState.CASTING_ROD))
             {
                 if (Time.time > _stateTimer && wtPlayer.target != null && wtPlayer.target.name.IndexOf("crab", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     if (wtPlayer.target.health > 0)
                     {
-                        Debug.Log("[BOT] ATAK! Przerywam.");
+                        Debug.Log(Localization.Get("FISH_DEBUG_ATTACK"));
                         _currentState = BotState.COMBAT_PREPARE;
                         _stateTimer = Time.time + 0.1f;
                         return;
@@ -139,12 +131,15 @@ namespace WildTerraHook
                 }
             }
 
-            // DEBUG INFO
-            _debugMsg = $"STAN: {_currentState}\nTimer: {Mathf.Max(0, _stateTimer - Time.time):F1}s\n" +
-                        $"Atak ID: {_combatSkillIndex} | Wędka ID: {_fishingSkillIndex}\n" +
-                        $"Cel: {(wtPlayer.target != null ? wtPlayer.target.name : "Brak")}";
+            // DEBUG INFO (Z TŁUMACZENIEM)
+            string targetName = (wtPlayer.target != null) ? wtPlayer.target.name : Localization.Get("FISH_NONE");
 
-            // MASZYNA STANÓW
+            _debugMsg = $"{Localization.Get("FISH_STATE")}: {_currentState}\n" +
+                        $"{Localization.Get("FISH_TIMER")}: {Mathf.Max(0, _stateTimer - Time.time):F1}s\n" +
+                        $"{Localization.Get("FISH_ATT_ID")}: {_combatSkillIndex} | {Localization.Get("FISH_ROD_ID")}: {_fishingSkillIndex}\n" +
+                        $"{Localization.Get("FISH_TARGET")}: {targetName}";
+
+            // LOGIKA
             switch (_currentState)
             {
                 case BotState.FISHING: HandleFishing(wtPlayer, fishingUI); break;
@@ -156,37 +151,35 @@ namespace WildTerraHook
             }
         }
 
-        // Metoda do rysowania w MainHack.OnGUI (opcjonalna, np. status)
         public void OnGUI()
         {
             if (Enabled && _hasCalibration)
             {
-                GUI.Label(new Rect(Screen.width / 2 - 100, 50, 200, 60), _debugMsg);
+                GUI.Label(new Rect(Screen.width / 2 - 100, 80, 300, 100), _debugMsg);
             }
         }
 
-        // Metoda do rysowania w MainHack.DrawMenu (konfiguracja)
         public void DrawMenu()
         {
             GUILayout.BeginVertical("box");
-            GUILayout.Label("<b>Fish Bot (Smart)</b>");
+            GUILayout.Label($"<b>{Localization.Get("FISH_TITLE")}</b>");
 
-            bool newEnabled = GUILayout.Toggle(Enabled, "Włącz Bota (Zarzuć ręcznie)");
+            bool newEnabled = GUILayout.Toggle(Enabled, Localization.Get("FISH_ENABLE"));
             if (newEnabled != Enabled)
             {
                 Enabled = newEnabled;
-                if (!Enabled) OnDisable(); // Reset przy wyłączeniu
+                if (!Enabled) OnDisable();
             }
 
-            GUILayout.Label($"Timeout (s): {FishingTimeout:F1}");
+            GUILayout.Label($"{Localization.Get("FISH_TIMEOUT")}: {FishingTimeout:F1}");
             FishingTimeout = GUILayout.HorizontalSlider(FishingTimeout, 5f, 30f);
 
-            GUILayout.TextArea(_debugMsg); // Podgląd statusu w menu
+            GUILayout.TextArea(_debugMsg);
 
             GUILayout.EndVertical();
         }
 
-        // --- METODY POMOCNICZE (REFLEKSJA / LOGIKA) ---
+        // --- POMOCNICZE (BEZ ZMIAN LOGIKI) ---
 
         private void ScanMethods(global::WTPlayer player)
         {
@@ -205,24 +198,19 @@ namespace WildTerraHook
         private void FindSkills(global::WTPlayer player)
         {
             if (player.skills == null) return;
-
             for (int i = 0; i < player.skills.Count; i++)
             {
                 var skillData = player.skills[i].data;
                 if (skillData == null) continue;
                 string sName = skillData.name.ToLower();
-
                 if (sName.Contains("fishing")) _fishingSkillIndex = i;
-
                 if (!sName.Contains("fishing") && !sName.Contains("passive") && !sName.Contains("armor"))
                 {
                     bool isBasic = sName.Contains("attack") || sName.Contains("hit") || sName.Contains("slash") || sName.Contains("strike");
                     bool isSpecial = sName.Contains("throw") || sName.Contains("rage") || sName.Contains("taunt") || sName.Contains("shout");
-
                     if (isBasic && !isSpecial) _combatSkillIndex = i;
                 }
             }
-
             if (_fishingSkillIndex == -1) _fishingSkillIndex = 8;
             if (_combatSkillIndex == -1) _combatSkillIndex = 0;
         }

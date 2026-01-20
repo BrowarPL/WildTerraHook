@@ -43,7 +43,6 @@ namespace WildTerraHook
             }
             else
             {
-                // Fallback do twardych danych jeśli plik usunięto
                 LoadHardcoded(langCode);
             }
         }
@@ -51,7 +50,7 @@ namespace WildTerraHook
         public static string Get(string key)
         {
             if (_currentDict.ContainsKey(key)) return _currentDict[key];
-            return key; // Zwróć klucz jeśli brakuje tłumaczenia
+            return key;
         }
 
         private static void EnsureDefaultFiles()
@@ -64,8 +63,6 @@ namespace WildTerraHook
             if (!File.Exists(enPath)) File.WriteAllText(enPath, GetDefaultEn());
             if (!File.Exists(plPath)) File.WriteAllText(plPath, GetDefaultPl());
         }
-
-        // --- DANE TŁUMACZEŃ ---
 
         private static void LoadHardcoded(string lang)
         {
@@ -106,13 +103,11 @@ ESP_DIST=Distance
 ESP_EDIT_COLORS=Edit ESP Colors
 ESP_HIDE_COLORS=Hide Colors
 ESP_SAVE_COLORS=Save Colors
-
 ESP_CAT_MINING=Mining
 ESP_CAT_GATHER=Gathering
 ESP_CAT_LUMBER=Lumberjacking
 ESP_CAT_GODSEND=Godsend (Chests)
 ESP_CAT_OTHERS=Others
-
 ESP_MOB_AGGRO=Aggressive (Boss/LargeFox)
 ESP_MOB_RETAL=Retaliating (Fox/Horse)
 ESP_MOB_PASSIVE=Passive (Deer/Hare)
@@ -123,6 +118,21 @@ COLOR_MOB_FLEE=Fleeing/Retal Mobs
 COLOR_RES_MINE=Mining Nodes
 COLOR_RES_GATHER=Gatherables
 COLOR_RES_LUMB=Trees
+
+FISH_TITLE=Fish Bot (Smart)
+FISH_ENABLE=Enable Bot (Cast manually first)
+FISH_TIMEOUT=Timeout (s)
+FISH_DEBUG_WAIT=WAITING FOR MANUAL CAST...
+FISH_DEBUG_RESET=RESET.
+FISH_DEBUG_CALIB=Calibrated! Target:
+FISH_DEBUG_MANUAL=CAST MANUALLY TO START!
+FISH_DEBUG_ATTACK=ATTACK! Interrupting.
+FISH_STATE=STATE
+FISH_TIMER=Timer
+FISH_ATT_ID=Attack ID
+FISH_ROD_ID=Rod ID
+FISH_TARGET=Target
+FISH_NONE=None
 ".Trim();
         }
 
@@ -154,13 +164,11 @@ ESP_DIST=Dystans Rysowania
 ESP_EDIT_COLORS=Edytuj Kolory ESP
 ESP_HIDE_COLORS=Ukryj Edytor Kolorów
 ESP_SAVE_COLORS=Zapisz Konfigurację
-
 ESP_CAT_MINING=Górnictwo (Mining)
 ESP_CAT_GATHER=Zbieractwo (Gathering)
 ESP_CAT_LUMBER=Drwalnictwo (Lumber)
 ESP_CAT_GODSEND=Skarby (Godsend)
 ESP_CAT_OTHERS=Inne (Others)
-
 ESP_MOB_AGGRO=Agresywne (Boss/LargeFox)
 ESP_MOB_RETAL=Oddające (Lis/Koń)
 ESP_MOB_PASSIVE=Pasywne (Jeleń/Zając)
@@ -171,6 +179,21 @@ COLOR_MOB_FLEE=Kolor: Oddające
 COLOR_RES_MINE=Kolor: Skały/Rudy
 COLOR_RES_GATHER=Kolor: Zbieractwo
 COLOR_RES_LUMB=Kolor: Drzewa
+
+FISH_TITLE=Fish Bot (Inteligentny)
+FISH_ENABLE=Włącz Bota (Zarzuć ręcznie)
+FISH_TIMEOUT=Limit Czasu (s)
+FISH_DEBUG_WAIT=OCZEKIWANIE NA RĘCZNE...
+FISH_DEBUG_RESET=RESET.
+FISH_DEBUG_CALIB=Skalibrowano! Cel:
+FISH_DEBUG_MANUAL=ZARZUĆ RĘCZNIE ABY ROZPOCZĄĆ!
+FISH_DEBUG_ATTACK=ATAK! Przerywam.
+FISH_STATE=STAN
+FISH_TIMER=Licznik
+FISH_ATT_ID=Atak ID
+FISH_ROD_ID=Wędka ID
+FISH_TARGET=Cel
+FISH_NONE=Brak
 ".Trim();
         }
     }
