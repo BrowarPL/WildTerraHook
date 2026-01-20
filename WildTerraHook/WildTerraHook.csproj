@@ -83,6 +83,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ConfigManager.cs" />
     <Compile Include="MainHack.cs" />
     <Compile Include="ColorFishingModule.cs" />
     <Compile Include="MiscModule.cs" />
