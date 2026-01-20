@@ -1,189 +1,138 @@
-﻿using System;
-using UnityEngine;
-using UnityEngine.AI;
+﻿using UnityEngine;
+using System;
+using System.Reflection;
 
 namespace WildTerraHook
 {
     public class MiscModule
     {
         // --- USTAWIENIA ---
-        public bool NoClipEnabled = false;
-        public bool EternalDayEnabled = false; // Przywróciłem zmienną, aby można było ją dodać do menu
+        public bool EternalDayEnabled = false;
+        public bool BrightPlayerEnabled = false;
+        public bool NoFogEnabled = false;
 
-        // --- CACHE ---
-        private NavMeshAgent _agent;
-        private Collider _collider;
-        private bool _wasAgentEnabled;
-        private bool _wasColliderEnabled;
+        // Usunięto: NoClip (zgodnie z poleceniem - server side check)
 
-        // Przechowujemy gracza, żeby nie szukać go co klatkę
-        private global::Player _cachedPlayer;
+        // --- KAMERA CONFIG ---
+        public float CameraFov = 60f;
+        private float _defaultFov = 60f;
+        private bool _fovInitialized = false;
 
-        // Ta metoda jest wywoływana przez MainHack.cs (wiersz 54)
+        // Obiekt światła dla funkcji BrightPlayer
+        private GameObject _lightObject;
+
+        // Metoda wywoływana w każdej klatce przez MainHack
         public void Update()
         {
-            // 1. Znalezienie gracza (jeśli zgubiony lub null)
-            if (_cachedPlayer == null)
-            {
-                // Próbujemy pobrać z oficjalnego statica (jeśli istnieje)
-                try
-                {
-                    if (global::Player.localPlayer != null)
-                        _cachedPlayer = global::Player.localPlayer;
-                }
-                catch { }
+            if (global::Player.localPlayer == null) return;
 
-                // Fallback: Szukamy na scenie jeśli static zawiódł
-                if (_cachedPlayer == null)
+            // 1. Obsługa Wiecznego Dnia (EnviroSky)
+            if (EternalDayEnabled)
+            {
+                if (global::EnviroSky.instance != null)
                 {
-                    var foundPlayers = UnityEngine.Object.FindObjectsOfType<global::Player>();
-                    if (foundPlayers != null && foundPlayers.Length > 0)
-                    {
-                        // Zakładamy, że pierwszy to nasz (w single player/simple multi to zadziała)
-                        _cachedPlayer = foundPlayers[0];
-                    }
+                    // Ustawiamy godzinę na 12:00 (południe)
+                    global::EnviroSky.instance.GameTime.Hours = 12f;
                 }
             }
 
-            // Jeśli nadal nie mamy gracza, przerywamy
-            if (_cachedPlayer == null) return;
-
-            // 2. Obsługa NoClip
-            if (NoClipEnabled)
+            // 2. Obsługa Braku Mgły
+            if (NoFogEnabled)
             {
-                HandleNoClip(_cachedPlayer);
+                // Wyłączamy mgłę w ustawieniach renderowania
+                RenderSettings.fog = false;
+
+                // Opcjonalnie: Jeśli gra używa EnviroSky do mgły
+                if (global::EnviroSky.instance != null)
+                {
+                    global::EnviroSky.instance.Fog.fogDensity = 0f;
+                }
+            }
+
+            // 3. Obsługa Rozjaśnienia Gracza (Latarka)
+            HandleBrightPlayer();
+
+            // 4. Obsługa Kamery (FOV)
+            HandleCamera();
+        }
+
+        private void HandleBrightPlayer()
+        {
+            if (global::Player.localPlayer == null) return;
+
+            if (BrightPlayerEnabled)
+            {
+                // Jeśli światło nie istnieje, stwórz je
+                if (_lightObject == null)
+                {
+                    _lightObject = new GameObject("HackLight");
+                    _lightObject.transform.SetParent(global::Player.localPlayer.transform);
+                    // Umieść światło nieco nad graczem
+                    _lightObject.transform.localPosition = new Vector3(0, 2.5f, 0);
+
+                    var l = _lightObject.AddComponent<Light>();
+                    l.type = LightType.Point;
+                    l.range = 40f;      // Zwiększony zasięg
+                    l.intensity = 2.0f; // Zwiększona jasność
+                    l.color = Color.white;
+                    l.shadows = LightShadows.None; // Brak cieni dla wydajności
+                }
             }
             else
             {
-                RestoreState(_cachedPlayer);
-            }
-
-            // 3. Obsługa Eternal Day (Opcjonalnie - prosty przykład, jeśli gra używa EnviroSky)
-            if (EternalDayEnabled)
-            {
-                // To jest placeholder. Jeśli gra używa np. EnviroSky, można odkomentować:
-                /*
-                var sky = UnityEngine.Object.FindObjectOfType<EnviroSky>();
-                if (sky != null) sky.GameTime.Hours = 12f;
-                */
+                // Jeśli wyłączono opcję, usuń obiekt światła
+                if (_lightObject != null)
+                {
+                    UnityEngine.Object.Destroy(_lightObject);
+                    _lightObject = null;
+                }
             }
         }
 
-        // Ta metoda jest wywoływana przez MainHack.cs (wiersz 94)
+        private void HandleCamera()
+        {
+            if (Camera.main != null)
+            {
+                // Inicjalizacja domyślnego FOV przy pierwszym uruchomieniu
+                if (!_fovInitialized)
+                {
+                    _defaultFov = Camera.main.fieldOfView;
+                    // Jeśli zapisane FOV jest dziwne (np. 0), ustaw domyślne
+                    if (CameraFov < 10) CameraFov = _defaultFov;
+                    _fovInitialized = true;
+                }
+
+                // Zastosuj zmianę tylko jeśli jest różnica, aby nie nadpisywać innych efektów gry ciągle
+                if (Math.Abs(Camera.main.fieldOfView - CameraFov) > 0.1f)
+                {
+                    Camera.main.fieldOfView = CameraFov;
+                }
+            }
+        }
+
+        // Metoda do rysowania menu w MainHack
         public void DrawMenu()
         {
             GUILayout.BeginVertical("box");
-            GUILayout.Label("<b>Misc Options</b>");
+            GUILayout.Label("<b>Misc Options (Różne)</b>");
 
-            NoClipEnabled = GUILayout.Toggle(NoClipEnabled, "No Clip (Latanie / Przechodzenie)");
-            EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, "Eternal Day (Wymuś Dzień)");
+            // Przełączniki
+            EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, "Eternal Day (Zawsze Dzień)");
+            BrightPlayerEnabled = GUILayout.Toggle(BrightPlayerEnabled, "Bright Player (Latarka)");
+            NoFogEnabled = GUILayout.Toggle(NoFogEnabled, "No Fog (Brak Mgły)");
+
+            GUILayout.Space(10);
+
+            // Suwak kamery
+            GUILayout.Label($"Camera FOV (Kąt widzenia): {CameraFov:F0}");
+            CameraFov = GUILayout.HorizontalSlider(CameraFov, 30f, 150f);
+
+            if (GUILayout.Button("Reset FOV"))
+            {
+                CameraFov = _defaultFov;
+            }
 
             GUILayout.EndVertical();
-        }
-
-        // --- LOGIKA NOCLIP ---
-
-        private void HandleNoClip(global::Player player)
-        {
-            // Pobieranie komponentów (lenistwo - tylko raz)
-            if (_agent == null) _agent = player.GetComponent<NavMeshAgent>();
-            if (_collider == null) _collider = player.GetComponent<Collider>();
-
-            // Wyłączanie NavMeshAgent (kluczowe dla gór i wody)
-            if (_agent != null && _agent.enabled)
-            {
-                _wasAgentEnabled = true;
-                _agent.enabled = false;
-            }
-
-            // Wyłączanie kolizji (opcjonalne, pozwala przechodzić przez ściany)
-            if (_collider != null && _collider.enabled)
-            {
-                _wasColliderEnabled = true;
-                _collider.enabled = false;
-            }
-
-            MovePlayer(player);
-        }
-
-        private void MovePlayer(global::Player player)
-        {
-            float currentSpeed = 6.0f; // Bazowa prędkość
-
-            // Pobieramy legalną prędkość z agenta, jeśli istnieje, aby serwer nie cofał
-            if (_agent != null)
-            {
-                currentSpeed = _agent.speed;
-            }
-
-            // Sprint
-            if (Input.GetKey(KeyCode.LeftShift))
-            {
-                currentSpeed *= 2.0f;
-            }
-
-            Vector3 moveDirection = Vector3.zero;
-
-            // Pobieramy kamerę, aby sterowanie było zgodne z widokiem
-            Transform camTransform = Camera.main != null ? Camera.main.transform : null;
-
-            if (camTransform != null)
-            {
-                Vector3 forward = camTransform.forward;
-                Vector3 right = camTransform.right;
-
-                // Ignorujemy pochylenie kamery dla ruchu WSAD
-                forward.y = 0;
-                right.y = 0;
-                forward.Normalize();
-                right.Normalize();
-
-                if (Input.GetKey(KeyCode.W)) moveDirection += forward;
-                if (Input.GetKey(KeyCode.S)) moveDirection -= forward;
-                if (Input.GetKey(KeyCode.D)) moveDirection += right;
-                if (Input.GetKey(KeyCode.A)) moveDirection -= right;
-            }
-            else
-            {
-                // Fallback: ruch względem świata
-                if (Input.GetKey(KeyCode.W)) moveDirection += Vector3.forward;
-                if (Input.GetKey(KeyCode.S)) moveDirection -= Vector3.forward;
-                if (Input.GetKey(KeyCode.D)) moveDirection += Vector3.right;
-                if (Input.GetKey(KeyCode.A)) moveDirection -= Vector3.left;
-            }
-
-            // Latanie góra/dół (Spacja / Ctrl)
-            if (Input.GetKey(KeyCode.Space)) moveDirection += Vector3.up;
-            if (Input.GetKey(KeyCode.LeftControl)) moveDirection -= Vector3.up;
-
-            // Aplikowanie ruchu bezpośrednio do Transform (omijanie fizyki)
-            if (moveDirection != Vector3.zero)
-            {
-                player.transform.position += moveDirection.normalized * currentSpeed * Time.deltaTime;
-            }
-        }
-
-        private void RestoreState(global::Player player)
-        {
-            // Przywracamy Agenta tylko jeśli my go wyłączyliśmy
-            if (_agent != null && !_agent.enabled && _wasAgentEnabled)
-            {
-                NavMeshHit hit;
-                // Szukamy bezpiecznego miejsca na ziemi w promieniu 10 jednostek
-                if (NavMesh.SamplePosition(player.transform.position, out hit, 10.0f, NavMesh.AllAreas))
-                {
-                    _agent.Warp(hit.position); // Teleport na siatkę
-                    _agent.enabled = true;
-                    _wasAgentEnabled = false;
-                }
-            }
-
-            // Przywracamy kolizje
-            if (_collider != null && !_collider.enabled && _wasColliderEnabled)
-            {
-                _collider.enabled = true;
-                _wasColliderEnabled = false;
-            }
         }
     }
 }
