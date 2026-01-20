@@ -8,11 +8,12 @@ namespace WildTerraHook
     {
         // --- USTAWIENIA GŁÓWNE ---
         public bool EternalDayEnabled = false;
-        public bool BrightPlayerEnabled = false;
+        public bool BrightPlayerEnabled = false; // Latarka (lokalna)
+        public bool FullbrightEnabled = false;   // Jasność globalna (Ambient)
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
-        // --- LATARKA (Domyślnie: Moc 2, Zasięg 1000) ---
+        // --- LATARKA (Parametry domyślne: 2.0 / 1000) ---
         public float LightIntensity = 2.0f;
         public float LightRange = 1000f;
         private GameObject _lightObject;
@@ -57,13 +58,22 @@ namespace WildTerraHook
                 RenderSettings.fogEndDistance = 200000f;
             }
 
-            // 3. Latarka
+            // 3. Fullbright (Globalna Jasność) - NOWOŚĆ
+            if (FullbrightEnabled)
+            {
+                // Ustawiamy światło otoczenia na czystą biel, co eliminuje cienie i ciemność
+                RenderSettings.ambientLight = Color.white;
+                // Opcjonalnie można wymusić tryb Flat, jeśli gra używa Trilight/Skybox
+                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            }
+
+            // 4. Latarka (Lokalna)
             HandleBrightPlayer();
 
-            // 4. FOV
+            // 5. FOV
             HandleFov();
 
-            // 5. Zoom Hack
+            // 6. Zoom Hack
             if (ZoomHackEnabled)
             {
                 HandleZoomHack();
@@ -98,7 +108,7 @@ namespace WildTerraHook
             // Obsługa RPG Camera (WTRPGCamera)
             if (_rpgCamera != null)
             {
-                // 1. Ustawienie limitu (to wpływa na "kąt natarcia" w kodzie gry, ale pozwala oddalić)
+                // 1. Ustawienie limitu
                 _rpgCamera.MaxDistance = MaxZoomLimit;
 
                 // 2. Odblokowanie kątów (góra/dół)
@@ -108,8 +118,7 @@ namespace WildTerraHook
                 // 3. Czułość zoomu
                 _rpgCamera.ZoomSensitivity = ZoomSpeed;
 
-                // 4. FIX: Wyłączamy tryb rozmowy z NPC, który blokuje zoom i czułość
-                // (Gra ustawia czułość na 8f jeśli talkCameraActive jest true)
+                // 4. FIX: Wyłączamy tryb rozmowy z NPC
                 _rpgCamera.ReturnZoomFromNPC();
             }
             // Obsługa MMO Camera (CameraMMO)
@@ -118,7 +127,7 @@ namespace WildTerraHook
                 _mmoCamera.maxDistance = MaxZoomLimit;
                 _mmoCamera.xMinAngle = -CameraAngle;
                 _mmoCamera.xMaxAngle = CameraAngle;
-                _mmoCamera.zoomSpeedMouse = 5.0f; // Stała prędkość dla MMO
+                _mmoCamera.zoomSpeedMouse = 5.0f;
             }
         }
 
@@ -189,9 +198,10 @@ namespace WildTerraHook
             GUILayout.BeginVertical("box");
             GUILayout.Label($"<b>Misc Options</b> [{_debugInfo}]");
 
-            // Pogoda
+            // Pogoda i Światło
             EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, "Eternal Day (12:00)");
             NoFogEnabled = GUILayout.Toggle(NoFogEnabled, "No Fog (Usuń Mgłę)");
+            FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, "Fullbright (Jasność Otoczenia)"); // Nowy toggle
 
             GUILayout.Space(5);
 
@@ -216,14 +226,13 @@ namespace WildTerraHook
             ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, "Zoom Hack (Odblokuj)");
             if (ZoomHackEnabled)
             {
-                // 1. Limit Zoomu (MaxDistance)
-                // UWAGA: Zmiana tego suwaka wpływa na kąt kamery przy ziemi (specyfika gry)
+                // 1. Limit Zoomu
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Limit Zoomu: {MaxZoomLimit:F0}", GUILayout.Width(100));
                 MaxZoomLimit = GUILayout.HorizontalSlider(MaxZoomLimit, 20f, 200f);
                 GUILayout.EndHorizontal();
 
-                // 2. Kąt Kamery (RotationY)
+                // 2. Kąt
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"Kąt (45 def): {CameraAngle:F0}", GUILayout.Width(100));
                 CameraAngle = GUILayout.HorizontalSlider(CameraAngle, 10f, 89f);
