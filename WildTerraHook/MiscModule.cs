@@ -15,7 +15,7 @@ namespace WildTerraHook
         private bool _wasAgentEnabled;
         private bool _wasColliderEnabled;
 
-        public void Update()
+        private void Update()
         {
             // Bezpiecznik - jeśli nie ma gracza, nic nie robimy
             if (Player.localPlayer == null) return;
@@ -123,11 +123,6 @@ namespace WildTerraHook
                 _collider.enabled = true;
                 _wasColliderEnabled = false;
             }
-        }
-
-        internal void DrawMenu()
-        {
-            throw new NotImplementedException();
         }
     }
 }
