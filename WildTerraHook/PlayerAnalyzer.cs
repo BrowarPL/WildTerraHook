@@ -1,84 +1,104 @@
 ﻿using UnityEngine;
-using System.Reflection;
 using System;
+using System.Reflection;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace WildTerraHook
 {
     public class PlayerAnalyzer
     {
-        private UnityEngine.Object _targetObject;
-        private string[] _targetClasses = { "WTUIFishingActions", "WTPlayer", "GameManager", "global::Player" };
-        private int _selectedClassIndex = 0;
-        private Vector2 _scrollPos = Vector2.zero;
-        private string _searchQuery = "";
+        private Vector2 _scrollPos;
+        private string _searchString = "";
+        private float _updateTimer = 0f;
 
-        private Dictionary<string, string> _snapshot = new Dictionary<string, string>();
-        private HashSet<string> _changedFields = new HashSet<string>();
-        private bool _onlyShowChanged = false;
+        // Cache danych gracza
+        private string _playerStats = "Brak danych...";
 
         public void Update()
         {
-            if (!Settings.ShowAnalyzer) return;
-            if (_targetObject == null) FindTarget();
-            if (_targetObject != null) ScanDifferences();
-        }
-
-        private void FindTarget()
-        {
-            string className = _targetClasses[_selectedClassIndex].Replace("global::", "");
-            Type t = MainHack.FindType(className);
-            if (t == null) return;
-            _targetObject = UnityEngine.Object.FindObjectOfType(t);
-            if (_targetObject == null) _targetObject = Resources.FindObjectsOfTypeAll(t).FirstOrDefault() as UnityEngine.Object;
-            _snapshot.Clear(); _changedFields.Clear();
-        }
-
-        private void ScanDifferences()
-        {
-            var fields = _targetObject.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-            foreach (var f in fields)
+            // Aktualizacja co 1 sekundę
+            if (Time.time > _updateTimer)
             {
-                string cur = f.GetValue(_targetObject)?.ToString() ?? "null";
-                if (_snapshot.ContainsKey(f.Name) && _snapshot[f.Name] != cur) _changedFields.Add(f.Name);
+                AnalyzeLocalPlayer();
+                _updateTimer = Time.time + 1.0f;
             }
         }
 
-        public void DrawWindow(int id)
+        public void DrawMenu()
         {
-            GUILayout.BeginVertical();
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("SNAPSHOT", GUILayout.Height(25))) TakeSnapshot();
-            _onlyShowChanged = GUILayout.Toggle(_onlyShowChanged, "Zmienione");
-            GUILayout.EndHorizontal();
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("<b>Player Analyzer</b>");
 
-            _searchQuery = GUILayout.TextField(_searchQuery);
-            int newIdx = GUILayout.SelectionGrid(_selectedClassIndex, _targetClasses, 2);
-            if (newIdx != _selectedClassIndex) { _selectedClassIndex = newIdx; _targetObject = null; }
+            _searchString = GUILayout.TextField(_searchString);
 
-            if (_targetObject != null)
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(300));
+            GUILayout.TextArea(_playerStats);
+            GUILayout.EndScrollView();
+
+            if (GUILayout.Button("Odśwież"))
             {
-                _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(400));
-                var fields = _targetObject.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                foreach (var f in fields)
-                {
-                    if (_onlyShowChanged && !_changedFields.Contains(f.Name)) continue;
-                    if (!string.IsNullOrEmpty(_searchQuery) && !f.Name.ToLower().Contains(_searchQuery.ToLower())) continue;
-                    bool ch = _changedFields.Contains(f.Name);
-                    GUILayout.Label($"<color={(ch ? "red" : "yellow")}>{f.Name}: {f.GetValue(_targetObject)}</color>");
-                }
-                GUILayout.EndScrollView();
+                AnalyzeLocalPlayer();
             }
+
             GUILayout.EndVertical();
-            GUI.DragWindow(new Rect(0, 0, 10000, 25));
         }
 
-        private void TakeSnapshot()
+        private void AnalyzeLocalPlayer()
         {
-            _snapshot.Clear(); _changedFields.Clear();
-            var fields = _targetObject.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-            foreach (var f in fields) _snapshot[f.Name] = f.GetValue(_targetObject)?.ToString() ?? "null";
+            try
+            {
+                if (global::Player.localPlayer == null)
+                {
+                    _playerStats = "Player.localPlayer is null";
+                    return;
+                }
+
+                var p = global::Player.localPlayer;
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+
+                sb.AppendLine($"Name: {p.name}");
+                sb.AppendLine($"Position: {p.transform.position}");
+
+                // Próba pobrania zdrowia/staminy przez Reflection (uniwersalne)
+                AppendField(sb, p, "health");
+                AppendField(sb, p, "maxHealth");
+                AppendField(sb, p, "stamina");
+                AppendField(sb, p, "maxStamina");
+                AppendField(sb, p, "speed");
+
+                _playerStats = sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                _playerStats = $"Error: {ex.Message}";
+            }
+        }
+
+        private void AppendField(System.Text.StringBuilder sb, object obj, string fieldName)
+        {
+            try
+            {
+                var field = obj.GetType().GetField(fieldName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                if (field != null)
+                {
+                    sb.AppendLine($"{fieldName}: {field.GetValue(obj)}");
+                }
+            }
+            catch { }
+        }
+
+        // Helper do szukania typów (zamiast MainHack.FindType)
+        public static Type GetTypeByName(string name)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                foreach (var type in assembly.GetTypes())
+                {
+                    if (type.Name == name)
+                        return type;
+                }
+            }
+            return null;
         }
     }
 }
