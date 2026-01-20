@@ -7,7 +7,7 @@ namespace WildTerraHook
 {
     public static class ConfigManager
     {
-        // Struktura przechowująca kolory (dostępna publicznie)
+        // Struktura przechowująca kolory
         public static class Colors
         {
             public static Color MobAggressive = Color.red;
@@ -19,12 +19,14 @@ namespace WildTerraHook
             public static Color ResGather = Color.white;
         }
 
+        // --- USTAWIENIA OGÓLNE ---
+        public static string Language = "en"; // Domyślnie angielski (pl/en)
+
         private static string _folderPath;
         private static string _filePath;
 
         static ConfigManager()
         {
-            // %appdata%/WildTerraHook/config.txt
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
             _filePath = Path.Combine(_folderPath, "config.txt");
 
@@ -39,6 +41,10 @@ namespace WildTerraHook
 
                 using (StreamWriter sw = new StreamWriter(_filePath))
                 {
+                    // Zapis języka
+                    sw.WriteLine($"Language={Language}");
+
+                    // Zapis kolorów
                     sw.WriteLine($"MobAggressive={ColorToString(Colors.MobAggressive)}");
                     sw.WriteLine($"MobPassive={ColorToString(Colors.MobPassive)}");
                     sw.WriteLine($"MobFleeing={ColorToString(Colors.MobFleeing)}");
@@ -58,7 +64,7 @@ namespace WildTerraHook
         {
             if (!File.Exists(_filePath))
             {
-                Save(); // Zapisz domyślne jeśli brak pliku
+                Save(); // Zapisz domyślne
                 return;
             }
 
@@ -73,8 +79,15 @@ namespace WildTerraHook
                     string key = parts[0].Trim();
                     string value = parts[1].Trim();
 
-                    Color col = StringToColor(value);
+                    // Ładowanie języka
+                    if (key == "Language")
+                    {
+                        Language = value;
+                        continue;
+                    }
 
+                    // Ładowanie kolorów
+                    Color col = StringToColor(value);
                     if (key == "MobAggressive") Colors.MobAggressive = col;
                     else if (key == "MobPassive") Colors.MobPassive = col;
                     else if (key == "MobFleeing") Colors.MobFleeing = col;
@@ -83,13 +96,9 @@ namespace WildTerraHook
                     else if (key == "ResGather") Colors.ResGather = col;
                 }
             }
-            catch
-            {
-                // W razie błędu zostajemy przy domyślnych
-            }
+            catch { }
         }
 
-        // --- Helpery ---
         private static string ColorToString(Color c)
         {
             return $"{c.r.ToString(CultureInfo.InvariantCulture)},{c.g.ToString(CultureInfo.InvariantCulture)},{c.b.ToString(CultureInfo.InvariantCulture)},{c.a.ToString(CultureInfo.InvariantCulture)}";
@@ -110,7 +119,7 @@ namespace WildTerraHook
                 }
             }
             catch { }
-            return Color.white; // Fallback
+            return Color.white;
         }
     }
 }

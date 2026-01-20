@@ -13,12 +13,12 @@ namespace WildTerraHook
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
-        // --- LATARKA (Parametry domyślne: 2.0 / 1000) ---
+        // --- LATARKA ---
         public float LightIntensity = 2.0f;
         public float LightRange = 1000f;
         private GameObject _lightObject;
 
-        // --- KAMERA (Zoom & FOV) ---
+        // --- KAMERA ---
         public float CameraFov = 60f;
         public float MaxZoomLimit = 100f;
         public float CameraAngle = 45f;
@@ -28,79 +28,52 @@ namespace WildTerraHook
         private bool _defaultsInitialized = false;
 
         // --- FULLBRIGHT CACHE ---
-        private ShadowQuality _originalShadows; // Do zapamiętania ustawień gry
-        private bool _fullbrightActive = false; // Czy już aktywowaliśmy fullbright?
+        private ShadowQuality _originalShadows;
+        private bool _fullbrightActive = false;
 
         // --- KAMERA CACHE ---
         private WTRPGCamera _rpgCamera;
         private global::CameraMMO _mmoCamera;
         private float _cacheTimer = 0f;
-        private string _debugInfo = "Szukanie...";
 
         // Metoda UPDATE
         public void Update()
         {
             if (global::Player.localPlayer == null) return;
 
-            // 1. Eternal Day
             if (EternalDayEnabled && global::EnviroSky.instance != null)
-            {
-                global::EnviroSky.instance.SetTime(
-                    global::EnviroSky.instance.GameTime.Years,
-                    global::EnviroSky.instance.GameTime.Days,
-                    12, 0, 0);
-            }
+                global::EnviroSky.instance.SetTime(global::EnviroSky.instance.GameTime.Years, global::EnviroSky.instance.GameTime.Days, 12, 0, 0);
 
-            // 2. No Fog
             if (NoFogEnabled)
             {
                 RenderSettings.fog = false;
                 RenderSettings.fogDensity = 0.0f;
-                RenderSettings.fogStartDistance = 100000f;
-                RenderSettings.fogEndDistance = 200000f;
             }
 
-            // 3. Fullbright (Jasność + Brak Cieni)
             HandleFullbright();
-
-            // 4. Latarka (Lokalna)
             HandleBrightPlayer();
-
-            // 5. FOV
             HandleFov();
-
-            // 6. Zoom Hack
-            if (ZoomHackEnabled)
-            {
-                HandleZoomHack();
-            }
+            if (ZoomHackEnabled) HandleZoomHack();
         }
 
         private void HandleFullbright()
         {
             if (FullbrightEnabled)
             {
-                // Jeśli dopiero włączamy, zapamiętajmy oryginalne cienie (żeby nie psuć ustawień na stałe)
                 if (!_fullbrightActive)
                 {
                     _originalShadows = QualitySettings.shadows;
                     _fullbrightActive = true;
                 }
-
-                // 1. Światło otoczenia na MAX
                 RenderSettings.ambientLight = Color.white;
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-
-                // 2. WYŁĄCZAMY CIENIE (To daje największy efekt widoczności)
                 QualitySettings.shadows = ShadowQuality.Disable;
             }
             else
             {
-                // Jeśli wyłączyliśmy opcję, przywróć cienie
                 if (_fullbrightActive)
                 {
                     QualitySettings.shadows = _originalShadows;
-                    // Przywracanie ambientu jest trudne bez cache, ale gra (Enviro) zazwyczaj sama to nadpisze w następnej klatce
                     _fullbrightActive = false;
                 }
             }
@@ -117,9 +90,7 @@ namespace WildTerraHook
                     _defaultsInitialized = true;
                 }
                 if (Math.Abs(Camera.main.fieldOfView - CameraFov) > 0.1f)
-                {
                     Camera.main.fieldOfView = CameraFov;
-                }
             }
         }
 
@@ -152,29 +123,10 @@ namespace WildTerraHook
         {
             _rpgCamera = null;
             _mmoCamera = null;
-
-            if (WTRPGCamera.instance != null)
-            {
-                _rpgCamera = WTRPGCamera.instance;
-                _debugInfo = "RPG (Instance)";
-                return;
-            }
-
+            if (WTRPGCamera.instance != null) { _rpgCamera = WTRPGCamera.instance; return; }
             _rpgCamera = UnityEngine.Object.FindObjectOfType<WTRPGCamera>();
-            if (_rpgCamera != null)
-            {
-                _debugInfo = "RPG (Find)";
-                return;
-            }
-
+            if (_rpgCamera != null) return;
             _mmoCamera = UnityEngine.Object.FindObjectOfType<global::CameraMMO>();
-            if (_mmoCamera != null)
-            {
-                _debugInfo = "MMO Camera";
-                return;
-            }
-
-            _debugInfo = "Brak Kamery";
         }
 
         private void HandleBrightPlayer()
@@ -191,7 +143,6 @@ namespace WildTerraHook
                     l.shadows = LightShadows.None;
                     l.color = Color.white;
                 }
-
                 var lightComp = _lightObject.GetComponent<Light>();
                 if (lightComp != null)
                 {
@@ -213,26 +164,34 @@ namespace WildTerraHook
         public void DrawMenu()
         {
             GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>Misc Options</b> [{_debugInfo}]");
+            GUILayout.Label($"<b>{Localization.Get("MISC_TITLE")}</b>");
 
-            // Pogoda i Światło
-            EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, "Eternal Day (12:00)");
-            NoFogEnabled = GUILayout.Toggle(NoFogEnabled, "No Fog (Usuń Mgłę)");
-            FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, "Fullbright (Bez Cieni)");
+            // Język
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(Localization.Get("MISC_LANG_SEL"), GUILayout.Width(120));
+            if (GUILayout.Button("English", ConfigManager.Language == "en" ? GUI.skin.box : GUI.skin.button)) ChangeLanguage("en");
+            if (GUILayout.Button("Polski", ConfigManager.Language == "pl" ? GUI.skin.box : GUI.skin.button)) ChangeLanguage("pl");
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10);
+
+            // Opcje
+            EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, Localization.Get("MISC_ETERNAL_DAY"));
+            NoFogEnabled = GUILayout.Toggle(NoFogEnabled, Localization.Get("MISC_NO_FOG"));
+            FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, Localization.Get("MISC_FULLBRIGHT"));
 
             GUILayout.Space(5);
 
             // Latarka
-            BrightPlayerEnabled = GUILayout.Toggle(BrightPlayerEnabled, "Bright Player (Latarka)");
+            BrightPlayerEnabled = GUILayout.Toggle(BrightPlayerEnabled, Localization.Get("MISC_BRIGHT_PLAYER"));
             if (BrightPlayerEnabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Moc: {LightIntensity:F1}", GUILayout.Width(60));
+                GUILayout.Label($"{Localization.Get("MISC_LIGHT_INT")}: {LightIntensity:F1}", GUILayout.Width(120));
                 LightIntensity = GUILayout.HorizontalSlider(LightIntensity, 1f, 5f);
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Zasięg: {LightRange:F0}", GUILayout.Width(60));
+                GUILayout.Label($"{Localization.Get("MISC_LIGHT_RNG")}: {LightRange:F0}", GUILayout.Width(120));
                 LightRange = GUILayout.HorizontalSlider(LightRange, 50f, 2000f);
                 GUILayout.EndHorizontal();
             }
@@ -240,32 +199,32 @@ namespace WildTerraHook
             GUILayout.Space(5);
 
             // Zoom Hack
-            ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, "Zoom Hack (Odblokuj)");
+            ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, Localization.Get("MISC_ZOOM_TITLE"));
             if (ZoomHackEnabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Limit Zoomu: {MaxZoomLimit:F0}", GUILayout.Width(100));
+                GUILayout.Label($"{Localization.Get("MISC_ZOOM_LIMIT")}: {MaxZoomLimit:F0}", GUILayout.Width(120));
                 MaxZoomLimit = GUILayout.HorizontalSlider(MaxZoomLimit, 20f, 200f);
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Kąt (45 def): {CameraAngle:F0}", GUILayout.Width(100));
+                GUILayout.Label($"{Localization.Get("MISC_CAM_ANGLE")}: {CameraAngle:F0}", GUILayout.Width(120));
                 CameraAngle = GUILayout.HorizontalSlider(CameraAngle, 10f, 89f);
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Czułość: {ZoomSpeed:F0}", GUILayout.Width(100));
+                GUILayout.Label($"{Localization.Get("MISC_ZOOM_SENS")}: {ZoomSpeed:F0}", GUILayout.Width(120));
                 ZoomSpeed = GUILayout.HorizontalSlider(ZoomSpeed, 10f, 200f);
                 GUILayout.EndHorizontal();
             }
 
             // FOV
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"FOV: {CameraFov:F0}", GUILayout.Width(60));
+            GUILayout.Label($"{Localization.Get("MISC_FOV")}: {CameraFov:F0}", GUILayout.Width(120));
             CameraFov = GUILayout.HorizontalSlider(CameraFov, 30f, 120f);
             GUILayout.EndHorizontal();
 
-            if (GUILayout.Button("Reset Domyślne"))
+            if (GUILayout.Button(Localization.Get("MISC_RESET")))
             {
                 CameraFov = _defaultFov;
                 MaxZoomLimit = 100f;
@@ -276,6 +235,16 @@ namespace WildTerraHook
             }
 
             GUILayout.EndVertical();
+        }
+
+        private void ChangeLanguage(string lang)
+        {
+            if (ConfigManager.Language != lang)
+            {
+                ConfigManager.Language = lang;
+                ConfigManager.Save();
+                Localization.LoadLanguage(lang);
+            }
         }
     }
 }
