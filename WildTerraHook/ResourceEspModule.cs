@@ -7,11 +7,12 @@ namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- GŁÓWNE PRZEŁĄCZNIKI ---
+        // --- USTAWIENIA ---
         public bool EspEnabled = false;
         public bool ShowBoxes = true;
-        public bool ShowGlow = true; // Zmieniono nazwę z Outlines na Glow
+        public bool ShowXRay = true; // "Glow" widoczny przez ściany
 
+        // Kategorie
         private bool _showResources = false;
         private bool _showMining = false;
         private bool _showGathering = false;
@@ -27,7 +28,7 @@ namespace WildTerraHook
         private bool _showColorMenu = false;
         private float _maxDistance = 150f;
 
-        // --- LISTY SZCZEGÓŁOWE ---
+        // Toggle Lists
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -35,12 +36,16 @@ namespace WildTerraHook
 
         private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
 
-        // --- DANE CACHE ---
+        // Cache
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
-        private float _scanInterval = 1.0f; // Skanowanie co 1s
+        private float _scanInterval = 1.0f;
 
-        // Style
+        // X-RAY MATERIAL SYSTEM
+        private Material _xrayMaterial;
+        private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
+
+        // GUI
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
@@ -57,13 +62,13 @@ namespace WildTerraHook
             public string HpText;
             public bool IsMob;
             public float Height;
-            // Cache rendererów do podświetlania
             public Renderer[] Renderers;
         }
 
         public ResourceEspModule()
         {
             InitializeLists();
+            CreateXRayMaterial();
         }
 
         private void InitializeLists()
@@ -81,16 +86,26 @@ namespace WildTerraHook
             foreach (var s in godsend) _godsendToggles[s] = false;
         }
 
+        private void CreateXRayMaterial()
+        {
+            // Tworzymy materiał, który ignoruje głębię (widoczny przez ściany)
+            // Używamy shadera Sprites/Default lub GUI/Text Shader bo są lekkie i zawsze dostępne
+            Shader shader = Shader.Find("Sprites/Default");
+            if (shader == null) shader = Shader.Find("GUI/Text Shader"); // Fallback
+
+            if (shader != null)
+            {
+                _xrayMaterial = new Material(shader);
+                _xrayMaterial.SetFloat("_ZTest", (float)UnityEngine.Rendering.CompareFunction.Always); // ZAWSZE RYSUJ
+                _xrayMaterial.renderQueue = 4000; // Overlay (na wierzchu)
+            }
+        }
+
         public void Update()
         {
             if (!EspEnabled)
             {
-                // Jeśli wyłączono ESP, upewnij się, że wyłączyliśmy glow na wszystkim
-                if (_cachedObjects.Count > 0)
-                {
-                    foreach (var obj in _cachedObjects) DisableGlow(obj.Renderers);
-                    _cachedObjects.Clear();
-                }
+                ClearAllXRay();
                 return;
             }
 
@@ -109,11 +124,8 @@ namespace WildTerraHook
             if (global::Player.localPlayer != null) playerPos = global::Player.localPlayer.transform.position;
             else if (Camera.main != null) playerPos = Camera.main.transform.position;
 
-            // Przygotuj nową listę
             List<CachedObject> newCache = new List<CachedObject>();
-
-            // Stara lista (do wyczyszczenia glow na obiektach, które zniknęły)
-            HashSet<GameObject> newObjectsSet = new HashSet<GameObject>();
+            HashSet<Renderer> currentRenderers = new HashSet<Renderer>();
 
             try
             {
@@ -141,7 +153,7 @@ namespace WildTerraHook
                         else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false)) matched = true;
                         else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false)) matched = true;
 
-                        if (!matched && _showOthers && !name.Contains("Player") && !name.Contains("Character"))
+                        if (!matched && _showOthers && !name.Contains("Player"))
                         {
                             AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f);
                             matched = true;
@@ -165,27 +177,54 @@ namespace WildTerraHook
             }
             catch { }
 
-            // LOGIKA GLOW:
-            // 1. Zidentyfikuj obiekty, które są na nowej liście
-            foreach (var item in newCache) newObjectsSet.Add(item.GameObject);
+            // --- ZARZĄDZANIE X-RAY (GLOW) ---
 
-            // 2. Wyłącz glow na obiektach, których już nie ma na liście (wyszły z zasięgu)
-            foreach (var oldItem in _cachedObjects)
+            // 1. Zbierz wszystkie renderery z nowej listy
+            foreach (var item in newCache)
             {
-                if (oldItem.GameObject != null && !newObjectsSet.Contains(oldItem.GameObject))
+                if (item.Renderers != null)
                 {
-                    DisableGlow(oldItem.Renderers);
+                    foreach (var r in item.Renderers) currentRenderers.Add(r);
                 }
             }
 
-            // 3. Zastosuj glow na nowej liście (jeśli włączone)
-            foreach (var item in newCache)
+            // 2. Wyczyść XRay z obiektów, których już nie ma na liście
+            List<Renderer> toRemove = new List<Renderer>();
+            foreach (var kvp in _originalMaterials)
             {
-                if (ShowGlow) ApplyGlow(item.Renderers, item.Color);
-                else DisableGlow(item.Renderers); // Jeśli wyłączono opcję globalnie
+                if (kvp.Key == null || !currentRenderers.Contains(kvp.Key))
+                {
+                    // Restore original materials
+                    if (kvp.Key != null) kvp.Key.materials = kvp.Value;
+                    toRemove.Add(kvp.Key);
+                }
+            }
+            foreach (var r in toRemove) _originalMaterials.Remove(r);
+
+            // 3. Aplikuj XRay na obecną listę
+            if (ShowXRay)
+            {
+                foreach (var item in newCache)
+                {
+                    ApplyXRay(item.Renderers, item.Color);
+                }
+            }
+            else
+            {
+                // Jeśli wyłączono globalnie, ale ESP działa - wyczyść wszystko
+                ClearAllXRay();
             }
 
             _cachedObjects = newCache;
+        }
+
+        private void ClearAllXRay()
+        {
+            foreach (var kvp in _originalMaterials)
+            {
+                if (kvp.Key != null) kvp.Key.materials = kvp.Value;
+            }
+            _originalMaterials.Clear();
         }
 
         private List<string> GetActiveKeys(Dictionary<string, bool> dict)
@@ -250,9 +289,7 @@ namespace WildTerraHook
 
         private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h)
         {
-            // Pobieramy renderery raz, przy dodawaniu do cache, żeby nie robić tego co klatkę
             var rends = go.GetComponentsInChildren<Renderer>();
-
             cache.Add(new CachedObject
             {
                 GameObject = go,
@@ -267,40 +304,51 @@ namespace WildTerraHook
             });
         }
 
-        // --- GLOW LOGIC (MATERIAL EMISSION) ---
+        // --- X-RAY LOGIC (MATERIAL OVERLAY) ---
 
-        private void ApplyGlow(Renderer[] renderers, Color glowColor)
+        private void ApplyXRay(Renderer[] renderers, Color color)
         {
-            if (renderers == null) return;
+            if (renderers == null || _xrayMaterial == null) return;
+
             foreach (var r in renderers)
             {
                 if (r == null) continue;
-                if (r is ParticleSystemRenderer) continue; // Ignoruj efekty cząsteczkowe
+                if (r is ParticleSystemRenderer) continue;
 
-                foreach (var mat in r.materials)
+                // Jeśli nie mamy zapisanego oryginału, zapisz go
+                if (!_originalMaterials.ContainsKey(r))
                 {
-                    if (mat == null) continue;
-
-                    // Włącz emisję
-                    if (!mat.IsKeywordEnabled("_EMISSION")) mat.EnableKeyword("_EMISSION");
-
-                    // Ustaw kolor (pomnóż dla jasności)
-                    mat.SetColor("_EmissionColor", glowColor * 1.5f);
+                    _originalMaterials[r] = r.materials; // Kopia tablicy
                 }
-            }
-        }
 
-        private void DisableGlow(Renderer[] renderers)
-        {
-            if (renderers == null) return;
-            foreach (var r in renderers)
-            {
-                if (r == null) continue;
-                foreach (var mat in r.materials)
+                // Sprawdź czy już ma dodany XRay na końcu
+                var currentMats = r.materials; // To tworzy instancję tablicy
+                bool hasXRay = false;
+
+                // Szybki check po nazwie shadera (instancja materiału ma nazwę "Name (Instance)")
+                if (currentMats.Length > 0)
                 {
-                    if (mat == null) continue;
-                    // Wyłącz emisję
-                    if (mat.IsKeywordEnabled("_EMISSION")) mat.DisableKeyword("_EMISSION");
+                    var lastMat = currentMats[currentMats.Length - 1];
+                    if (lastMat.shader == _xrayMaterial.shader)
+                    {
+                        // Już ma XRay, tylko zaktualizuj kolor
+                        if (lastMat.color != color) lastMat.color = new Color(color.r, color.g, color.b, 0.4f); // Półprzezroczysty
+                        hasXRay = true;
+                    }
+                }
+
+                if (!hasXRay)
+                {
+                    // Dodaj XRay jako ostatni materiał
+                    Material[] newMats = new Material[currentMats.Length + 1];
+                    Array.Copy(currentMats, newMats, currentMats.Length);
+
+                    // Stwórz instancję XRay dla tego obiektu (żeby mieć własny kolor)
+                    Material instanceXRay = new Material(_xrayMaterial);
+                    instanceXRay.color = new Color(color.r, color.g, color.b, 0.4f); // Alpha 0.4f dla X-Ray effect
+
+                    newMats[newMats.Length - 1] = instanceXRay;
+                    r.materials = newMats;
                 }
             }
         }
@@ -344,7 +392,7 @@ namespace WildTerraHook
 
                 GUILayout.BeginHorizontal();
                 ShowBoxes = GUILayout.Toggle(ShowBoxes, "Box ESP");
-                ShowGlow = GUILayout.Toggle(ShowGlow, "Shader Glow (Jasne)");
+                ShowXRay = GUILayout.Toggle(ShowXRay, "X-Ray Glow (Wallhack)");
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(10);
