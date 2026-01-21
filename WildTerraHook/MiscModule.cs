@@ -44,16 +44,36 @@ namespace WildTerraHook
             if (EternalDayEnabled && global::EnviroSky.instance != null)
                 global::EnviroSky.instance.SetTime(global::EnviroSky.instance.GameTime.Years, global::EnviroSky.instance.GameTime.Days, 12, 0, 0);
 
+            // Poprawiona obsługa No Fog
             if (NoFogEnabled)
             {
-                RenderSettings.fog = false;
-                RenderSettings.fogDensity = 0.0f;
+                ApplyNoFog();
             }
 
             HandleFullbright();
             HandleBrightPlayer();
             HandleFov();
             if (ZoomHackEnabled) HandleZoomHack();
+        }
+
+        private void ApplyNoFog()
+        {
+            // Zamiast wyłączać mgłę (co Enviro może nadpisać), odsuwamy ją poza horyzont.
+
+            // 1. Wymuś tryb Linear (tylko on obsługuje Start/End distance w prosty sposób)
+            RenderSettings.fogMode = FogMode.Linear;
+
+            // 2. Ustaw start mgły bardzo daleko (np. 20000 jednostek)
+            RenderSettings.fogStartDistance = 20000f;
+            RenderSettings.fogEndDistance = 30000f;
+
+            // 3. Wyzeruj gęstość (na wypadek gdyby gra wymusiła Exponential)
+            RenderSettings.fogDensity = 0.0f;
+
+            // 4. Ważne: Zostaw mgłę WŁĄCZNĄ. Jeśli ją wyłączysz, EnviroSky może to wykryć
+            // w swojej metodzie Update i przywrócić domyślne ustawienia (włączając ją i resetując dystans).
+            // Kiedy jest włączona, ale z naszymi wartościami, Enviro często "odpuszcza".
+            RenderSettings.fog = true;
         }
 
         private void HandleFullbright()
