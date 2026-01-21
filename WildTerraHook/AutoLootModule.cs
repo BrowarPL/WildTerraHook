@@ -13,33 +13,31 @@ namespace WildTerraHook
         // --- USTAWIENIA ---
         public bool Enabled = false;
         public bool DebugMode = false;
-        public float Delay = 0.15f;
+        public float Delay = 0.2f;
 
-        // --- DANE ---
+        // --- DANE UI ---
         private List<string> _allItemsCache = new List<string>();
         private string _searchFilter = "";
+        private string _newProfileName = "";
+
+        private Vector2 _scrollProfiles;
         private Vector2 _scrollWhite;
         private Vector2 _scrollAll;
         private Vector2 _scrollDebug;
 
+        // --- DANE LOOT ---
         private float _lootTimer = 0f;
         private string _status = "Idle";
         private List<string> _debugDetectedItems = new List<string>();
-
-        // --- CACHE ---
-        private MethodInfo _cmdGetItemMethod;
-        private bool _reflectionInit = false;
 
         // --- UPDATE ---
         public void Update()
         {
             if (global::Player.localPlayer == null) return;
 
-            // 1. Sprawdź instancję
             var containerUI = global::WTUIContainer.instance;
             if (containerUI == null) return;
 
-            // 2. Sprawdź widoczność panelu (czy okno jest otwarte)
             if (!IsPanelActive(containerUI))
             {
                 if (_status.Contains("Loot") || _status.Contains("Widzę")) _status = "Czekam na okno...";
@@ -59,53 +57,45 @@ namespace WildTerraHook
             {
                 _debugDetectedItems.Clear();
 
-                // 1. Pobierz dane slotów (tablica ItemSlot[])
-                // Używamy Reflection, aby dostać się do pola 'slots'
-                var dataSlots = GetDataSlots(ui);
-                if (dataSlots == null)
+                Transform panel = ui.transform.Find("WTContainerPanel");
+                if (panel == null || !panel.gameObject.activeSelf) return;
+
+                Transform content = RecursiveFindChild(panel, "Content");
+                if (content == null)
                 {
-                    _status = "Błąd: Brak danych slotów";
+                    _status = "Błąd: Brak Content";
                     return;
                 }
 
-                // 2. Znajdź aktywne przyciski slotów w UI (WTUIContainerSlot)
-                // Szukamy w dzieciach panelu, żeby nie złapać slotów z innych okien
-                var panel = GetPanel(ui);
-                if (panel == null) return;
+                var dataSlots = GetDataSlots(ui);
+                if (dataSlots == null) return;
 
-                var uiSlots = panel.GetComponentsInChildren<global::WTUIContainerSlot>(false); // false = tylko aktywne
-
+                // Znajdź przyciski (aktywne)
+                var uiSlots = panel.GetComponentsInChildren<global::WTUIContainerSlot>(false);
                 bool lootedSomething = false;
+
+                // Pobierz aktualną whitelistę z ConfigManagera
+                List<string> currentWhitelist = ConfigManager.GetActiveList();
 
                 foreach (var slotComp in uiSlots)
                 {
-                    // Odczytaj ID slotu z nazwy (mechanika gry: dragAndDropable.name = index)
                     if (slotComp.dragAndDropable == null) continue;
 
                     int realIndex;
                     if (!int.TryParse(slotComp.dragAndDropable.name, out realIndex)) continue;
 
-                    // Pobierz nazwę przedmiotu z DANYCH (ItemSlot)
                     string itemName = GetItemNameFromData(dataSlots, realIndex);
 
                     if (!string.IsNullOrEmpty(itemName))
                     {
                         if (DebugMode) _debugDetectedItems.Add($"[{realIndex}] {itemName}");
 
-                        if (Enabled && !lootedSomething && ConfigManager.AutoLootList.Contains(itemName))
+                        if (Enabled && !lootedSomething && currentWhitelist.Contains(itemName))
                         {
-                            // PRÓBA 1: Kliknij przycisk
                             if (slotComp.button != null && slotComp.button.interactable)
                             {
-                                _status = $"Loot (Btn): {itemName}";
+                                _status = $"Loot: {itemName}";
                                 slotComp.button.onClick.Invoke();
-                                lootedSomething = true;
-                            }
-                            // PRÓBA 2: Wyślij komendę (jeśli przycisk nie działa)
-                            else
-                            {
-                                _status = $"Loot (Cmd): {itemName}";
-                                SendLootCommand(realIndex);
                                 lootedSomething = true;
                             }
                         }
@@ -117,11 +107,188 @@ namespace WildTerraHook
             catch (Exception ex)
             {
                 _status = "Error: " + ex.Message;
-                Debug.LogError("[AutoLoot] " + ex.ToString());
             }
         }
 
-        // --- REFLECTION FIX (Kluczowa poprawka) ---
+        // --- GUI ---
+
+        public void DrawMenu()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")}</b>");
+
+            // Górny panel: Włącznik, Debug, Delay
+            GUILayout.BeginHorizontal();
+            Enabled = GUILayout.Toggle(Enabled, Localization.Get("LOOT_ENABLE"), GUILayout.Width(150));
+            DebugMode = GUILayout.Toggle(DebugMode, "Debug", GUILayout.Width(70));
+            GUILayout.Label($"{Localization.Get("LOOT_DELAY")}: {Delay:F2}s", GUILayout.Width(80));
+            Delay = GUILayout.HorizontalSlider(Delay, 0.05f, 1.0f);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label($"{Localization.Get("LOOT_STATUS")}: {_status}");
+
+            if (DebugMode) DrawDebugSection();
+
+            GUILayout.Space(5);
+
+            // TRZY KOLUMNY
+            GUILayout.BeginHorizontal();
+
+            // 1. ZARZĄDZANIE PROFILAMI
+            DrawProfileManager();
+
+            // 2. ZAWARTOŚĆ PROFILU
+            DrawCurrentProfileContent();
+
+            // 3. WSZYSTKIE ITEMY
+            DrawAllItemsList();
+
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+        }
+
+        private void DrawDebugSection()
+        {
+            GUILayout.Label("<b>--- WYKRYTE ---</b>");
+            _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(80));
+            if (_debugDetectedItems.Count > 0)
+                foreach (var s in _debugDetectedItems) GUILayout.Label(s);
+            else
+                GUILayout.Label("...");
+            GUILayout.EndScrollView();
+        }
+
+        private void DrawProfileManager()
+        {
+            GUILayout.BeginVertical("box", GUILayout.Width(170));
+            GUILayout.Label($"<b>{Localization.Get("LOOT_PROFILES")}</b>");
+
+            // Tworzenie nowego
+            GUILayout.BeginHorizontal();
+            _newProfileName = GUILayout.TextField(_newProfileName);
+            if (GUILayout.Button("+", GUILayout.Width(25)))
+            {
+                if (!string.IsNullOrEmpty(_newProfileName) && !ConfigManager.LootProfiles.ContainsKey(_newProfileName))
+                {
+                    ConfigManager.LootProfiles.Add(_newProfileName, new List<string>());
+                    ConfigManager.ActiveProfile = _newProfileName; // Auto przełącz
+                    ConfigManager.Save();
+                    _newProfileName = "";
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            // Lista profili
+            _scrollProfiles = GUILayout.BeginScrollView(_scrollProfiles, GUILayout.Height(250));
+
+            // Kopia kluczy do iteracji
+            var profileNames = new List<string>(ConfigManager.LootProfiles.Keys);
+
+            foreach (var profile in profileNames)
+            {
+                // Styl aktywnego profilu
+                GUIStyle style = (profile == ConfigManager.ActiveProfile) ? GUI.skin.box : GUI.skin.label;
+
+                GUILayout.BeginHorizontal(style);
+
+                // Przycisk wyboru
+                if (GUILayout.Button(profile, GUI.skin.label))
+                {
+                    ConfigManager.ActiveProfile = profile;
+                    ConfigManager.Save();
+                }
+
+                // Przycisk usuwania (nie pozwól usunąć jedynego/ostatniego)
+                if (ConfigManager.LootProfiles.Count > 1)
+                {
+                    if (GUILayout.Button("X", GUILayout.Width(20)))
+                    {
+                        ConfigManager.LootProfiles.Remove(profile);
+                        // Jeśli usunęliśmy aktywny, przełącz na inny
+                        if (ConfigManager.ActiveProfile == profile)
+                            ConfigManager.ActiveProfile = ConfigManager.LootProfiles.Keys.First();
+                        ConfigManager.Save();
+                    }
+                }
+
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndScrollView();
+            GUILayout.EndVertical();
+        }
+
+        private void DrawCurrentProfileContent()
+        {
+            GUILayout.BeginVertical("box", GUILayout.Width(190));
+            GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_WHITE")}</b>");
+
+            List<string> currentList = ConfigManager.GetActiveList();
+
+            _scrollWhite = GUILayout.BeginScrollView(_scrollWhite, GUILayout.Height(280));
+
+            // Kopia listy do bezpiecznej modyfikacji
+            var listCopy = new List<string>(currentList);
+            foreach (var item in listCopy)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(item);
+                if (GUILayout.Button("X", GUILayout.Width(25)))
+                {
+                    currentList.Remove(item);
+                    ConfigManager.Save();
+                }
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndScrollView();
+            GUILayout.EndVertical();
+        }
+
+        private void DrawAllItemsList()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_ALL")}</b>");
+
+            GUILayout.BeginHorizontal();
+            _searchFilter = GUILayout.TextField(_searchFilter);
+            if (GUILayout.Button("R", GUILayout.Width(25))) RefreshAllItems();
+            GUILayout.EndHorizontal();
+
+            _scrollAll = GUILayout.BeginScrollView(_scrollAll, GUILayout.Height(280));
+
+            if (_allItemsCache.Count == 0)
+            {
+                if (GUILayout.Button(Localization.Get("LOOT_BTN_REFRESH"))) RefreshAllItems();
+            }
+            else
+            {
+                List<string> currentList = ConfigManager.GetActiveList();
+
+                foreach (var item in _allItemsCache)
+                {
+                    if (!string.IsNullOrEmpty(_searchFilter) && item.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    // Jeśli item już jest na aktywnej liście, nie pokazuj przycisku dodania (lub wyszarz)
+                    bool alreadyAdded = currentList.Contains(item);
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(item);
+
+                    if (!alreadyAdded)
+                    {
+                        if (GUILayout.Button("+", GUILayout.Width(25)))
+                        {
+                            currentList.Add(item);
+                            ConfigManager.Save();
+                        }
+                    }
+                    GUILayout.EndHorizontal();
+                }
+            }
+            GUILayout.EndScrollView();
+            GUILayout.EndVertical();
+        }
+
+        // --- POMOCNICY (BEZ ZMIAN) ---
 
         private Array GetDataSlots(global::WTUIContainer ui)
         {
@@ -138,174 +305,64 @@ namespace WildTerraHook
             try
             {
                 if (index < 0 || index >= dataSlots.Length) return null;
-
-                // 1. ItemSlot (Struct)
                 object slotObj = dataSlots.GetValue(index);
                 if (slotObj == null) return null;
 
-                // Sprawdź ilość (amount)
                 var fAmount = slotObj.GetType().GetField("amount");
                 if (fAmount != null)
                 {
                     int amount = (int)fAmount.GetValue(slotObj);
-                    if (amount <= 0) return null; // Pusty slot
+                    if (amount <= 0) return null;
                 }
 
-                // 2. Item (Field w ItemSlot)
                 var fItem = slotObj.GetType().GetField("item");
                 if (fItem == null) return null;
                 object itemObj = fItem.GetValue(slotObj);
 
-                // 3. Data (PROPERTY w Item, to był błąd wcześniej!)
-                // Item ma właściwość 'data' zwracającą ScriptableItem
                 var pData = itemObj.GetType().GetProperty("data");
                 if (pData == null) return null;
 
                 object scriptableItem = pData.GetValue(itemObj, null);
                 if (scriptableItem == null) return null;
 
-                // 4. Name (Property w ScriptableObject)
                 var pName = scriptableItem.GetType().GetProperty("name");
                 if (pName != null) return pName.GetValue(scriptableItem, null) as string;
 
                 return null;
             }
-            catch (Exception) { return null; }
-        }
-
-        private void SendLootCommand(int index)
-        {
-            try
-            {
-                var player = global::Player.localPlayer;
-                if (!_reflectionInit)
-                {
-                    // Szukamy: CmdGetFromContainerToInventory(int)
-                    _cmdGetItemMethod = player.GetType().GetMethod("CmdGetFromContainerToInventory", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    _reflectionInit = true;
-                }
-
-                if (_cmdGetItemMethod != null)
-                {
-                    _cmdGetItemMethod.Invoke(player, new object[] { index });
-                }
-            }
-            catch { }
-        }
-
-        private GameObject GetPanel(global::WTUIContainer ui)
-        {
-            try
-            {
-                var fPanel = ui.GetType().GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (fPanel != null) return fPanel.GetValue(ui) as GameObject;
-            }
-            catch { }
-            return null;
+            catch { return null; }
         }
 
         private bool IsPanelActive(global::WTUIContainer ui)
         {
-            var panel = GetPanel(ui);
-            return panel != null && panel.activeSelf;
+            try
+            {
+                var fPanel = ui.GetType().GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (fPanel != null)
+                {
+                    var panelObj = fPanel.GetValue(ui) as GameObject;
+                    return panelObj != null && panelObj.activeSelf;
+                }
+            }
+            catch { }
+            return false;
         }
 
-        // --- GUI ---
-
-        public void DrawMenu()
+        private Transform RecursiveFindChild(Transform parent, string childName)
         {
-            GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")}</b>");
-
-            Enabled = GUILayout.Toggle(Enabled, Localization.Get("LOOT_ENABLE"));
-            DebugMode = GUILayout.Toggle(DebugMode, "Tryb Debugowania (Pokaż Itemki)");
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{Localization.Get("LOOT_DELAY")}: {Delay:F2}s", GUILayout.Width(100));
-            Delay = GUILayout.HorizontalSlider(Delay, 0.05f, 1.0f);
-            GUILayout.EndHorizontal();
-
-            GUILayout.Label($"{Localization.Get("LOOT_STATUS")}: {_status}");
-
-            if (DebugMode)
+            foreach (Transform child in parent)
             {
-                GUILayout.Label("<b>--- WYKRYTE W OKNIE ---</b>");
-                _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(100));
-                if (_debugDetectedItems.Count > 0)
-                {
-                    foreach (var s in _debugDetectedItems) GUILayout.Label(s);
-                }
-                else
-                {
-                    GUILayout.Label("(Otwórz kontener aby zobaczyć)");
-                }
-                GUILayout.EndScrollView();
-                GUILayout.Space(10);
+                if (child.name == childName) return child;
+                Transform found = RecursiveFindChild(child, childName);
+                if (found != null) return found;
             }
-
-            GUILayout.BeginHorizontal();
-
-            // Whitelista
-            GUILayout.BeginVertical("box", GUILayout.Width(180));
-            GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_WHITE")}</b>");
-            _scrollWhite = GUILayout.BeginScrollView(_scrollWhite, GUILayout.Height(200));
-            var listCopy = new List<string>(ConfigManager.AutoLootList);
-            foreach (var item in listCopy)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label(item);
-                if (GUILayout.Button("X", GUILayout.Width(25)))
-                {
-                    ConfigManager.AutoLootList.Remove(item);
-                    ConfigManager.Save();
-                }
-                GUILayout.EndHorizontal();
-            }
-            GUILayout.EndScrollView();
-            GUILayout.EndVertical();
-
-            // Lista Wszystkich
-            GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_ALL")}</b>");
-
-            GUILayout.BeginHorizontal();
-            _searchFilter = GUILayout.TextField(_searchFilter);
-            if (GUILayout.Button(Localization.Get("LOOT_BTN_REFRESH"), GUILayout.Width(60))) RefreshAllItems();
-            GUILayout.EndHorizontal();
-
-            _scrollAll = GUILayout.BeginScrollView(_scrollAll, GUILayout.Height(200));
-            if (_allItemsCache.Count == 0)
-            {
-                if (GUILayout.Button(Localization.Get("LOOT_BTN_REFRESH"))) RefreshAllItems();
-            }
-            else
-            {
-                foreach (var item in _allItemsCache)
-                {
-                    if (!string.IsNullOrEmpty(_searchFilter) && item.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                    if (ConfigManager.AutoLootList.Contains(item)) continue;
-
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label(item);
-                    if (GUILayout.Button(Localization.Get("LOOT_BTN_ADD"), GUILayout.Width(40)))
-                    {
-                        ConfigManager.AutoLootList.Add(item);
-                        ConfigManager.Save();
-                    }
-                    GUILayout.EndHorizontal();
-                }
-            }
-            GUILayout.EndScrollView();
-            GUILayout.EndVertical();
-
-            GUILayout.EndHorizontal();
-            GUILayout.EndVertical();
+            return null;
         }
 
         private void RefreshAllItems()
         {
             _allItemsCache.Clear();
-            _status = "Skanowanie bazy...";
+            _status = "Skanowanie...";
             try
             {
                 var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
@@ -326,12 +383,10 @@ namespace WildTerraHook
                                     var fItem = slotObj.GetType().GetField("item");
                                     if (fItem == null) continue;
                                     var itemObj = fItem.GetValue(slotObj);
-
                                     var pData = itemObj.GetType().GetProperty("data");
                                     if (pData == null) continue;
                                     var data = pData.GetValue(itemObj, null);
                                     if (data == null) continue;
-
                                     var pName = data.GetType().GetProperty("name");
                                     if (pName != null)
                                     {
@@ -344,7 +399,6 @@ namespace WildTerraHook
                         }
                     }
                 }
-
                 _allItemsCache.Sort();
                 _status = $"Gotowe ({_allItemsCache.Count})";
             }

@@ -1,213 +1,37 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using UnityEngine;
+﻿// (Fragment metody GetDefaultEn i GetDefaultPl - podmień tylko sekcję LOOT lub dodaj nowe klucze)
 
-namespace WildTerraHook
-{
-    public static class Localization
-    {
-        private static Dictionary<string, string> _currentDict = new Dictionary<string, string>();
-        private static string _folderPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
-
-        public static void Init()
-        {
-            if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
-            LoadLanguage(ConfigManager.Language);
-        }
-
-        public static void LoadLanguage(string langCode)
-        {
-            _currentDict.Clear();
-            string fileName = $"lang_{langCode}.txt";
-            string path = Path.Combine(_folderPath, fileName);
-
-            bool loadedFromDisk = false;
-            if (File.Exists(path))
-            {
-                try
-                {
-                    string[] lines = File.ReadAllLines(path);
-                    foreach (var line in lines)
-                    {
-                        if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
-                        var parts = line.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim();
-                    }
-                    loadedFromDisk = true;
-                }
-                catch { Debug.LogError("[Localization] Błąd odczytu pliku."); }
-            }
-
-            // AUTO-FIX: Sprawdź czy jest klucz LOOT_TITLE (nowy moduł)
-            if (!loadedFromDisk || !_currentDict.ContainsKey("LOOT_TITLE"))
-            {
-                string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
-                try { File.WriteAllText(path, content); } catch { }
-                LoadHardcoded(langCode);
-            }
-        }
-
-        public static string Get(string key)
-        {
-            if (_currentDict.ContainsKey(key)) return _currentDict[key];
-            return key;
-        }
-
-        private static void LoadHardcoded(string lang)
-        {
-            _currentDict.Clear();
-            string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn();
-            foreach (var line in data.Split('\n'))
-            {
-                if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
-                var parts = line.Split(new[] { '=' }, 2);
-                if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim();
-            }
-        }
-
-        private static string GetDefaultEn()
-        {
-            return @"
-MENU_TITLE=Wild Terra 2 Hack
-MENU_TOGGLE_INFO=Press INSERT to Toggle Menu | DELETE to Hide All
-
-MISC_TITLE=Misc Options
-MISC_ETERNAL_DAY=Eternal Day (12:00)
-MISC_NO_FOG=No Fog
-MISC_FULLBRIGHT=Fullbright (No Shadows)
-MISC_BRIGHT_PLAYER=Bright Player (Flashlight)
-MISC_LIGHT_INT=Intensity
-MISC_LIGHT_RNG=Range
-MISC_ZOOM_TITLE=Zoom Hack (Unlock)
-MISC_ZOOM_LIMIT=Zoom Limit
-MISC_CAM_ANGLE=Cam Angle (Vert)
-MISC_ZOOM_SENS=Sensitivity
-MISC_FOV=Camera FOV
-MISC_RESET=Reset Defaults
-MISC_LANG_SEL=Language / Język
-
-ESP_MAIN_BTN=[ ENABLE / DISABLE ESP ]
-ESP_RES_TITLE=RESOURCES
-ESP_MOB_TITLE=MOBS
-ESP_DIST=Distance
-ESP_EDIT_COLORS=Edit ESP Colors
-ESP_HIDE_COLORS=Hide Colors
-ESP_SAVE_COLORS=Save Colors
-ESP_CAT_MINING=Mining
-ESP_CAT_GATHER=Gathering
-ESP_CAT_LUMBER=Lumberjacking
-ESP_CAT_GODSEND=Godsend (Chests)
-ESP_CAT_OTHERS=Others
-ESP_MOB_AGGRO=Aggressive (Boss/LargeFox)
-ESP_MOB_RETAL=Retaliating (Fox/Horse)
-ESP_MOB_PASSIVE=Passive (Deer/Hare)
-
-COLOR_MOB_AGGRO=Aggressive Mobs
-COLOR_MOB_PASSIVE=Passive Mobs
-COLOR_MOB_FLEE=Fleeing/Retal Mobs
-COLOR_RES_MINE=Mining Nodes
-COLOR_RES_GATHER=Gatherables
-COLOR_RES_LUMB=Trees
-
-FISH_TITLE=Fish Bot (Smart)
-FISH_ENABLE=Enable Bot (Cast manually first)
-FISH_TIMEOUT=Timeout (s)
-FISH_DEBUG_WAIT=WAITING FOR MANUAL CAST...
-FISH_DEBUG_RESET=RESET.
-FISH_DEBUG_CALIB=Calibrated! Target:
-FISH_DEBUG_MANUAL=CAST MANUALLY TO START!
-FISH_DEBUG_ATTACK=ATTACK! Interrupting.
-FISH_STATE=STATE
-FISH_TIMER=Timer
-FISH_ATT_ID=Attack ID
-FISH_ROD_ID=Rod ID
-FISH_TARGET=Target
-FISH_NONE=None
-
-LOOT_TITLE=Auto Loot (Whitelist)
-LOOT_ENABLE=Enable Auto Loot
+// --- ENGLISH ---
+// ...
+LOOT_TITLE = Auto Loot & Profiles
+LOOT_ENABLE = Enable Auto Loot
 LOOT_DELAY=Delay (s)
 LOOT_FILTER=Search Item...
 LOOT_BTN_ADD=Add
 LOOT_BTN_REMOVE=Remove
-LOOT_BTN_REFRESH=Refresh Item List
-LOOT_HEADER_WHITE=Whitelist
-LOOT_HEADER_ALL=All Items
+LOOT_BTN_REFRESH=Refresh
+LOOT_HEADER_WHITE=Current List Items
+LOOT_HEADER_ALL=Available Items
 LOOT_STATUS=Status
-".Trim();
-        }
+LOOT_PROFILES=Profiles (Lists)
+LOOT_NEW_NAME=New List Name
+LOOT_CREATE=Create
+LOOT_DELETE=Del
+LOOT_ACTIVATE=Load
 
-        private static string GetDefaultPl()
-        {
-            return @"
-MENU_TITLE=Wild Terra 2 Hack (PL)
-MENU_TOGGLE_INFO=Wciśnij INSERT aby ukryć Menu | DELETE aby ukryć Wszystko
-
-MISC_TITLE=Różne Opcje (Misc)
-MISC_ETERNAL_DAY=Wieczny Dzień (12:00)
-MISC_NO_FOG=Brak Mgły (No Fog)
-MISC_FULLBRIGHT=Fullbright (Brak Cieni)
-MISC_BRIGHT_PLAYER=Latarka Gracza
-MISC_LIGHT_INT=Moc Światła
-MISC_LIGHT_RNG=Zasięg
-MISC_ZOOM_TITLE=Zoom Hack (Odblokuj Kamerę)
-MISC_ZOOM_LIMIT=Limit Oddalenia
-MISC_CAM_ANGLE=Kąt Patrzenia (Pion)
-MISC_ZOOM_SENS=Czułość Zoomu
-MISC_FOV=Kąt Widzenia (FOV)
-MISC_RESET=Przywróć Domyślne
-MISC_LANG_SEL=Język / Language
-
-ESP_MAIN_BTN=[ WŁĄCZ / WYŁĄCZ ESP ]
-ESP_RES_TITLE=SUROWCE (RESOURCES)
-ESP_MOB_TITLE=MOBY (MOBS)
-ESP_DIST=Dystans Rysowania
-ESP_EDIT_COLORS=Edytuj Kolory ESP
-ESP_HIDE_COLORS=Ukryj Edytor Kolorów
-ESP_SAVE_COLORS=Zapisz Konfigurację
-ESP_CAT_MINING=Górnictwo (Mining)
-ESP_CAT_GATHER=Zbieractwo (Gathering)
-ESP_CAT_LUMBER=Drwalnictwo (Lumber)
-ESP_CAT_GODSEND=Skarby (Godsend)
-ESP_CAT_OTHERS=Inne (Others)
-ESP_MOB_AGGRO=Agresywne (Boss/LargeFox)
-ESP_MOB_RETAL=Oddające (Lis/Koń)
-ESP_MOB_PASSIVE=Pasywne (Jeleń/Zając)
-
-COLOR_MOB_AGGRO=Kolor: Agresywne
-COLOR_MOB_PASSIVE=Kolor: Pasywne
-COLOR_MOB_FLEE=Kolor: Oddające
-COLOR_RES_MINE=Kolor: Skały/Rudy
-COLOR_RES_GATHER=Kolor: Zbieractwo
-COLOR_RES_LUMB=Kolor: Drzewa
-
-FISH_TITLE=Fish Bot (Inteligentny)
-FISH_ENABLE=Włącz Bota (Zarzuć ręcznie)
-FISH_TIMEOUT=Limit Czasu (s)
-FISH_DEBUG_WAIT=OCZEKIWANIE NA RĘCZNE...
-FISH_DEBUG_RESET=RESET.
-FISH_DEBUG_CALIB=Skalibrowano! Cel:
-FISH_DEBUG_MANUAL=ZARZUĆ RĘCZNIE ABY ROZPOCZĄĆ!
-FISH_DEBUG_ATTACK=ATAK! Przerywam.
-FISH_STATE=STAN
-FISH_TIMER=Licznik
-FISH_ATT_ID=Atak ID
-FISH_ROD_ID=Wędka ID
-FISH_TARGET=Cel
-FISH_NONE=Brak
-
-LOOT_TITLE=Auto Loot (Whitelist)
+// --- POLSKI ---
+// ...
+LOOT_TITLE=Auto Loot i Listy
 LOOT_ENABLE=Włącz Auto Loot
 LOOT_DELAY=Opóźnienie (s)
-LOOT_FILTER=Szukaj Przedmiotu...
+LOOT_FILTER=Szukaj...
 LOOT_BTN_ADD=Dodaj
 LOOT_BTN_REMOVE=Usuń
-LOOT_BTN_REFRESH=Odśwież Listę Itemów
-LOOT_HEADER_WHITE=Twoja Whitelista
-LOOT_HEADER_ALL=Dostępne Przedmioty
+LOOT_BTN_REFRESH=Odśwież
+LOOT_HEADER_WHITE=Zawartość Listy
+LOOT_HEADER_ALL=Wszystkie Itemy
 LOOT_STATUS=Status
-".Trim();
-        }
-    }
-}
+LOOT_PROFILES=Twoje Listy (Profile)
+LOOT_NEW_NAME=Nazwa nowej listy
+LOOT_CREATE=Stwórz
+LOOT_DELETE=Usuń
+LOOT_ACTIVATE=Wczytaj

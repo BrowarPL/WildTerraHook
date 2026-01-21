@@ -9,15 +9,16 @@ namespace WildTerraHook
         private ResourceEspModule _espModule;
         private MiscModule _miscModule;
         private ColorFishingModule _fishingModule;
-        private AutoLootModule _lootModule; // NOWOŚĆ
+        private AutoLootModule _lootModule;
 
         // --- GUI ---
-        private Rect _menuRect = new Rect(20, 20, 420, 600); // Nieco szersze menu dla tabeli lootu
+        // POSZERZONE OKNO DLA LEPSZEGO WYGLĄDU TABELI
+        private Rect _menuRect = new Rect(20, 20, 600, 600);
+
         private bool _showMenu = true;
         private bool _globalUiVisible = true;
 
         private int _selectedTab = 0;
-        // Dodano "Loot" do zakładek
         private string[] _tabNames = { "ESP", "Fishing", "Loot", "Misc" };
 
         public void Start()
@@ -28,7 +29,7 @@ namespace WildTerraHook
             _espModule = new ResourceEspModule();
             _miscModule = new MiscModule();
             _fishingModule = new ColorFishingModule();
-            _lootModule = new AutoLootModule(); // Inicjalizacja
+            _lootModule = new AutoLootModule();
         }
 
         public void Update()
@@ -43,11 +44,10 @@ namespace WildTerraHook
                 _showMenu = !_showMenu;
             }
 
-            // Update wszystkich modułów
             _espModule.Update();
             _miscModule.Update();
             _fishingModule.Update();
-            _lootModule.Update(); // Update Lootera
+            _lootModule.Update();
         }
 
         public void OnGUI()
@@ -73,18 +73,10 @@ namespace WildTerraHook
 
             switch (_selectedTab)
             {
-                case 0: // ESP
-                    _espModule.DrawMenu();
-                    break;
-                case 1: // Fishing
-                    _fishingModule.DrawMenu();
-                    break;
-                case 2: // Loot (NOWOŚĆ)
-                    _lootModule.DrawMenu();
-                    break;
-                case 3: // Misc
-                    _miscModule.DrawMenu();
-                    break;
+                case 0: _espModule.DrawMenu(); break;
+                case 1: _fishingModule.DrawMenu(); break;
+                case 2: _lootModule.DrawMenu(); break;
+                case 3: _miscModule.DrawMenu(); break;
             }
 
             GUI.DragWindow();
