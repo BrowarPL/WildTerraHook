@@ -28,9 +28,14 @@ namespace WildTerraHook
             if (!Enabled) return;
             if (global::Player.localPlayer == null) return;
 
-            // Sprawdzamy, czy kontener jest widoczny
+            // 1. Sprawdź instancję okna kontenera
             var containerUI = global::WTUIContainer.instance;
-            if (containerUI == null || !IsContainerVisible(containerUI))
+            if (containerUI == null) return;
+
+            // 2. Sprawdź czy okno jest fizycznie otwarte (GameObject.activeSelf)
+            // W Wild Terra 2 skrypt jest na obiekcie, ale ma dziecko "WTContainerPanel"
+            // Używamy bezpiecznej metody sprawdzenia
+            if (!IsPanelActive(containerUI))
             {
                 if (_status.StartsWith("Loot")) _status = "Czekam na okno...";
                 return;
@@ -38,40 +43,63 @@ namespace WildTerraHook
 
             if (Time.time < _lootTimer) return;
 
-            // Uruchamiamy logikę "Button Invoke"
-            if (ProcessVisibleSlots())
+            // 3. Uruchom logikę "Hybrid UI Walker"
+            if (ProcessActiveUiSlots(containerUI))
             {
                 _lootTimer = Time.time + Delay;
             }
         }
 
-        private bool ProcessVisibleSlots()
+        private bool ProcessActiveUiSlots(global::WTUIContainer ui)
         {
             try
             {
-                // Znajdź wszystkie aktywne sloty kontenera na scenie
-                // WTUIContainerSlot to klasa obsługująca wyświetlanie itemka w oknie lootowania
-                var slots = UnityEngine.Object.FindObjectsOfType<global::WTUIContainerSlot>();
+                // Znajdujemy transform 'Content', który trzyma sloty.
+                // Ścieżka z kodu gry: "WTContainerPanel/Scroll View/ContentBackground/Viewport/Content"
+                // Ale bezpieczniej poszukać komponentu GridLayoutGroup lub po prostu iterować w dół.
 
-                foreach (var slot in slots)
+                Transform panel = ui.transform.Find("WTContainerPanel");
+                if (panel == null || !panel.gameObject.activeSelf) return false;
+
+                // Szukamy kontenera na sloty (Content)
+                // Najczęściej jest głęboko w hierarchii scroll view
+                Transform content = RecursiveFindChild(panel, "Content");
+                if (content == null)
                 {
-                    // Ignoruj nieaktywne (np. z puli, niewidoczne)
-                    if (slot == null || !slot.gameObject.activeInHierarchy) continue;
+                    _status = "Błąd: Nie znaleziono 'Content'";
+                    return false;
+                }
 
-                    // Pobierz nazwę przedmiotu ze slotu
-                    string itemName = GetItemNameFromSlot(slot);
+                // Iterujemy po wszystkich dzieciach (slotach)
+                foreach (Transform child in content)
+                {
+                    if (!child.gameObject.activeSelf) continue;
+
+                    // Pobieramy komponent slotu
+                    var slotComp = child.GetComponent<global::WTUIContainerSlot>();
+                    if (slotComp == null) continue;
+
+                    // KLUCZOWE: Odczytujemy ID slotu z dragAndDropable.name (tak robi gra w SetSlot)
+                    if (slotComp.dragAndDropable == null) continue;
+
+                    int realIndex;
+                    if (!int.TryParse(slotComp.dragAndDropable.name, out realIndex)) continue;
+
+                    // Teraz sprawdzamy dane w tablicy 'slots' używając prawdziwego indeksu
+                    string itemName = GetItemNameFromDataArray(ui, realIndex);
 
                     if (!string.IsNullOrEmpty(itemName) && ConfigManager.AutoLootList.Contains(itemName))
                     {
-                        // Sprawdź czy slot ma przycisk
-                        if (slot.button != null && slot.button.interactable)
+                        // Sprawdź czy przycisk działa
+                        if (slotComp.button != null && slotComp.button.interactable)
                         {
                             _status = $"Loot: {itemName}";
 
-                            // KLUCZOWY MOMENT: Wymuszamy kliknięcie przycisku
-                            slot.button.onClick.Invoke();
+                            // INVOKE! To wywoła delegate przypisany w SetSlot:
+                            // Player.localPlayer.CmdGetFromContainerToInventory(index);
+                            slotComp.button.onClick.Invoke();
 
-                            return true; // Jeden item na cykl (Delay)
+                            return true; // Jeden na cykl
                         }
                     }
                 }
@@ -84,77 +112,39 @@ namespace WildTerraHook
             return false;
         }
 
-        private string GetItemNameFromSlot(global::WTUIContainerSlot slot)
+        // --- POMOCNICY REFLECTION ---
+
+        private string GetItemNameFromDataArray(global::WTUIContainer ui, int index)
         {
             try
             {
-                // W Wild Terra 2, dane przedmiotu często siedzą w Tooltipie podpiętym pod slot
-                // lub w polu, które nie jest publicznie wystawione w prosty sposób.
-                // Używamy Reflection, by wyciągnąć 'itemSlot' -> 'item' -> 'data' -> 'name'
-
-                object itemSlotObj = null;
-
-                // Metoda A: Sprawdź pole 'tooltip' (WTUIShowToolTip), które ma 'itemSlot'
-                if (slot.tooltip != null)
+                // Dostęp do tablicy: public ItemSlot[] slots;
+                var fSlots = ui.GetType().GetField("slots", BindingFlags.Public | BindingFlags.Instance);
+                if (fSlots != null)
                 {
-                    var fSlot = slot.tooltip.GetType().GetField("itemSlot", BindingFlags.Public | BindingFlags.Instance);
-                    if (fSlot != null) itemSlotObj = fSlot.GetValue(slot.tooltip);
-                }
-
-                // Metoda B: Jeśli A zawiodło, spróbuj znaleźć pole w samym slocie (np. przez dziedziczenie)
-                if (itemSlotObj == null)
-                {
-                    // Szukamy czegokolwiek co wygląda na ItemSlot w polach slotu
-                    var fields = slot.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    foreach (var f in fields)
+                    var array = fSlots.GetValue(ui) as Array;
+                    if (array != null && index >= 0 && index < array.Length)
                     {
-                        if (f.Name.ToLower().Contains("item") || f.Name.ToLower().Contains("slot"))
+                        object itemSlotObj = array.GetValue(index);
+                        if (itemSlotObj == null) return null;
+
+                        // ItemSlot -> Item item
+                        var fItem = itemSlotObj.GetType().GetField("item");
+                        if (fItem != null)
                         {
-                            var val = f.GetValue(slot);
-                            if (val != null && val.GetType().Name.Contains("ItemSlot"))
+                            var itemVal = fItem.GetValue(itemSlotObj);
+                            if (itemVal != null)
                             {
-                                itemSlotObj = val;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (itemSlotObj != null)
-                {
-                    // Mamy obiekt ItemSlot, teraz kopiemy głębiej: ItemSlot -> Item -> ItemTemplate -> Name
-
-                    // 1. Sprawdź ilość (Amount), żeby nie klikać pustych
-                    var fAmount = itemSlotObj.GetType().GetField("amount");
-                    if (fAmount != null)
-                    {
-                        int amount = (int)fAmount.GetValue(itemSlotObj);
-                        if (amount <= 0) return null;
-                    }
-
-                    // 2. Pobierz Item
-                    var fItem = itemSlotObj.GetType().GetField("item");
-                    if (fItem != null)
-                    {
-                        var itemVal = fItem.GetValue(itemSlotObj);
-                        if (itemVal != null)
-                        {
-                            // 3. Pobierz Data/Template
-                            var fData = itemVal.GetType().GetField("data");
-                            if (fData != null)
-                            {
-                                var dataVal = fData.GetValue(itemVal);
-                                if (dataVal != null)
+                                // Item -> ItemTemplate data -> string name
+                                var fData = itemVal.GetType().GetField("data");
+                                if (fData != null)
                                 {
-                                    // 4. Pobierz Name
-                                    var fName = dataVal.GetType().GetField("name"); // field name
-                                    if (fName != null) return fName.GetValue(dataVal) as string;
-
-                                    var pName = dataVal.GetType().GetProperty("name"); // property Name (czasem z dużej)
-                                    if (pName != null) return pName.GetValue(dataVal, null) as string;
-
-                                    var pNameUpper = dataVal.GetType().GetProperty("Name");
-                                    if (pNameUpper != null) return pNameUpper.GetValue(dataVal, null) as string;
+                                    var dataVal = fData.GetValue(itemVal);
+                                    if (dataVal != null)
+                                    {
+                                        var fName = dataVal.GetType().GetField("name");
+                                        if (fName != null) return fName.GetValue(dataVal) as string;
+                                    }
                                 }
                             }
                         }
@@ -165,30 +155,40 @@ namespace WildTerraHook
             return null;
         }
 
-        private bool IsContainerVisible(global::WTUIContainer ui)
+        private bool IsPanelActive(global::WTUIContainer ui)
         {
             try
             {
-                var method = ui.GetType().GetMethod("IsOpen");
-                if (method != null) return (bool)method.Invoke(ui, null);
-
-                var panelField = ui.GetType().GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (panelField != null)
+                // WTUIContainer ma metodę IsOpen(), ale możemy też sprawdzić panel ręcznie
+                // private GameObject panel;
+                var fPanel = ui.GetType().GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (fPanel != null)
                 {
-                    GameObject panel = panelField.GetValue(ui) as GameObject;
-                    return panel != null && panel.activeSelf;
+                    var panelObj = fPanel.GetValue(ui) as GameObject;
+                    return panelObj != null && panelObj.activeSelf;
                 }
             }
             catch { }
-            return true;
+            return false;
         }
 
-        // --- GUI (BEZ ZMIAN) ---
+        private Transform RecursiveFindChild(Transform parent, string childName)
+        {
+            foreach (Transform child in parent)
+            {
+                if (child.name == childName) return child;
+                Transform found = RecursiveFindChild(child, childName);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        // --- GUI --- (STANDARDOWE)
 
         public void DrawMenu()
         {
             GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")} (Button Mode)</b>");
+            GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")} (Hybrid)</b>");
 
             Enabled = GUILayout.Toggle(Enabled, Localization.Get("LOOT_ENABLE"));
 
@@ -277,30 +277,33 @@ namespace WildTerraHook
                         {
                             foreach (var slot in invList)
                             {
-                                // Używamy tej samej logiki do wyciągania nazwy co przy zbieraniu, żeby nazwy pasowały
-                                // Musimy jednak odtworzyć strukturę Reflection, bo slot tutaj to czysty obiekt danych, a nie UI
-                                var fItem = slot.GetType().GetField("item");
-                                if (fItem != null)
+                                // Używamy Reflection do wyciągnięcia nazwy z item slotu w ekwipunku
+                                try
                                 {
-                                    var itm = fItem.GetValue(slot);
-                                    if (itm != null)
+                                    var fItem = slot.GetType().GetField("item");
+                                    if (fItem != null)
                                     {
-                                        var fData = itm.GetType().GetField("data");
-                                        if (fData != null)
+                                        var itm = fItem.GetValue(slot);
+                                        if (itm != null)
                                         {
-                                            var data = fData.GetValue(itm);
-                                            if (data != null)
+                                            var fData = itm.GetType().GetField("data");
+                                            if (fData != null)
                                             {
-                                                var fName = data.GetType().GetField("name");
-                                                if (fName != null)
+                                                var dat = fData.GetValue(itm);
+                                                if (dat != null)
                                                 {
-                                                    string n = fName.GetValue(data) as string;
-                                                    if (!string.IsNullOrEmpty(n) && !_allItemsCache.Contains(n)) _allItemsCache.Add(n);
+                                                    var fName = dat.GetType().GetField("name");
+                                                    if (fName != null)
+                                                    {
+                                                        string n = fName.GetValue(dat) as string;
+                                                        if (!string.IsNullOrEmpty(n) && !_allItemsCache.Contains(n)) _allItemsCache.Add(n);
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                catch { }
                             }
                         }
                     }
