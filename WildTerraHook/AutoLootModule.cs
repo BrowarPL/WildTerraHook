@@ -12,7 +12,7 @@ namespace WildTerraHook
     {
         // --- USTAWIENIA ---
         public bool Enabled = false;
-        public bool DebugMode = false; // NOWOŚĆ: Pokaże co widzi bot
+        public bool DebugMode = false;
         public float Delay = 0.2f;
 
         // --- DANE ---
@@ -24,7 +24,7 @@ namespace WildTerraHook
 
         private float _lootTimer = 0f;
         private string _status = "Idle";
-        private List<string> _debugDetectedItems = new List<string>(); // Lista do podglądu
+        private List<string> _debugDetectedItems = new List<string>();
 
         // --- UPDATE ---
         public void Update()
@@ -39,7 +39,7 @@ namespace WildTerraHook
             if (!IsPanelActive(containerUI))
             {
                 if (_status.Contains("Loot") || _status.Contains("Widzę")) _status = "Czekam na okno...";
-                _debugDetectedItems.Clear();
+                if (_debugDetectedItems.Count > 0) _debugDetectedItems.Clear();
                 return;
             }
 
@@ -57,8 +57,6 @@ namespace WildTerraHook
                 _debugDetectedItems.Clear();
 
                 // 1. Znajdź kontener ze slotami (Content)
-                // Ścieżka w hierarchii: WTContainerPanel -> Scroll View -> ContentBackground -> Viewport -> Content
-                // Używamy bezpiecznego szukania rekurencyjnego "Content"
                 Transform panel = ui.transform.Find("WTContainerPanel");
                 if (panel == null || !panel.gameObject.activeSelf) return;
 
@@ -70,7 +68,7 @@ namespace WildTerraHook
                 }
 
                 // 2. Pobierz "prawdziwe" dane (tablica ItemSlot[] slots) z UI
-                var dataSlots = GetDataSlots(ui); // To jest tablica danych
+                var dataSlots = GetDataSlots(ui);
                 if (dataSlots == null) return;
 
                 bool lootedSomething = false;
@@ -208,7 +206,8 @@ namespace WildTerraHook
             if (DebugMode)
             {
                 GUILayout.Label("<b>--- WYKRYTE W OKNIE ---</b>");
-                _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, GUILayout.Height(100), "box");
+                // POPRAWIONA LINIA (Kolejność: styl, opcje)
+                _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(100));
                 if (_debugDetectedItems.Count > 0)
                 {
                     foreach (var s in _debugDetectedItems) GUILayout.Label(s);
@@ -298,8 +297,35 @@ namespace WildTerraHook
                         var invList = invField.GetValue(global::Player.localPlayer) as IEnumerable;
                         if (invList != null)
                         {
-                            // Używamy prostego parsowania, bo nie chcemy tu pisać całej logiki od nowa
-                            // Zakładam, że WTScriptableItem pokrywa 99%
+                            foreach (var slot in invList)
+                            {
+                                try
+                                {
+                                    var fItem = slot.GetType().GetField("item");
+                                    if (fItem != null)
+                                    {
+                                        var itm = fItem.GetValue(slot);
+                                        if (itm != null)
+                                        {
+                                            var fData = itm.GetType().GetField("data");
+                                            if (fData != null)
+                                            {
+                                                var dat = fData.GetValue(itm);
+                                                if (dat != null)
+                                                {
+                                                    var fName = dat.GetType().GetField("name");
+                                                    if (fName != null)
+                                                    {
+                                                        string n = fName.GetValue(dat) as string;
+                                                        if (!string.IsNullOrEmpty(n) && !_allItemsCache.Contains(n)) _allItemsCache.Add(n);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
                         }
                     }
                 }
