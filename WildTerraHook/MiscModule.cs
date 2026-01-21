@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Linq;
 using System.Text;
 using JohnStairs.RCC.ThirdPerson;
 
@@ -17,22 +16,22 @@ namespace WildTerraHook
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
-        // AGGRO
+        // AGGRO (VISION)
         public bool MobAggroEnabled = false;
-        public float DefaultAggroRadius = 10.0f; // Fallback
-        public bool ShowPassiveRanges = true; // Czy pokazywać zasięg wzroku pasywnych?
+        public float ManualRange = 12.0f; // Ręczny zasięg (skoro automat zawodzi)
+        public float ManualAngle = 110.0f; // Kąt widzenia (Cone)
+        public bool ShowPassive = false; // Czy pokazywać pasywne
 
         // DEBUGGER
         private string _debugMobInfo = "";
         private Vector2 _scrollDebug;
         private bool _showDebugInfo = false;
 
-        // --- LATARKA ---
+        // --- INNE ---
         public float LightIntensity = 2.0f;
         public float LightRange = 1000f;
         private GameObject _lightObject;
 
-        // --- KAMERA ---
         public float CameraFov = 60f;
         public float MaxZoomLimit = 100f;
         public float CameraAngle = 45f;
@@ -40,27 +39,17 @@ namespace WildTerraHook
 
         private float _defaultFov = 60f;
         private bool _defaultsInitialized = false;
-
-        // --- FULLBRIGHT CACHE ---
         private ShadowQuality _originalShadows;
         private bool _fullbrightActive = false;
-
-        // --- KAMERA CACHE ---
-        private WTRPGCamera _rpgCamera;
-        private global::CameraMMO _mmoCamera;
         private float _cacheTimer = 0f;
 
-        // --- AGGRO CACHE ---
-        private struct CachedMob
-        {
-            public global::WTMob Mob;
-            public float Range;
-            public bool IsAggressive;
-        }
-        private List<CachedMob> _mobCache = new List<CachedMob>();
+        private WTRPGCamera _rpgCamera;
+        private global::CameraMMO _mmoCamera;
+
+        // --- CACHE MOBÓW ---
+        private List<global::WTMob> _mobCache = new List<global::WTMob>();
         private float _mobScanTimer = 0f;
 
-        // Metoda UPDATE
         public void Update()
         {
             if (global::Player.localPlayer == null) return;
@@ -75,23 +64,23 @@ namespace WildTerraHook
             HandleFov();
             if (ZoomHackEnabled) HandleZoomHack();
 
+            // Skanowanie mobów
             if (MobAggroEnabled && Time.time > _mobScanTimer)
             {
-                ScanMobsSmart();
-                _mobScanTimer = Time.time + 1.0f;
+                ScanMobs();
+                _mobScanTimer = Time.time + 0.5f; // Częstsze odświeżanie dla płynności ruchu
             }
         }
 
-        // Metoda Rysowania
         public void OnGUI()
         {
             if (MobAggroEnabled)
             {
-                DrawAggroCircles();
+                DrawVisionCones();
             }
         }
 
-        private void ScanMobsSmart()
+        private void ScanMobs()
         {
             _mobCache.Clear();
             try
@@ -101,16 +90,9 @@ namespace WildTerraHook
                 {
                     if (mob != null && mob.health > 0)
                     {
-                        // 1. Ustalanie agresywności (Heurystyka po nazwie lub klasie)
-                        bool isAggro = IsMobAggressive(mob);
-
-                        // 2. Pobieranie zasięgu
-                        float detectedRange = GetRealAggroRange(mob, isAggro);
-
-                        // Fallback tylko jeśli wykryto 0
-                        float finalRange = detectedRange > 0.5f ? detectedRange : DefaultAggroRadius;
-
-                        _mobCache.Add(new CachedMob { Mob = mob, Range = finalRange, IsAggressive = isAggro });
+                        // Jeśli ukrywamy pasywne, odfiltruj je tutaj
+                        if (!ShowPassive && !IsMobAggressive(mob)) continue;
+                        _mobCache.Add(mob);
                     }
                 }
             }
@@ -120,166 +102,85 @@ namespace WildTerraHook
         private bool IsMobAggressive(global::WTMob mob)
         {
             string name = mob.name.ToLower();
-            // Lista pasywnych/płochliwych
             if (name.Contains("hare") || name.Contains("deer") || name.Contains("stag") ||
                (name.Contains("fox") && !name.Contains("large")) || name.Contains("pig") || name.Contains("sheep") || name.Contains("cow"))
                 return false;
-
-            return true; // Domyślnie zakładamy że wszystko inne chce nas zabić
+            return true;
         }
 
-        private float GetRealAggroRange(global::WTMob mob, bool isAggressive)
-        {
-            // Słowa kluczowe których szukamy
-            // Dla agresywnych: aggro, attack, detect
-            // Dla pasywnych: sight, view, flee, run
-            var keywords = isAggressive
-                ? new string[] { "aggro", "attack", "detect", "radius", "range" }
-                : new string[] { "sight", "view", "flee", "run", "detect", "radius", "range" };
+        // --- RYSOWANIE STOŻKÓW (CONE) ---
 
-            try
-            {
-                // Krok 1: Komponenty specyficzne (EntityAggro)
-                var aggroComp = mob.GetComponent("EntityAggro");
-                if (aggroComp != null)
-                {
-                    float val = ScanObjectForFloat(aggroComp, keywords);
-                    if (val > 0) return val;
-                }
-
-                // Krok 2: Główna klasa (WTMob / Monster)
-                float mobVal = ScanObjectForFloat(mob, keywords);
-                if (mobVal > 0) return mobVal;
-
-                // Krok 3: Dane (Data / Template / Settings)
-                // WTMob często ma pole 'data' lub 'settings' typu ScriptableObject
-                var dataObj = GetFieldObject(mob, "data") ?? GetFieldObject(mob, "template") ?? GetFieldObject(mob, "settings");
-                if (dataObj != null)
-                {
-                    float dataVal = ScanObjectForFloat(dataObj, keywords);
-                    if (dataVal > 0) return dataVal;
-                }
-            }
-            catch { }
-
-            return 0f;
-        }
-
-        private float ScanObjectForFloat(object obj, string[] keywords)
-        {
-            if (obj == null) return 0f;
-            Type type = obj.GetType();
-
-            // Szukamy wszystkich pól float
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-            foreach (var f in fields)
-            {
-                if (f.FieldType == typeof(float) || f.FieldType == typeof(int))
-                {
-                    string name = f.Name.ToLower();
-                    foreach (var kw in keywords)
-                    {
-                        if (name.Contains(kw))
-                        {
-                            float val = Convert.ToSingle(f.GetValue(obj));
-                            // Odrzucamy wartości nierealne (np. 0 albo > 100, chyba że to boss)
-                            if (val > 0.5f && val < 200f) return val;
-                        }
-                    }
-                }
-            }
-            return 0f;
-        }
-
-        private object GetFieldObject(object parent, string name)
-        {
-            var f = parent.GetType().GetField(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.IgnoreCase);
-            return f != null ? f.GetValue(parent) : null;
-        }
-
-        // --- DEBUGGER ---
-        private void AnalyzeNearestMob()
-        {
-            if (global::Player.localPlayer == null) return;
-            Vector3 myPos = global::Player.localPlayer.transform.position;
-
-            var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
-            global::WTMob nearest = null;
-            float minDist = 9999f;
-
-            foreach (var m in mobs)
-            {
-                float d = Vector3.Distance(myPos, m.transform.position);
-                if (d < minDist) { minDist = d; nearest = m; }
-            }
-
-            if (nearest == null) { _debugMobInfo = "Brak mobów w pobliżu."; return; }
-
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine($"<b>Mob: {nearest.name}</b> (Dist: {minDist:F1})");
-            sb.AppendLine($"Type: {nearest.GetType().Name}");
-
-            // Analiza Moba
-            sb.AppendLine("- Pola Moba:");
-            DumpFloatFields(nearest, sb);
-
-            // Analiza Komponentów
-            var comps = nearest.GetComponents<Component>();
-            foreach (var c in comps)
-            {
-                if (c == null || c is Transform || c is Collider) continue; // Pomiń nudne
-                sb.AppendLine($"- Komponent: {c.GetType().Name}");
-                DumpFloatFields(c, sb);
-            }
-
-            // Analiza Data/Template (jeśli istnieje)
-            var data = GetFieldObject(nearest, "data");
-            if (data != null)
-            {
-                sb.AppendLine($"- DATA ({data.GetType().Name}):");
-                DumpFloatFields(data, sb);
-            }
-
-            _debugMobInfo = sb.ToString();
-        }
-
-        private void DumpFloatFields(object obj, StringBuilder sb)
-        {
-            var fields = obj.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var f in fields)
-            {
-                if (f.FieldType == typeof(float) || f.FieldType == typeof(int))
-                {
-                    try
-                    {
-                        float val = Convert.ToSingle(f.GetValue(obj));
-                        if (val > 0) sb.AppendLine($"   {f.Name} = {val}");
-                    }
-                    catch { }
-                }
-            }
-        }
-
-        // --- RYSOWANIE ---
-
-        private void DrawAggroCircles()
+        private void DrawVisionCones()
         {
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            foreach (var item in _mobCache)
+            foreach (var mob in _mobCache)
             {
-                if (item.Mob == null || item.Mob.health <= 0) continue;
-                if (!ShowPassiveRanges && !item.IsAggressive) continue;
+                if (mob == null || mob.health <= 0) continue;
 
-                Color col = item.IsAggressive ? Color.red : Color.green;
-                DrawCircle(cam, item.Mob.transform.position, item.Range, col);
+                Color col = IsMobAggressive(mob) ? new Color(1f, 0f, 0f, 0.8f) : new Color(0f, 1f, 0f, 0.5f);
+
+                // Rysujemy stożek widzenia
+                DrawFieldOfView(cam, mob.transform, ManualRange, ManualAngle, col);
+            }
+        }
+
+        private void DrawFieldOfView(Camera cam, Transform t, float radius, float angle, Color color)
+        {
+            Vector3 pos = t.position;
+            Vector3 forward = t.forward;
+
+            // 1. Małe kółko "Słuchu/Węchu" (zawsze 360, mały zasięg np. 2m)
+            DrawCircle(cam, pos, 2.0f, color);
+
+            // 2. Stożek widzenia (Vision Cone)
+            int segments = 20;
+            float startAngle = -angle / 2;
+            float endAngle = angle / 2;
+            float step = (endAngle - startAngle) / segments;
+
+            Vector3 prevLineEnd = Vector3.zero;
+            bool prevVisible = false;
+
+            // Punkt centralny (pozycja moba) na ekranie
+            Vector3 screenCenter = cam.WorldToScreenPoint(pos);
+            bool centerVisible = screenCenter.z > 0;
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float currentAngle = startAngle + (step * i);
+
+                // Obracamy wektor 'forward' o dany kąt
+                Quaternion rot = Quaternion.AngleAxis(currentAngle, Vector3.up);
+                Vector3 dir = rot * forward;
+                Vector3 endPoint = pos + (dir * radius);
+
+                Vector3 screenEnd = cam.WorldToScreenPoint(endPoint);
+                bool endVisible = screenEnd.z > 0;
+
+                // Rysuj linię od środka do krawędzi (promienie skrajne)
+                if (centerVisible && endVisible && (i == 0 || i == segments))
+                {
+                    DrawLine(new Vector2(screenCenter.x, Screen.height - screenCenter.y),
+                             new Vector2(screenEnd.x, Screen.height - screenEnd.y), color, 2f);
+                }
+
+                // Rysuj łuk łączący promienie
+                if (i > 0 && endVisible && prevVisible)
+                {
+                    DrawLine(new Vector2(prevLineEnd.x, Screen.height - prevLineEnd.y),
+                             new Vector2(screenEnd.x, Screen.height - screenEnd.y), color, 2f);
+                }
+
+                prevLineEnd = screenEnd;
+                prevVisible = endVisible;
             }
         }
 
         private void DrawCircle(Camera cam, Vector3 position, float radius, Color color)
         {
-            int segments = 32;
+            int segments = 24;
             float angleStep = 360f / segments;
             Vector3 prevPos = Vector3.zero;
             bool prevVisible = false;
@@ -292,7 +193,7 @@ namespace WildTerraHook
                 bool isVisible = screenPos.z > 0;
 
                 if (i > 0 && isVisible && prevVisible)
-                    DrawLine(new Vector2(prevPos.x, Screen.height - prevPos.y), new Vector2(screenPos.x, Screen.height - screenPos.y), color, 2f);
+                    DrawLine(new Vector2(prevPos.x, Screen.height - prevPos.y), new Vector2(screenPos.x, Screen.height - screenPos.y), color, 1f);
 
                 prevPos = screenPos;
                 prevVisible = isVisible;
@@ -311,6 +212,71 @@ namespace WildTerraHook
             GUI.color = Color.white;
             GUIUtility.RotateAroundPivot(-angle, p1);
         }
+
+        // --- DEBUGGER (Deep Scan) ---
+        private void AnalyzeNearestMob()
+        {
+            if (global::Player.localPlayer == null) return;
+            Vector3 myPos = global::Player.localPlayer.transform.position;
+
+            var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
+            global::WTMob nearest = null;
+            float minDist = 9999f;
+
+            foreach (var m in mobs)
+            {
+                float d = Vector3.Distance(myPos, m.transform.position);
+                if (d < minDist) { minDist = d; nearest = m; }
+            }
+
+            if (nearest == null) { _debugMobInfo = "Brak mobów."; return; }
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"MOB: {nearest.name} (ID: {nearest.netId})");
+
+            // 1. Pola bezpośrednie
+            sb.AppendLine("--- Fields ---");
+            DumpValues(nearest, sb);
+
+            // 2. Data / Template (ScriptableObject) - GŁĘBOKIE SKANOWANIE
+            sb.AppendLine("--- Data/Template ---");
+            object dataObj = GetFieldObject(nearest, "data") ?? GetFieldObject(nearest, "template") ?? GetFieldObject(nearest, "settings");
+            if (dataObj != null)
+            {
+                sb.AppendLine($"Found: {dataObj.GetType().Name}");
+                DumpValues(dataObj, sb);
+            }
+            else
+            {
+                sb.AppendLine("No 'data/template' field found.");
+            }
+
+            _debugMobInfo = sb.ToString();
+        }
+
+        private void DumpValues(object obj, StringBuilder sb)
+        {
+            if (obj == null) return;
+            var fields = obj.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+            foreach (var f in fields)
+            {
+                // Szukamy czegokolwiek co pachnie zasięgiem
+                string n = f.Name.ToLower();
+                if (f.FieldType == typeof(float) || f.FieldType == typeof(int))
+                {
+                    // Wypisz wszystko co numeryczne, żeby znaleźć "ukrytą" wartość
+                    sb.AppendLine($" {f.Name} = {f.GetValue(obj)}");
+                }
+            }
+        }
+
+        private object GetFieldObject(object parent, string name)
+        {
+            var f = parent.GetType().GetField(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.IgnoreCase);
+            return f != null ? f.GetValue(parent) : null;
+        }
+
+        // --- RESZTA FUNKCJI (BEZ ZMIAN) ---
 
         private void ApplyNoFog()
         {
@@ -438,31 +404,36 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
 
-            // AGGRO
-            MobAggroEnabled = GUILayout.Toggle(MobAggroEnabled, Localization.Get("MISC_AGGRO_TITLE"));
+            // AGGRO (VISION CONE)
+            MobAggroEnabled = GUILayout.Toggle(MobAggroEnabled, Localization.Get("MISC_AGGRO_TITLE") + " (Vision Cone)");
             if (MobAggroEnabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_AGGRO_RANGE")}: {DefaultAggroRadius:F1}", GUILayout.Width(140));
-                DefaultAggroRadius = GUILayout.HorizontalSlider(DefaultAggroRadius, 1f, 30f);
+                GUILayout.Label($"Zasięg: {ManualRange:F1}m", GUILayout.Width(100));
+                ManualRange = GUILayout.HorizontalSlider(ManualRange, 2f, 30f);
                 GUILayout.EndHorizontal();
 
-                // INSPEKTOR MOBA
-                if (GUILayout.Button("Zbadaj Najbliższego Moba (Debug)"))
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Kąt (FOV): {ManualAngle:F0}°", GUILayout.Width(100));
+                ManualAngle = GUILayout.HorizontalSlider(ManualAngle, 30f, 360f);
+                GUILayout.EndHorizontal();
+
+                ShowPassive = GUILayout.Toggle(ShowPassive, "Pokaż Pasywne");
+
+                if (GUILayout.Button("Zbadaj Najbliższego Moba (Deep Debug)"))
                 {
                     AnalyzeNearestMob();
                     _showDebugInfo = true;
                 }
             }
 
-            // OKNO DEBUGOWE
             if (_showDebugInfo && !string.IsNullOrEmpty(_debugMobInfo))
             {
-                GUILayout.Label("--- Mob Debug Info ---");
+                GUILayout.Label("--- DANE MOBA ---");
                 _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(150));
                 GUILayout.TextArea(_debugMobInfo);
                 GUILayout.EndScrollView();
-                if (GUILayout.Button("Zamknij Debug")) _showDebugInfo = false;
+                if (GUILayout.Button("Zamknij")) _showDebugInfo = false;
             }
 
             GUILayout.Space(5);
@@ -471,7 +442,6 @@ namespace WildTerraHook
             FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, Localization.Get("MISC_FULLBRIGHT"));
 
             GUILayout.Space(5);
-
             BrightPlayerEnabled = GUILayout.Toggle(BrightPlayerEnabled, Localization.Get("MISC_BRIGHT_PLAYER"));
             if (BrightPlayerEnabled)
             {
@@ -487,7 +457,6 @@ namespace WildTerraHook
             }
 
             GUILayout.Space(5);
-
             ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, Localization.Get("MISC_ZOOM_TITLE"));
             if (ZoomHackEnabled)
             {
@@ -520,7 +489,7 @@ namespace WildTerraHook
                 ZoomSpeed = 60f;
                 LightIntensity = 2.0f;
                 LightRange = 1000f;
-                DefaultAggroRadius = 10.0f;
+                ManualRange = 12.0f;
             }
 
             GUILayout.EndVertical();
