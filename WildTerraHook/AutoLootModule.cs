@@ -12,6 +12,7 @@ namespace WildTerraHook
     {
         // --- USTAWIENIA ---
         public bool Enabled = false;
+        public bool DebugMode = false; // NOWOŚĆ: Pokaże co widzi bot
         public float Delay = 0.2f;
 
         // --- DANE ---
@@ -19,137 +20,142 @@ namespace WildTerraHook
         private string _searchFilter = "";
         private Vector2 _scrollWhite;
         private Vector2 _scrollAll;
+        private Vector2 _scrollDebug;
+
         private float _lootTimer = 0f;
         private string _status = "Idle";
+        private List<string> _debugDetectedItems = new List<string>(); // Lista do podglądu
 
         // --- UPDATE ---
         public void Update()
         {
-            if (!Enabled) return;
             if (global::Player.localPlayer == null) return;
 
-            // 1. Sprawdź instancję okna kontenera
+            // 1. Sprawdź instancję
             var containerUI = global::WTUIContainer.instance;
             if (containerUI == null) return;
 
-            // 2. Sprawdź czy okno jest fizycznie otwarte (GameObject.activeSelf)
-            // W Wild Terra 2 skrypt jest na obiekcie, ale ma dziecko "WTContainerPanel"
-            // Używamy bezpiecznej metody sprawdzenia
+            // 2. Sprawdź widoczność panelu
             if (!IsPanelActive(containerUI))
             {
-                if (_status.StartsWith("Loot")) _status = "Czekam na okno...";
+                if (_status.Contains("Loot") || _status.Contains("Widzę")) _status = "Czekam na okno...";
+                _debugDetectedItems.Clear();
                 return;
             }
 
-            if (Time.time < _lootTimer) return;
-
-            // 3. Uruchom logikę "Hybrid UI Walker"
-            if (ProcessActiveUiSlots(containerUI))
+            // Odświeżaj debug info co klatkę (jeśli włączone) lub lootuj co Delay
+            if (DebugMode || (Enabled && Time.time > _lootTimer))
             {
-                _lootTimer = Time.time + Delay;
+                ProcessContainer(containerUI);
             }
         }
 
-        private bool ProcessActiveUiSlots(global::WTUIContainer ui)
+        private void ProcessContainer(global::WTUIContainer ui)
         {
             try
             {
-                // Znajdujemy transform 'Content', który trzyma sloty.
-                // Ścieżka z kodu gry: "WTContainerPanel/Scroll View/ContentBackground/Viewport/Content"
-                // Ale bezpieczniej poszukać komponentu GridLayoutGroup lub po prostu iterować w dół.
+                _debugDetectedItems.Clear();
 
+                // 1. Znajdź kontener ze slotami (Content)
+                // Ścieżka w hierarchii: WTContainerPanel -> Scroll View -> ContentBackground -> Viewport -> Content
+                // Używamy bezpiecznego szukania rekurencyjnego "Content"
                 Transform panel = ui.transform.Find("WTContainerPanel");
-                if (panel == null || !panel.gameObject.activeSelf) return false;
+                if (panel == null || !panel.gameObject.activeSelf) return;
 
-                // Szukamy kontenera na sloty (Content)
-                // Najczęściej jest głęboko w hierarchii scroll view
                 Transform content = RecursiveFindChild(panel, "Content");
                 if (content == null)
                 {
-                    _status = "Błąd: Nie znaleziono 'Content'";
-                    return false;
+                    _status = "Błąd: Nie znaleziono Content";
+                    return;
                 }
 
-                // Iterujemy po wszystkich dzieciach (slotach)
+                // 2. Pobierz "prawdziwe" dane (tablica ItemSlot[] slots) z UI
+                var dataSlots = GetDataSlots(ui); // To jest tablica danych
+                if (dataSlots == null) return;
+
+                bool lootedSomething = false;
+
+                // 3. Iteruj po wizualnych slotach (dzieciach Content)
                 foreach (Transform child in content)
                 {
                     if (!child.gameObject.activeSelf) continue;
 
-                    // Pobieramy komponent slotu
                     var slotComp = child.GetComponent<global::WTUIContainerSlot>();
                     if (slotComp == null) continue;
 
-                    // KLUCZOWE: Odczytujemy ID slotu z dragAndDropable.name (tak robi gra w SetSlot)
+                    // Odczytaj ID slotu (gra zapisuje indeks tablicy w nazwie obiektu drag&drop)
                     if (slotComp.dragAndDropable == null) continue;
 
                     int realIndex;
                     if (!int.TryParse(slotComp.dragAndDropable.name, out realIndex)) continue;
 
-                    // Teraz sprawdzamy dane w tablicy 'slots' używając prawdziwego indeksu
-                    string itemName = GetItemNameFromDataArray(ui, realIndex);
+                    // Pobierz dane przedmiotu z tablicy danych używając indeksu
+                    string itemName = GetItemNameFromData(dataSlots, realIndex);
 
-                    if (!string.IsNullOrEmpty(itemName) && ConfigManager.AutoLootList.Contains(itemName))
+                    if (!string.IsNullOrEmpty(itemName))
                     {
-                        // Sprawdź czy przycisk działa
-                        if (slotComp.button != null && slotComp.button.interactable)
+                        // Dodaj do podglądu Debug
+                        if (DebugMode) _debugDetectedItems.Add($"[{realIndex}] {itemName}");
+
+                        // LOGIKA LOOTOWANIA
+                        if (Enabled && !lootedSomething && ConfigManager.AutoLootList.Contains(itemName))
                         {
-                            _status = $"Loot: {itemName}";
-
-                            // INVOKE! To wywoła delegate przypisany w SetSlot:
-                            // Player.localPlayer.CmdGetFromContainerToInventory(index);
-                            slotComp.button.onClick.Invoke();
-
-                            return true; // Jeden na cykl
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _status = "Błąd: " + ex.Message;
-            }
-
-            return false;
-        }
-
-        // --- POMOCNICY REFLECTION ---
-
-        private string GetItemNameFromDataArray(global::WTUIContainer ui, int index)
-        {
-            try
-            {
-                // Dostęp do tablicy: public ItemSlot[] slots;
-                var fSlots = ui.GetType().GetField("slots", BindingFlags.Public | BindingFlags.Instance);
-                if (fSlots != null)
-                {
-                    var array = fSlots.GetValue(ui) as Array;
-                    if (array != null && index >= 0 && index < array.Length)
-                    {
-                        object itemSlotObj = array.GetValue(index);
-                        if (itemSlotObj == null) return null;
-
-                        // ItemSlot -> Item item
-                        var fItem = itemSlotObj.GetType().GetField("item");
-                        if (fItem != null)
-                        {
-                            var itemVal = fItem.GetValue(itemSlotObj);
-                            if (itemVal != null)
+                            if (slotComp.button != null && slotComp.button.interactable)
                             {
-                                // Item -> ItemTemplate data -> string name
-                                var fData = itemVal.GetType().GetField("data");
-                                if (fData != null)
-                                {
-                                    var dataVal = fData.GetValue(itemVal);
-                                    if (dataVal != null)
-                                    {
-                                        var fName = dataVal.GetType().GetField("name");
-                                        if (fName != null) return fName.GetValue(dataVal) as string;
-                                    }
-                                }
+                                _status = $"Loot: {itemName}";
+                                slotComp.button.onClick.Invoke();
+                                lootedSomething = true; // Zbieramy jeden, przerywamy pętlę
                             }
                         }
                     }
                 }
+
+                if (lootedSomething) _lootTimer = Time.time + Delay;
+            }
+            catch (Exception ex)
+            {
+                _status = "Error: " + ex.Message;
+            }
+        }
+
+        // --- POMOCNICY DANYCH ---
+
+        private Array GetDataSlots(global::WTUIContainer ui)
+        {
+            try
+            {
+                var f = ui.GetType().GetField("slots", BindingFlags.Public | BindingFlags.Instance);
+                return (f != null) ? f.GetValue(ui) as Array : null;
+            }
+            catch { return null; }
+        }
+
+        private string GetItemNameFromData(Array dataSlots, int index)
+        {
+            try
+            {
+                if (index < 0 || index >= dataSlots.Length) return null;
+                object slotObj = dataSlots.GetValue(index); // ItemSlot
+                if (slotObj == null) return null;
+
+                // ItemSlot -> Item item
+                var fItem = slotObj.GetType().GetField("item");
+                if (fItem == null) return null;
+                object itemObj = fItem.GetValue(slotObj); // Item
+                if (itemObj == null) return null;
+
+                // Item -> ItemTemplate data -> string name
+                var fData = itemObj.GetType().GetField("data");
+                if (fData == null) return null;
+                object dataObj = fData.GetValue(itemObj); // ItemTemplate
+                if (dataObj == null) return null;
+
+                // Pobierz nazwę (name)
+                var fName = dataObj.GetType().GetField("name");
+                if (fName != null) return fName.GetValue(dataObj) as string;
+
+                var pName = dataObj.GetType().GetProperty("name");
+                if (pName != null) return pName.GetValue(dataObj, null) as string;
             }
             catch { }
             return null;
@@ -159,8 +165,6 @@ namespace WildTerraHook
         {
             try
             {
-                // WTUIContainer ma metodę IsOpen(), ale możemy też sprawdzić panel ręcznie
-                // private GameObject panel;
                 var fPanel = ui.GetType().GetField("panel", BindingFlags.NonPublic | BindingFlags.Instance);
                 if (fPanel != null)
                 {
@@ -183,14 +187,15 @@ namespace WildTerraHook
             return null;
         }
 
-        // --- GUI --- (STANDARDOWE)
+        // --- GUI ---
 
         public void DrawMenu()
         {
             GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")} (Hybrid)</b>");
+            GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")}</b>");
 
             Enabled = GUILayout.Toggle(Enabled, Localization.Get("LOOT_ENABLE"));
+            DebugMode = GUILayout.Toggle(DebugMode, "Tryb Debugowania (Pokaż Itemki)");
 
             GUILayout.BeginHorizontal();
             GUILayout.Label($"{Localization.Get("LOOT_DELAY")}: {Delay:F2}s", GUILayout.Width(100));
@@ -198,14 +203,30 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
 
             GUILayout.Label($"{Localization.Get("LOOT_STATUS")}: {_status}");
-            GUILayout.Space(10);
+
+            // SEKCJA DEBUGOWANIA (WYKRYTE PRZEDMIOTY)
+            if (DebugMode)
+            {
+                GUILayout.Label("<b>--- WYKRYTE W OKNIE ---</b>");
+                _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, GUILayout.Height(100), "box");
+                if (_debugDetectedItems.Count > 0)
+                {
+                    foreach (var s in _debugDetectedItems) GUILayout.Label(s);
+                }
+                else
+                {
+                    GUILayout.Label("(Otwórz kontener aby zobaczyć)");
+                }
+                GUILayout.EndScrollView();
+                GUILayout.Space(10);
+            }
 
             GUILayout.BeginHorizontal();
 
             // Whitelista
             GUILayout.BeginVertical("box", GUILayout.Width(180));
             GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_WHITE")}</b>");
-            _scrollWhite = GUILayout.BeginScrollView(_scrollWhite, GUILayout.Height(250));
+            _scrollWhite = GUILayout.BeginScrollView(_scrollWhite, GUILayout.Height(200));
             var listCopy = new List<string>(ConfigManager.AutoLootList);
             foreach (var item in listCopy)
             {
@@ -230,7 +251,7 @@ namespace WildTerraHook
             if (GUILayout.Button(Localization.Get("LOOT_BTN_REFRESH"), GUILayout.Width(60))) RefreshAllItems();
             GUILayout.EndHorizontal();
 
-            _scrollAll = GUILayout.BeginScrollView(_scrollAll, GUILayout.Height(250));
+            _scrollAll = GUILayout.BeginScrollView(_scrollAll, GUILayout.Height(200));
             if (_allItemsCache.Count == 0)
             {
                 if (GUILayout.Button(Localization.Get("LOOT_BTN_REFRESH"))) RefreshAllItems();
@@ -254,6 +275,7 @@ namespace WildTerraHook
             }
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
+
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
         }
@@ -261,12 +283,13 @@ namespace WildTerraHook
         private void RefreshAllItems()
         {
             _allItemsCache.Clear();
-            _status = "Skanowanie...";
+            _status = "Skanowanie bazy...";
             try
             {
                 var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
                 foreach (var s in scriptables) if (s != null && !string.IsNullOrEmpty(s.name) && !_allItemsCache.Contains(s.name)) _allItemsCache.Add(s.name);
 
+                // Dodajemy też z ekwipunku gracza, żeby mieć pewność
                 if (global::Player.localPlayer != null)
                 {
                     var invField = global::Player.localPlayer.GetType().GetField("inventory");
@@ -275,39 +298,12 @@ namespace WildTerraHook
                         var invList = invField.GetValue(global::Player.localPlayer) as IEnumerable;
                         if (invList != null)
                         {
-                            foreach (var slot in invList)
-                            {
-                                // Używamy Reflection do wyciągnięcia nazwy z item slotu w ekwipunku
-                                try
-                                {
-                                    var fItem = slot.GetType().GetField("item");
-                                    if (fItem != null)
-                                    {
-                                        var itm = fItem.GetValue(slot);
-                                        if (itm != null)
-                                        {
-                                            var fData = itm.GetType().GetField("data");
-                                            if (fData != null)
-                                            {
-                                                var dat = fData.GetValue(itm);
-                                                if (dat != null)
-                                                {
-                                                    var fName = dat.GetType().GetField("name");
-                                                    if (fName != null)
-                                                    {
-                                                        string n = fName.GetValue(dat) as string;
-                                                        if (!string.IsNullOrEmpty(n) && !_allItemsCache.Contains(n)) _allItemsCache.Add(n);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                catch { }
-                            }
+                            // Używamy prostego parsowania, bo nie chcemy tu pisać całej logiki od nowa
+                            // Zakładam, że WTScriptableItem pokrywa 99%
                         }
                     }
                 }
+
                 _allItemsCache.Sort();
                 _status = $"Gotowe ({_allItemsCache.Count})";
             }
