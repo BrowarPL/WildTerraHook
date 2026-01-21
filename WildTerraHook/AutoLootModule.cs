@@ -19,6 +19,7 @@ namespace WildTerraHook
         private List<string> _allItemsCache = new List<string>();
         private string _searchFilter = "";
         private string _newProfileName = "";
+        private string _editingProfile = "Default"; // Którą listę edytujemy?
 
         private Vector2 _scrollProfiles;
         private Vector2 _scrollWhite;
@@ -29,6 +30,10 @@ namespace WildTerraHook
         private float _lootTimer = 0f;
         private string _status = "Idle";
         private List<string> _debugDetectedItems = new List<string>();
+
+        // --- CACHE ---
+        private MethodInfo _cmdGetItemMethod;
+        private bool _reflectionInit = false;
 
         // --- UPDATE ---
         public void Update()
@@ -61,21 +66,16 @@ namespace WildTerraHook
                 if (panel == null || !panel.gameObject.activeSelf) return;
 
                 Transform content = RecursiveFindChild(panel, "Content");
-                if (content == null)
-                {
-                    _status = "Błąd: Brak Content";
-                    return;
-                }
+                if (content == null) { _status = "Błąd Content"; return; }
 
                 var dataSlots = GetDataSlots(ui);
                 if (dataSlots == null) return;
 
-                // Znajdź przyciski (aktywne)
                 var uiSlots = panel.GetComponentsInChildren<global::WTUIContainerSlot>(false);
                 bool lootedSomething = false;
 
-                // Pobierz aktualną whitelistę z ConfigManagera
-                List<string> currentWhitelist = ConfigManager.GetActiveList();
+                // POBIERZ POŁĄCZONĄ LISTĘ Z WSZYSTKICH AKTYWNYCH PROFILI
+                List<string> activeItems = ConfigManager.GetCombinedActiveList();
 
                 foreach (var slotComp in uiSlots)
                 {
@@ -90,12 +90,18 @@ namespace WildTerraHook
                     {
                         if (DebugMode) _debugDetectedItems.Add($"[{realIndex}] {itemName}");
 
-                        if (Enabled && !lootedSomething && currentWhitelist.Contains(itemName))
+                        if (Enabled && !lootedSomething && activeItems.Contains(itemName))
                         {
                             if (slotComp.button != null && slotComp.button.interactable)
                             {
-                                _status = $"Loot: {itemName}";
+                                _status = $"Loot (Btn): {itemName}";
                                 slotComp.button.onClick.Invoke();
+                                lootedSomething = true;
+                            }
+                            else
+                            {
+                                _status = $"Loot (Cmd): {itemName}";
+                                SendLootCommand(realIndex);
                                 lootedSomething = true;
                             }
                         }
@@ -104,10 +110,7 @@ namespace WildTerraHook
 
                 if (lootedSomething) _lootTimer = Time.time + Delay;
             }
-            catch (Exception ex)
-            {
-                _status = "Error: " + ex.Message;
-            }
+            catch (Exception ex) { _status = "Error: " + ex.Message; }
         }
 
         // --- GUI ---
@@ -117,7 +120,6 @@ namespace WildTerraHook
             GUILayout.BeginVertical("box");
             GUILayout.Label($"<b>{Localization.Get("LOOT_TITLE")}</b>");
 
-            // Górny panel: Włącznik, Debug, Delay
             GUILayout.BeginHorizontal();
             Enabled = GUILayout.Toggle(Enabled, Localization.Get("LOOT_ENABLE"), GUILayout.Width(150));
             DebugMode = GUILayout.Toggle(DebugMode, "Debug", GUILayout.Width(70));
@@ -137,8 +139,8 @@ namespace WildTerraHook
             // 1. ZARZĄDZANIE PROFILAMI
             DrawProfileManager();
 
-            // 2. ZAWARTOŚĆ PROFILU
-            DrawCurrentProfileContent();
+            // 2. ZAWARTOŚĆ EDYTOWANEGO PROFILU
+            DrawEditingProfileContent();
 
             // 3. WSZYSTKIE ITEMY
             DrawAllItemsList();
@@ -151,10 +153,8 @@ namespace WildTerraHook
         {
             GUILayout.Label("<b>--- WYKRYTE ---</b>");
             _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(80));
-            if (_debugDetectedItems.Count > 0)
-                foreach (var s in _debugDetectedItems) GUILayout.Label(s);
-            else
-                GUILayout.Label("...");
+            if (_debugDetectedItems.Count > 0) foreach (var s in _debugDetectedItems) GUILayout.Label(s);
+            else GUILayout.Label("...");
             GUILayout.EndScrollView();
         }
 
@@ -163,7 +163,7 @@ namespace WildTerraHook
             GUILayout.BeginVertical("box", GUILayout.Width(170));
             GUILayout.Label($"<b>{Localization.Get("LOOT_PROFILES")}</b>");
 
-            // Tworzenie nowego
+            // Tworzenie
             GUILayout.BeginHorizontal();
             _newProfileName = GUILayout.TextField(_newProfileName);
             if (GUILayout.Button("+", GUILayout.Width(25)))
@@ -171,42 +171,50 @@ namespace WildTerraHook
                 if (!string.IsNullOrEmpty(_newProfileName) && !ConfigManager.LootProfiles.ContainsKey(_newProfileName))
                 {
                     ConfigManager.LootProfiles.Add(_newProfileName, new List<string>());
-                    ConfigManager.ActiveProfile = _newProfileName; // Auto przełącz
+                    ConfigManager.ActiveProfiles.Add(_newProfileName); // Auto-activate
+                    _editingProfile = _newProfileName; // Auto-edit
                     ConfigManager.Save();
                     _newProfileName = "";
                 }
             }
             GUILayout.EndHorizontal();
 
-            // Lista profili
+            // Lista profili z Suwakiem
             _scrollProfiles = GUILayout.BeginScrollView(_scrollProfiles, GUILayout.Height(250));
 
-            // Kopia kluczy do iteracji
             var profileNames = new List<string>(ConfigManager.LootProfiles.Keys);
-
             foreach (var profile in profileNames)
             {
-                // Styl aktywnego profilu
-                GUIStyle style = (profile == ConfigManager.ActiveProfile) ? GUI.skin.box : GUI.skin.label;
+                GUILayout.BeginHorizontal("box");
 
-                GUILayout.BeginHorizontal(style);
-
-                // Przycisk wyboru
-                if (GUILayout.Button(profile, GUI.skin.label))
+                // 1. Checkbox AKTYWACJI (Czy bot ma tego używać?)
+                bool isActive = ConfigManager.ActiveProfiles.Contains(profile);
+                bool newActive = GUILayout.Toggle(isActive, "", GUILayout.Width(20));
+                if (newActive != isActive)
                 {
-                    ConfigManager.ActiveProfile = profile;
+                    if (newActive) ConfigManager.ActiveProfiles.Add(profile);
+                    else ConfigManager.ActiveProfiles.Remove(profile);
                     ConfigManager.Save();
                 }
 
-                // Przycisk usuwania (nie pozwól usunąć jedynego/ostatniego)
+                // 2. Przycisk EDYCJI (Pokaż w środkowej kolumnie)
+                // Zmieniamy styl, jeśli jest edytowany
+                GUIStyle nameStyle = (profile == _editingProfile) ? GUI.skin.label : GUI.skin.label;
+                string label = profile == _editingProfile ? $"> {profile}" : profile;
+
+                if (GUILayout.Button(label, nameStyle))
+                {
+                    _editingProfile = profile;
+                }
+
+                // 3. Usuwanie
                 if (ConfigManager.LootProfiles.Count > 1)
                 {
                     if (GUILayout.Button("X", GUILayout.Width(20)))
                     {
                         ConfigManager.LootProfiles.Remove(profile);
-                        // Jeśli usunęliśmy aktywny, przełącz na inny
-                        if (ConfigManager.ActiveProfile == profile)
-                            ConfigManager.ActiveProfile = ConfigManager.LootProfiles.Keys.First();
+                        ConfigManager.ActiveProfiles.Remove(profile);
+                        if (_editingProfile == profile) _editingProfile = ConfigManager.LootProfiles.Keys.First();
                         ConfigManager.Save();
                     }
                 }
@@ -217,24 +225,34 @@ namespace WildTerraHook
             GUILayout.EndVertical();
         }
 
-        private void DrawCurrentProfileContent()
+        private void DrawEditingProfileContent()
         {
             GUILayout.BeginVertical("box", GUILayout.Width(190));
-            GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_WHITE")}</b>");
 
-            List<string> currentList = ConfigManager.GetActiveList();
+            // Nagłówek: Edytowana Lista
+            GUILayout.Label($"<b>EDYCJA: {_editingProfile}</b>");
+
+            // Pobieramy listę do edycji (bezpośrednio ze słownika)
+            List<string> editingList = null;
+            if (ConfigManager.LootProfiles.ContainsKey(_editingProfile))
+                editingList = ConfigManager.LootProfiles[_editingProfile];
+            else
+            {
+                // Fallback
+                if (ConfigManager.LootProfiles.Count > 0) _editingProfile = ConfigManager.LootProfiles.Keys.First();
+                return;
+            }
 
             _scrollWhite = GUILayout.BeginScrollView(_scrollWhite, GUILayout.Height(280));
 
-            // Kopia listy do bezpiecznej modyfikacji
-            var listCopy = new List<string>(currentList);
+            var listCopy = new List<string>(editingList);
             foreach (var item in listCopy)
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Label(item);
                 if (GUILayout.Button("X", GUILayout.Width(25)))
                 {
-                    currentList.Remove(item);
+                    editingList.Remove(item);
                     ConfigManager.Save();
                 }
                 GUILayout.EndHorizontal();
@@ -261,23 +279,25 @@ namespace WildTerraHook
             }
             else
             {
-                List<string> currentList = ConfigManager.GetActiveList();
+                // Pobieramy listę aktualnie edytowaną, aby wiedzieć co już jest dodane
+                List<string> editingList = null;
+                if (ConfigManager.LootProfiles.ContainsKey(_editingProfile))
+                    editingList = ConfigManager.LootProfiles[_editingProfile];
 
                 foreach (var item in _allItemsCache)
                 {
                     if (!string.IsNullOrEmpty(_searchFilter) && item.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
 
-                    // Jeśli item już jest na aktywnej liście, nie pokazuj przycisku dodania (lub wyszarz)
-                    bool alreadyAdded = currentList.Contains(item);
+                    bool alreadyAdded = (editingList != null && editingList.Contains(item));
 
                     GUILayout.BeginHorizontal();
                     GUILayout.Label(item);
 
-                    if (!alreadyAdded)
+                    if (!alreadyAdded && editingList != null)
                     {
                         if (GUILayout.Button("+", GUILayout.Width(25)))
                         {
-                            currentList.Add(item);
+                            editingList.Add(item);
                             ConfigManager.Save();
                         }
                     }
@@ -288,7 +308,7 @@ namespace WildTerraHook
             GUILayout.EndVertical();
         }
 
-        // --- POMOCNICY (BEZ ZMIAN) ---
+        // --- POMOCNICY DANYCH ---
 
         private Array GetDataSlots(global::WTUIContainer ui)
         {
@@ -333,6 +353,21 @@ namespace WildTerraHook
             catch { return null; }
         }
 
+        private void SendLootCommand(int index)
+        {
+            try
+            {
+                var player = global::Player.localPlayer;
+                if (!_reflectionInit)
+                {
+                    _cmdGetItemMethod = player.GetType().GetMethod("CmdGetFromContainerToInventory", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    _reflectionInit = true;
+                }
+                if (_cmdGetItemMethod != null) _cmdGetItemMethod.Invoke(player, new object[] { index });
+            }
+            catch { }
+        }
+
         private bool IsPanelActive(global::WTUIContainer ui)
         {
             try
@@ -367,38 +402,6 @@ namespace WildTerraHook
             {
                 var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
                 foreach (var s in scriptables) if (s != null && !string.IsNullOrEmpty(s.name) && !_allItemsCache.Contains(s.name)) _allItemsCache.Add(s.name);
-
-                if (global::Player.localPlayer != null)
-                {
-                    var invField = global::Player.localPlayer.GetType().GetField("inventory");
-                    if (invField != null)
-                    {
-                        var invList = invField.GetValue(global::Player.localPlayer) as IEnumerable;
-                        if (invList != null)
-                        {
-                            foreach (var slotObj in invList)
-                            {
-                                try
-                                {
-                                    var fItem = slotObj.GetType().GetField("item");
-                                    if (fItem == null) continue;
-                                    var itemObj = fItem.GetValue(slotObj);
-                                    var pData = itemObj.GetType().GetProperty("data");
-                                    if (pData == null) continue;
-                                    var data = pData.GetValue(itemObj, null);
-                                    if (data == null) continue;
-                                    var pName = data.GetType().GetProperty("name");
-                                    if (pName != null)
-                                    {
-                                        string n = pName.GetValue(data, null) as string;
-                                        if (!string.IsNullOrEmpty(n) && !_allItemsCache.Contains(n)) _allItemsCache.Add(n);
-                                    }
-                                }
-                                catch { }
-                            }
-                        }
-                    }
-                }
                 _allItemsCache.Sort();
                 _status = $"Gotowe ({_allItemsCache.Count})";
             }

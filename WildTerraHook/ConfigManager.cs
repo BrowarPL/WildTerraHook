@@ -23,9 +23,10 @@ namespace WildTerraHook
         public static string Language = "en";
 
         // --- AUTO LOOT PROFILES ---
-        // Słownik: Nazwa Profilu -> Lista Przedmiotów
         public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>>();
-        public static string ActiveProfile = "Default";
+
+        // ZBIÓR AKTYWNYCH PROFILI (Multi-select)
+        public static HashSet<string> ActiveProfiles = new HashSet<string>();
 
         private static string _folderPath;
         private static string _filePath;
@@ -35,29 +36,32 @@ namespace WildTerraHook
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
             _filePath = Path.Combine(_folderPath, "config.txt");
 
-            // Inicjalizacja domyślnego profilu
+            // Inicjalizacja domyślnego
             if (LootProfiles.Count == 0)
             {
                 LootProfiles["Default"] = new List<string>();
-                ActiveProfile = "Default";
+                ActiveProfiles.Add("Default");
             }
 
             Load();
         }
 
-        public static List<string> GetActiveList()
+        // Metoda łącząca wszystkie itemy z włączonych profili w jedną listę dla bota
+        public static List<string> GetCombinedActiveList()
         {
-            if (!LootProfiles.ContainsKey(ActiveProfile))
+            HashSet<string> combined = new HashSet<string>();
+
+            foreach (var profName in ActiveProfiles)
             {
-                // Fallback jeśli aktywny profil zniknął
-                if (LootProfiles.Count > 0) ActiveProfile = LootProfiles.Keys.First();
-                else
+                if (LootProfiles.ContainsKey(profName))
                 {
-                    ActiveProfile = "Default";
-                    LootProfiles["Default"] = new List<string>();
+                    foreach (var item in LootProfiles[profName])
+                    {
+                        combined.Add(item);
+                    }
                 }
             }
-            return LootProfiles[ActiveProfile];
+            return combined.ToList();
         }
 
         public static void Save()
@@ -69,9 +73,11 @@ namespace WildTerraHook
                 using (StreamWriter sw = new StreamWriter(_filePath))
                 {
                     sw.WriteLine($"Language={Language}");
-                    sw.WriteLine($"ActiveProfile={ActiveProfile}");
 
-                    // Zapis kolorów
+                    // Zapis aktywnych profili po przecinku
+                    string activeStr = string.Join(",", ActiveProfiles);
+                    sw.WriteLine($"ActiveProfiles={activeStr}");
+
                     sw.WriteLine($"MobAggressive={ColorToString(Colors.MobAggressive)}");
                     sw.WriteLine($"MobPassive={ColorToString(Colors.MobPassive)}");
                     sw.WriteLine($"MobFleeing={ColorToString(Colors.MobFleeing)}");
@@ -79,8 +85,6 @@ namespace WildTerraHook
                     sw.WriteLine($"ResMining={ColorToString(Colors.ResMining)}");
                     sw.WriteLine($"ResGather={ColorToString(Colors.ResGather)}");
 
-                    // Zapis Profili
-                    // Format: Profile:Nazwa=Item1;Item2;Item3
                     foreach (var kvp in LootProfiles)
                     {
                         string items = string.Join(";", kvp.Value.Where(x => !string.IsNullOrEmpty(x)));
@@ -101,9 +105,6 @@ namespace WildTerraHook
             try
             {
                 string[] lines = File.ReadAllLines(_filePath);
-
-                // Tymczasowe czyszczenie profili przed wczytaniem (żeby nie dublować przy reloadzie)
-                // Ale zostawiamy instancję, jeśli to pierwszy run
                 bool profilesLoaded = false;
 
                 foreach (string line in lines)
@@ -115,26 +116,23 @@ namespace WildTerraHook
                     string value = parts[1].Trim();
 
                     if (key == "Language") Language = value;
-                    else if (key == "ActiveProfile") ActiveProfile = value;
-
-                    // Ładowanie Profilu
-                    else if (key.StartsWith("Profile:"))
+                    else if (key == "ActiveProfiles")
                     {
-                        if (!profilesLoaded)
-                        {
-                            LootProfiles.Clear();
-                            profilesLoaded = true;
-                        }
-
-                        string profileName = key.Substring(8); // Ucinamy "Profile:"
-                        List<string> items = new List<string>();
+                        ActiveProfiles.Clear();
                         if (!string.IsNullOrEmpty(value))
                         {
-                            items.AddRange(value.Split(';'));
+                            foreach (var p in value.Split(','))
+                                if (!string.IsNullOrEmpty(p)) ActiveProfiles.Add(p);
                         }
+                    }
+                    else if (key.StartsWith("Profile:"))
+                    {
+                        if (!profilesLoaded) { LootProfiles.Clear(); profilesLoaded = true; }
+                        string profileName = key.Substring(8);
+                        List<string> items = new List<string>();
+                        if (!string.IsNullOrEmpty(value)) items.AddRange(value.Split(';'));
                         LootProfiles[profileName] = items;
                     }
-                    // Kolory
                     else if (key == "MobAggressive") Colors.MobAggressive = StringToColor(value);
                     else if (key == "MobPassive") Colors.MobPassive = StringToColor(value);
                     else if (key == "MobFleeing") Colors.MobFleeing = StringToColor(value);
@@ -143,9 +141,8 @@ namespace WildTerraHook
                     else if (key == "ResGather") Colors.ResGather = StringToColor(value);
                 }
 
-                // Bezpiecznik po załadowaniu
                 if (LootProfiles.Count == 0) LootProfiles["Default"] = new List<string>();
-                if (!LootProfiles.ContainsKey(ActiveProfile)) ActiveProfile = LootProfiles.Keys.First();
+                if (ActiveProfiles.Count == 0 && LootProfiles.ContainsKey("Default")) ActiveProfiles.Add("Default");
             }
             catch { }
         }
