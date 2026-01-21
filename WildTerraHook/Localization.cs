@@ -39,8 +39,8 @@ namespace WildTerraHook
                 catch { Debug.LogError("[Localization] Błąd odczytu pliku."); }
             }
 
-            // AUTO-FIX: Sprawdź czy jest klucz MISC_AGGRO_TITLE
-            if (!loadedFromDisk || !_currentDict.ContainsKey("MISC_AGGRO_TITLE"))
+            // AUTO-FIX dla kluczy
+            if (!loadedFromDisk || !_currentDict.ContainsKey("LOOT_PROFILES"))
             {
                 string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
                 try { File.WriteAllText(path, content); } catch { }
@@ -86,8 +86,6 @@ MISC_ZOOM_SENS=Sensitivity
 MISC_FOV=Camera FOV
 MISC_RESET=Reset Defaults
 MISC_LANG_SEL=Language / Język
-MISC_AGGRO_TITLE=Mob Aggro Radius
-MISC_AGGRO_RANGE=Estimated Range
 
 ESP_MAIN_BTN=[ ENABLE / DISABLE ESP ]
 ESP_RES_TITLE=RESOURCES
@@ -167,8 +165,6 @@ MISC_ZOOM_SENS=Czułość Zoomu
 MISC_FOV=Kąt Widzenia (FOV)
 MISC_RESET=Przywróć Domyślne
 MISC_LANG_SEL=Język / Language
-MISC_AGGRO_TITLE=Zasięg Agresji Mobów
-MISC_AGGRO_RANGE=Szacowany Zasięg
 
 ESP_MAIN_BTN=[ WŁĄCZ / WYŁĄCZ ESP ]
 ESP_RES_TITLE=SUROWCE (RESOURCES)
