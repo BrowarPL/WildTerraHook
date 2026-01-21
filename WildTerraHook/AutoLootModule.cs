@@ -20,10 +20,7 @@ namespace WildTerraHook
         private float _lootTimer = 0f;
         private string _status = "Idle";
 
-        // --- CACHE REFLECTION (dla wydajności) ---
-        private MethodInfo _containerQuickMoveMethod;
-        private bool _reflectionInit = false;
-
+        // --- UPDATE ---
         public void Update()
         {
             if (!Enabled) return;
@@ -33,7 +30,8 @@ namespace WildTerraHook
             var containerUI = global::WTUIContainer.instance;
             if (containerUI == null || !IsContainerVisible(containerUI))
             {
-                _status = "Oczekiwanie na okno...";
+                // Jeśli kontener zamknięty, resetujemy status, ale nie spamujemy logiem
+                if (_status.StartsWith("Biorę")) _status = "Czekam...";
                 return;
             }
 
@@ -48,30 +46,24 @@ namespace WildTerraHook
 
         private bool TryLootItem(global::WTUIContainer ui)
         {
-            // WTUIContainer ma listę slotów. Zwykle nazywa się 'slots' lub jest w 'container'
-            // Musimy dostać się do listy przedmiotów w kontenerze
             try
             {
-                // Próba 1: Publiczne pole 'slots' w WTUIContainer (jeśli istnieje w tej wersji)
-                // Zakładam, że UI ma listę slotów typu WTUIContainerSlot lub podobne
-                // Użyjmy reflection aby znaleźć kolekcję slotów w UI
+                // Szukamy kolekcji slotów w UI przez Reflection
                 var fields = ui.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var field in fields)
                 {
-                    // Szukamy Listy lub Tablicy która może zawierać sloty
                     if (field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(List<>))
                     {
                         var list = field.GetValue(ui) as System.Collections.IList;
                         if (list != null && list.Count > 0)
                         {
-                            // Sprawdzamy pierwszy element żeby zobaczyć czy to slot
                             object firstItem = list[0];
+                            // Sprawdzamy czy to lista slotów
                             if (firstItem.GetType().Name.Contains("Slot"))
                             {
-                                // Iterujemy po slotach
                                 foreach (object slot in list)
                                 {
-                                    if (ProcessSlot(slot)) return true; // Znaleziono i przeniesiono jeden item
+                                    if (ProcessSlot(slot)) return true; // Przeniesiono jeden przedmiot, czekamy (Delay)
                                 }
                             }
                         }
@@ -85,8 +77,7 @@ namespace WildTerraHook
 
         private bool ProcessSlot(object slotObj)
         {
-            // Musimy wyciągnąć item ze slotu
-            // Slot zazwyczaj ma pole 'item' (typu Item) lub 'data'
+            // Próba pobrania pola 'item' lub 'data' ze slotu
             var itemField = slotObj.GetType().GetField("item", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
             if (itemField == null) itemField = slotObj.GetType().GetField("data", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -95,16 +86,14 @@ namespace WildTerraHook
                 var item = itemField.GetValue(slotObj);
                 if (item != null)
                 {
-                    // Sprawdzamy nazwę (pole 'name' w klasie Item/ItemTemplate)
-                    // W Wild Terra item często ma 'template' lub 'data' z nazwą
                     string itemName = GetItemName(item);
 
+                    // Sprawdzamy czy przedmiot jest na Whiteliście
                     if (!string.IsNullOrEmpty(itemName) && ConfigManager.AutoLootList.Contains(itemName))
                     {
                         _status = $"Biorę: {itemName}";
 
-                        // Wywołaj "Quick Move" na tym slocie
-                        // Metoda nazywa się zazwyczaj OnClick, OnRightClick, lub QuickMove
+                        // Próba wywołania szybkiego przeniesienia (Quick Move / OnClick)
                         var methods = slotObj.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance);
                         foreach (var m in methods)
                         {
@@ -114,37 +103,38 @@ namespace WildTerraHook
                                 return true;
                             }
                         }
-
-                        // Fallback: Spróbujmy symulować kliknięcie na komponencie Unity UI, jeśli slot nim jest
-                        MonoBehaviour mb = slotObj as MonoBehaviour;
-                        if (mb != null)
-                        {
-                            // Tu można by użyć event system, ale metoda wyżej jest pewniejsza dla logiki gry
-                        }
                     }
                 }
             }
             return false;
         }
 
+        // Ulepszona metoda pobierania nazwy
         private string GetItemName(object itemObj)
         {
             try
             {
-                // Próba 1: Item.name
-                var nameProp = itemObj.GetType().GetProperty("name");
-                if (nameProp != null) return nameProp.GetValue(itemObj, null) as string;
+                Type t = itemObj.GetType();
 
-                var nameField = itemObj.GetType().GetField("name");
-                if (nameField != null) return nameField.GetValue(itemObj) as string;
+                // 1. Sprawdź pole 'name' (małe litery)
+                var fName = t.GetField("name");
+                if (fName != null) return fName.GetValue(itemObj) as string;
 
-                // Próba 2: Item.template.name (jeśli to instancja)
-                var templateField = itemObj.GetType().GetField("template");
-                if (templateField != null)
+                // 2. Sprawdź właściwość 'Name' (duże litery)
+                var pName = t.GetProperty("Name");
+                if (pName != null) return pName.GetValue(itemObj, null) as string;
+
+                // 3. Sprawdź template (częsty wzorzec w MMO)
+                var fTemplate = t.GetField("template");
+                if (fTemplate != null)
                 {
-                    var template = templateField.GetValue(itemObj);
-                    if (template != null) return GetItemName(template);
+                    var tmpl = fTemplate.GetValue(itemObj);
+                    if (tmpl != null) return GetItemName(tmpl); // Rekurencja do template'u
                 }
+
+                // 4. Fallback: EntityName, Id, Code
+                var fEnt = t.GetField("EntityName");
+                if (fEnt != null) return fEnt.GetValue(itemObj) as string;
             }
             catch { }
             return null;
@@ -152,10 +142,9 @@ namespace WildTerraHook
 
         private bool IsContainerVisible(global::WTUIContainer ui)
         {
-            // Sprawdzenie czy panel jest aktywny
             try
             {
-                // Szukamy metody IsShow lub pola panel.activeSelf
+                // Sprawdzamy czy okno jest widoczne
                 var method = ui.GetType().GetMethod("IsShow");
                 if (method != null) return (bool)method.Invoke(ui, null);
 
@@ -167,10 +156,10 @@ namespace WildTerraHook
                 }
             }
             catch { }
-            return true; // Domyślnie zakładamy że tak, jeśli instancja istnieje (ryzykowne, ale zadziała w update)
+            return true;
         }
 
-        // --- UI ---
+        // --- GUI ---
 
         public void DrawMenu()
         {
@@ -191,11 +180,10 @@ namespace WildTerraHook
             GUILayout.BeginHorizontal();
 
             // KOLUMNA 1: WHITELISTA
-            GUILayout.BeginVertical("box", GUILayout.Width(160));
+            GUILayout.BeginVertical("box", GUILayout.Width(180));
             GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_WHITE")}</b>");
 
             _scrollWhite = GUILayout.BeginScrollView(_scrollWhite, GUILayout.Height(250));
-            // Kopia listy, aby można było usuwać podczas iteracji
             var listCopy = new List<string>(ConfigManager.AutoLootList);
             foreach (var item in listCopy)
             {
@@ -215,7 +203,6 @@ namespace WildTerraHook
             GUILayout.BeginVertical("box");
             GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_ALL")}</b>");
 
-            // Wyszukiwarka
             GUILayout.BeginHorizontal();
             _searchFilter = GUILayout.TextField(_searchFilter);
             if (GUILayout.Button(Localization.Get("LOOT_BTN_REFRESH"), GUILayout.Width(60)))
@@ -234,11 +221,9 @@ namespace WildTerraHook
             {
                 foreach (var item in _allItemsCache)
                 {
-                    // Filtrowanie
                     if (!string.IsNullOrEmpty(_searchFilter) &&
                         item.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
 
-                    // Nie pokazuj jeśli już jest na liście
                     if (ConfigManager.AutoLootList.Contains(item)) continue;
 
                     GUILayout.BeginHorizontal();
@@ -262,30 +247,62 @@ namespace WildTerraHook
         {
             _allItemsCache.Clear();
             _status = "Skanowanie...";
+            int count = 0;
 
             try
             {
-                // Znajdź wszystkie obiekty typu ItemTemplate (definicje przedmiotów)
-                // W Wild Terra 2 klasa może się nazywać global::ItemTemplate
-                // Używamy Resources.FindObjectsOfTypeAll żeby znaleźć załadowane assety (nawet nieaktywne)
-                var templates = Resources.FindObjectsOfTypeAll<global::ItemTemplate>();
-
-                foreach (var t in templates)
+                // METODA 1: Skanowanie WTScriptableItem (zasoby gry)
+                // Używamy WTScriptableItem, ponieważ dziedziczy po ScriptableObject i ma .name
+                var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
+                foreach (var s in scriptables)
                 {
-                    if (t != null && !string.IsNullOrEmpty(t.name))
+                    if (s != null && !string.IsNullOrEmpty(s.name))
                     {
-                        if (!_allItemsCache.Contains(t.name))
-                            _allItemsCache.Add(t.name);
+                        if (!_allItemsCache.Contains(s.name)) _allItemsCache.Add(s.name);
                     }
                 }
 
-                // Sortowanie alfabetyczne
+                // METODA 2: Skanowanie Inventory (to co gracz ma w plecaku)
+                // To gwarantuje, że przedmioty, które posiadasz, będą na liście
+                if (global::WTUIInventory.instance != null)
+                {
+                    // Próbujemy wyciągnąć itemy z inwentarza (analogicznie do kontenera)
+                    var inv = global::WTUIInventory.instance;
+                    // Proste szukanie przez reflection
+                    var fields = inv.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var f in fields)
+                    {
+                        if (f.FieldType.IsGenericType && f.FieldType.GetGenericTypeDefinition() == typeof(List<>))
+                        {
+                            var list = f.GetValue(inv) as System.Collections.IList;
+                            if (list != null)
+                            {
+                                foreach (var slot in list)
+                                {
+                                    // Pobieramy item ze slotu
+                                    var iField = slot.GetType().GetField("item");
+                                    if (iField != null)
+                                    {
+                                        var itm = iField.GetValue(slot);
+                                        if (itm != null)
+                                        {
+                                            string n = GetItemName(itm);
+                                            if (!string.IsNullOrEmpty(n) && !_allItemsCache.Contains(n)) _allItemsCache.Add(n);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                count = _allItemsCache.Count;
                 _allItemsCache.Sort();
-                _status = $"Znaleziono {_allItemsCache.Count} przedmiotów.";
+                _status = $"Znaleziono {count} przed.";
             }
             catch (Exception ex)
             {
-                _status = "Błąd skanowania (zła klasa?)";
+                _status = "Błąd skanowania";
                 Debug.LogError("[AutoLoot] " + ex.Message);
             }
         }
