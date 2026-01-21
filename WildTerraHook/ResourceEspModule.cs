@@ -40,18 +40,20 @@ namespace WildTerraHook
 
         // Style
         private GUIStyle _styleLabel;
-        private GUIStyle _styleBackground; // Ciemne tło
+        private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
-        private Texture2D _boxTexture; // Do rysowania linii (Box ESP)
+        private Texture2D _boxTexture;
         private Vector2 _scrollPos;
 
         private struct CachedObject
         {
-            public Vector3 Position;
+            public Vector3 Position; // Pozycja (dla statycznych)
+            public Transform Transform; // Referencja (dla ruchomych mobów)
             public string Label;
             public Color Color;
             public string HpText;
-            public bool IsMob; // Flaga czy rysować Boxa
+            public bool IsMob;
+            public float Height; // Wysokość modelu (do Boxa)
         }
 
         public ResourceEspModule()
@@ -154,7 +156,8 @@ namespace WildTerraHook
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    cache.Add(new CachedObject { Position = pos, Label = key, Color = color, HpText = "", IsMob = isMob });
+                    // Dla surowców wysokość 0, transform null (są statyczne zazwyczaj)
+                    cache.Add(new CachedObject { Position = pos, Label = key, Color = color, HpText = "", IsMob = isMob, Transform = null, Height = 0f });
                     return true;
                 }
             }
@@ -168,39 +171,54 @@ namespace WildTerraHook
 
             int hp = mob.health;
             int maxHp = 0;
-
-            // Próba odczytu maxHealth
             try
             {
                 var f = mob.GetType().GetField("healthMax");
                 if (f != null) maxHp = (int)f.GetValue(mob);
                 else
                 {
-                    // Fallback
                     var p = mob.GetType().GetProperty("healthMax");
                     if (p != null) maxHp = (int)p.GetValue(mob, null);
                 }
             }
             catch { }
-            if (maxHp == 0) maxHp = hp; // Żeby nie dzielić przez zero wizualnie
+            if (maxHp == 0) maxHp = hp;
 
             string hpStr = $" [HP: {hp}/{maxHp}]";
 
+            // Wykrywanie wysokości moba dla Boxa
+            float height = 1.8f; // Domyślna
+            try
+            {
+                var col = mob.GetComponent<Collider>();
+                if (col != null) height = col.bounds.size.y;
+            }
+            catch { }
+
             bool isAggro = name.Contains("LargeFox") || name.Contains("Boss") || name.Contains("King") || name.Contains("Elite") || name.Contains("Bear") || name.Contains("Wolf");
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep");
-            bool isRetal = name.Contains("Fox") || name.Contains("Boar") || name.Contains("Goat");
+
+            CachedObject obj = new CachedObject
+            {
+                Position = pos,
+                Transform = mob.transform, // Ważne: referencja do śledzenia ruchu
+                Label = name,
+                HpText = hpStr,
+                IsMob = true,
+                Height = height
+            };
 
             if (isAggro)
             {
-                if (_showAggressive) cache.Add(new CachedObject { Position = pos, Label = "[!] " + name, Color = ConfigManager.Colors.MobAggressive, HpText = hpStr, IsMob = true });
+                if (_showAggressive) { obj.Color = ConfigManager.Colors.MobAggressive; obj.Label = "[!] " + name; cache.Add(obj); }
             }
             else if (isPassive)
             {
-                if (_showPassive) cache.Add(new CachedObject { Position = pos, Label = name, Color = ConfigManager.Colors.MobPassive, HpText = hpStr, IsMob = true });
+                if (_showPassive) { obj.Color = ConfigManager.Colors.MobPassive; cache.Add(obj); }
             }
-            else // Retaliating / Other
+            else // Retaliating
             {
-                if (_showRetaliating) cache.Add(new CachedObject { Position = pos, Label = name, Color = ConfigManager.Colors.MobFleeing, HpText = hpStr, IsMob = true });
+                if (_showRetaliating) { obj.Color = ConfigManager.Colors.MobFleeing; cache.Add(obj); }
             }
         }
 
@@ -214,10 +232,7 @@ namespace WildTerraHook
 
         private void CreateStyles()
         {
-            // Tło pod tekstem (Ciemne)
             if (_bgTexture == null) { _bgTexture = new Texture2D(1, 1); _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.75f)); _bgTexture.Apply(); }
-
-            // Tekstura do rysowania Boxa (Biała, kolorujemy ją przez GUI.color)
             if (_boxTexture == null) { _boxTexture = new Texture2D(1, 1); _boxTexture.SetPixel(0, 0, Color.white); _boxTexture.Apply(); }
 
             if (_styleBackground == null) { _styleBackground = new GUIStyle(); _styleBackground.normal.background = _bgTexture; }
@@ -344,17 +359,26 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
-                float dist = Vector3.Distance(originPos, obj.Position);
+                // Użyj aktualnej pozycji (Live) jeśli dostępna
+                Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
+
+                float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > _maxDistance) continue;
 
-                Vector3 screenPos = cam.WorldToScreenPoint(obj.Position + Vector3.up * 1.5f);
+                // --- OBLICZANIE POZYCJI BOXA 2D ---
+                Vector3 screenFeet = cam.WorldToScreenPoint(currentPos);
+                Vector3 screenHead = cam.WorldToScreenPoint(currentPos + Vector3.up * obj.Height);
+
+                // Sprawdzamy czy obiekt jest za kamerą (Z < 0)
+                bool isBehind = screenFeet.z < 0;
 
                 // --- LOGIKA OFF-SCREEN (Przyklejanie do krawędzi) ---
-                bool isBehind = screenPos.z < 0;
-                bool isOffScreen = isBehind || screenPos.x < 0 || screenPos.x > screenW || screenPos.y < 0 || screenPos.y > screenH;
+                // Boxa nie rysujemy jak jest offscreen, tylko napis
+                bool isOffScreen = isBehind || screenFeet.x < 0 || screenFeet.x > screenW || screenFeet.y < 0 || screenFeet.y > screenH;
 
                 if (isOffScreen)
                 {
+                    Vector3 screenPos = screenFeet;
                     if (isBehind) { screenPos.x *= -1; screenPos.y *= -1; }
 
                     Vector3 screenCenter = new Vector3(screenW / 2, screenH / 2, 0);
@@ -368,7 +392,7 @@ namespace WildTerraHook
                     float m = cos / sin;
 
                     Vector3 screenBounds = screenCenter;
-                    screenBounds.x -= 20; // Margines
+                    screenBounds.x -= 20;
                     screenBounds.y -= 20;
 
                     if (cos > 0) screenPos = new Vector3(screenBounds.y / m, screenBounds.y, 0);
@@ -378,51 +402,71 @@ namespace WildTerraHook
                     else if (screenPos.x < -screenBounds.x) screenPos = new Vector3(-screenBounds.x, -screenBounds.x * m, 0);
 
                     screenPos += screenCenter;
+                    screenPos.y = screenH - screenPos.y;
+
+                    // Rysuj sam tekst przyklejony
+                    DrawLabelWithBackground(screenPos, obj.Label, obj.Color);
                 }
-
-                // Odwrócenie Y dla GUI
-                screenPos.y = screenH - screenPos.y;
-
-                // --- BOX ESP (Tylko dla mobów i tylko gdy są na ekranie) ---
-                if (obj.IsMob && !isOffScreen)
+                else
                 {
-                    // Skalowanie Boxa: im dalej, tym mniejszy
-                    float boxHeight = 1500f / dist; // Przykładowy faktor, można dostosować
-                    if (boxHeight > screenH / 2) boxHeight = screenH / 2; // Limit wielkości
-                    float boxWidth = boxHeight * 0.6f;
+                    // --- RYSOWANIE ON-SCREEN (Z BOXEM) ---
 
-                    DrawBoxOutline(new Vector2(screenPos.x, screenPos.y - (boxHeight / 2) + 10), boxWidth, boxHeight, obj.Color, 2f);
+                    // Konwersja Y dla GUI (odwrócone)
+                    float feetY = screenH - screenFeet.y;
+                    float headY = screenH - screenHead.y;
+
+                    // Wysokość i szerokość boxa na ekranie
+                    float boxHeight = Mathf.Abs(feetY - headY);
+                    // Minimalna wielkość, żeby nie znikało w oddali
+                    if (boxHeight < 5) boxHeight = 5;
+
+                    float boxWidth = boxHeight * 0.6f; // Proporcja 0.6 (wąski box dla postaci)
+
+                    float boxX = screenFeet.x - boxWidth / 2;
+                    float boxY = headY; // Góra boxa to głowa
+
+                    // 1. Rysuj Box (tylko dla mobów)
+                    if (obj.IsMob)
+                    {
+                        DrawBoxOutline(new Rect(boxX, boxY, boxWidth, boxHeight), obj.Color, 2f);
+                    }
+
+                    // 2. Rysuj Tekst (Nad Boxem)
+                    string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
+                    // Pozycja tekstu: środek góry boxa
+                    Vector2 textPos = new Vector2(screenFeet.x, boxY - 15);
+                    DrawLabelWithBackground(textPos, text, obj.Color);
                 }
-
-                // --- RYSOWANIE ETYKIETY ---
-                string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
-                GUIContent content = new GUIContent(text);
-                Vector2 size = _styleLabel.CalcSize(content);
-
-                // Tło pod tekstem
-                Rect r = new Rect(screenPos.x - size.x / 2 - 2, screenPos.y - size.y / 2 - 2, size.x + 4, size.y + 4);
-                GUI.Box(r, GUIContent.none, _styleBackground);
-
-                // Właściwy tekst
-                _styleLabel.normal.textColor = obj.Color;
-                GUI.Label(r, text, _styleLabel);
             }
         }
 
-        private void DrawBoxOutline(Vector2 center, float width, float height, Color color, float thickness)
+        private void DrawLabelWithBackground(Vector2 centerBottomPos, string text, Color color)
         {
-            float halfWidth = width / 2;
-            float halfHeight = height / 2;
+            GUIContent content = new GUIContent(text);
+            Vector2 size = _styleLabel.CalcSize(content);
 
-            Vector2 topLeft = new Vector2(center.x - halfWidth, center.y - halfHeight);
-            Vector2 topRight = new Vector2(center.x + halfWidth, center.y - halfHeight);
-            Vector2 bottomLeft = new Vector2(center.x - halfWidth, center.y + halfHeight);
-            Vector2 bottomRight = new Vector2(center.x + halfWidth, center.y + halfHeight);
+            // Centrujemy względem podanej pozycji (bottom center)
+            Rect r = new Rect(centerBottomPos.x - size.x / 2, centerBottomPos.y - size.y, size.x, size.y);
 
-            DrawLine(topLeft, topRight, color, thickness);    // Góra
-            DrawLine(bottomLeft, bottomRight, color, thickness); // Dół
-            DrawLine(topLeft, bottomLeft, color, thickness);  // Lewo
-            DrawLine(topRight, bottomRight, color, thickness); // Prawo
+            // Tło (+margines)
+            Rect bgRect = new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4);
+            GUI.Box(bgRect, GUIContent.none, _styleBackground);
+
+            // Tekst
+            _styleLabel.normal.textColor = color;
+            GUI.Label(r, text, _styleLabel);
+        }
+
+        private void DrawBoxOutline(Rect r, Color color, float thickness)
+        {
+            // Góra
+            DrawLine(new Vector2(r.x, r.y), new Vector2(r.x + r.width, r.y), color, thickness);
+            // Dół
+            DrawLine(new Vector2(r.x, r.y + r.height), new Vector2(r.x + r.width, r.y + r.height), color, thickness);
+            // Lewo
+            DrawLine(new Vector2(r.x, r.y), new Vector2(r.x, r.y + r.height), color, thickness);
+            // Prawo
+            DrawLine(new Vector2(r.x + r.width, r.y), new Vector2(r.x + r.width, r.y + r.height), color, thickness);
         }
 
         private void DrawLine(Vector2 pointA, Vector2 pointB, Color color, float width)
