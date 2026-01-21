@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using UnityEngine.EventSystems; // Wymagane do symulacji kliknięć
 using System.Collections.Generic;
 using System.Reflection;
 using System;
@@ -10,7 +11,7 @@ namespace WildTerraHook
     {
         // --- USTAWIENIA ---
         public bool Enabled = false;
-        public float Delay = 0.5f;
+        public float Delay = 0.3f; // Zmniejszyłem lekko domyślny czas dla szybszego zbierania
 
         // --- DANE ---
         private List<string> _allItemsCache = new List<string>();
@@ -30,8 +31,7 @@ namespace WildTerraHook
             var containerUI = global::WTUIContainer.instance;
             if (containerUI == null || !IsContainerVisible(containerUI))
             {
-                // Jeśli kontener zamknięty, resetujemy status, ale nie spamujemy logiem
-                if (_status.StartsWith("Biorę")) _status = "Czekam...";
+                if (_status.StartsWith("Biorę") || _status.StartsWith("Kliknięto")) _status = "Czekam na okno...";
                 return;
             }
 
@@ -93,13 +93,35 @@ namespace WildTerraHook
                     {
                         _status = $"Biorę: {itemName}";
 
-                        // Próba wywołania szybkiego przeniesienia (Quick Move / OnClick)
+                        // --- METODA 1: Symulacja Prawego Kliknięcia (PointerClick) ---
+                        // To jest najbardziej uniwersalna metoda w Unity UI.
+                        // Prawy przycisk myszy w Wild Terra zazwyczaj przenosi item.
+                        try
+                        {
+                            if (EventSystem.current != null)
+                            {
+                                var pointerData = new PointerEventData(EventSystem.current);
+                                pointerData.button = PointerEventData.InputButton.Right; // Symulujemy PRAWY przycisk
+
+                                var clickMethod = slotObj.GetType().GetMethod("OnPointerClick");
+                                if (clickMethod != null)
+                                {
+                                    clickMethod.Invoke(slotObj, new object[] { pointerData });
+                                    _status = $"Kliknięto (Prawy): {itemName}";
+                                    return true;
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // --- METODA 2: Bezpośrednie wywołanie OnClick (jeśli PointerClick zawiedzie) ---
                         var methods = slotObj.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance);
                         foreach (var m in methods)
                         {
-                            if (m.Name.Equals("OnQuickAction") || m.Name.Equals("OnDoubleClick") || m.Name.Contains("Quick"))
+                            if (m.Name.Equals("OnClick") || m.Name.Equals("OnQuickAction") || m.Name.Equals("OnDoubleClick"))
                             {
                                 m.Invoke(slotObj, null);
+                                _status = $"Metoda {m.Name}: {itemName}";
                                 return true;
                             }
                         }
@@ -109,30 +131,25 @@ namespace WildTerraHook
             return false;
         }
 
-        // Ulepszona metoda pobierania nazwy
         private string GetItemName(object itemObj)
         {
             try
             {
                 Type t = itemObj.GetType();
 
-                // 1. Sprawdź pole 'name' (małe litery)
                 var fName = t.GetField("name");
                 if (fName != null) return fName.GetValue(itemObj) as string;
 
-                // 2. Sprawdź właściwość 'Name' (duże litery)
                 var pName = t.GetProperty("Name");
                 if (pName != null) return pName.GetValue(itemObj, null) as string;
 
-                // 3. Sprawdź template (częsty wzorzec w MMO)
                 var fTemplate = t.GetField("template");
                 if (fTemplate != null)
                 {
                     var tmpl = fTemplate.GetValue(itemObj);
-                    if (tmpl != null) return GetItemName(tmpl); // Rekurencja do template'u
+                    if (tmpl != null) return GetItemName(tmpl);
                 }
 
-                // 4. Fallback: EntityName, Id, Code
                 var fEnt = t.GetField("EntityName");
                 if (fEnt != null) return fEnt.GetValue(itemObj) as string;
             }
@@ -144,7 +161,6 @@ namespace WildTerraHook
         {
             try
             {
-                // Sprawdzamy czy okno jest widoczne
                 var method = ui.GetType().GetMethod("IsShow");
                 if (method != null) return (bool)method.Invoke(ui, null);
 
@@ -251,8 +267,7 @@ namespace WildTerraHook
 
             try
             {
-                // METODA 1: Skanowanie WTScriptableItem (zasoby gry)
-                // Używamy WTScriptableItem, ponieważ dziedziczy po ScriptableObject i ma .name
+                // Skanowanie WTScriptableItem
                 var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
                 foreach (var s in scriptables)
                 {
@@ -262,13 +277,10 @@ namespace WildTerraHook
                     }
                 }
 
-                // METODA 2: Skanowanie Inventory (to co gracz ma w plecaku)
-                // To gwarantuje, że przedmioty, które posiadasz, będą na liście
+                // Skanowanie Inventory
                 if (global::WTUIInventory.instance != null)
                 {
-                    // Próbujemy wyciągnąć itemy z inwentarza (analogicznie do kontenera)
                     var inv = global::WTUIInventory.instance;
-                    // Proste szukanie przez reflection
                     var fields = inv.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     foreach (var f in fields)
                     {
@@ -279,7 +291,6 @@ namespace WildTerraHook
                             {
                                 foreach (var slot in list)
                                 {
-                                    // Pobieramy item ze slotu
                                     var iField = slot.GetType().GetField("item");
                                     if (iField != null)
                                     {
