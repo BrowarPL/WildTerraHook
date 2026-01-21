@@ -10,7 +10,7 @@ namespace WildTerraHook
         // --- USTAWIENIA ---
         public bool EspEnabled = false;
         public bool ShowBoxes = true;
-        public bool ShowXRay = true; // "Glow" widoczny przez ściany
+        public bool ShowXRay = true; // Wallhack Glow
 
         // Kategorie
         private bool _showResources = false;
@@ -28,7 +28,7 @@ namespace WildTerraHook
         private bool _showColorMenu = false;
         private float _maxDistance = 150f;
 
-        // Toggle Lists
+        // Listy toggle
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -62,6 +62,7 @@ namespace WildTerraHook
             public string HpText;
             public bool IsMob;
             public float Height;
+            public bool ShouldGlow; // Czy ten konkretny obiekt ma świecić?
             public Renderer[] Renderers;
         }
 
@@ -88,16 +89,23 @@ namespace WildTerraHook
 
         private void CreateXRayMaterial()
         {
-            // Tworzymy materiał, który ignoruje głębię (widoczny przez ściany)
-            // Używamy shadera Sprites/Default lub GUI/Text Shader bo są lekkie i zawsze dostępne
-            Shader shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("GUI/Text Shader"); // Fallback
+            // Tworzymy materiał "Wallhack"
+            // Używamy shadera GUI/Text Shader, bo on zawsze rysuje się na wierzchu UI
+            // Jeśli gra go nie ma, fallback na Sprites/Default
+            Shader shader = Shader.Find("GUI/Text Shader");
+            if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
+            if (shader == null) shader = Shader.Find("Sprites/Default");
 
             if (shader != null)
             {
                 _xrayMaterial = new Material(shader);
-                _xrayMaterial.SetFloat("_ZTest", (float)UnityEngine.Rendering.CompareFunction.Always); // ZAWSZE RYSUJ
-                _xrayMaterial.renderQueue = 4000; // Overlay (na wierzchu)
+                // 8 = Always (Rysuj zawsze, ignoruj ściany)
+                _xrayMaterial.SetInt("_ZTest", 8);
+                // Wyłącz zapis do bufora głębi
+                _xrayMaterial.SetInt("_ZWrite", 0);
+                _xrayMaterial.SetInt("_Cull", 0); // Rysuj obie strony (Off)
+                // Ustaw kolejkę renderowania na Overlay (najwyższa możliwa)
+                _xrayMaterial.renderQueue = 5000;
             }
         }
 
@@ -148,20 +156,22 @@ namespace WildTerraHook
                         if (IsIgnored(name)) continue;
 
                         bool matched = false;
-                        if (_showMining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false)) matched = true;
-                        else if (_showGathering && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false)) matched = true;
-                        else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false)) matched = true;
-                        else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false)) matched = true;
+                        // Dla nazwanych surowców -> GLOW ON (true)
+                        if (_showMining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false, true)) matched = true;
+                        else if (_showGathering && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false, true)) matched = true;
+                        else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false, true)) matched = true;
+                        else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false, true)) matched = true;
 
-                        if (!matched && _showOthers && !name.Contains("Player"))
+                        // Dla "Innych" -> GLOW OFF (false)
+                        if (!matched && _showOthers && !name.Contains("Player") && !name.Contains("Character"))
                         {
-                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f);
+                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false);
                             matched = true;
                         }
                     }
                 }
 
-                // MOBS
+                // MOBS (Zawsze GLOW ON)
                 if (_showMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -177,9 +187,9 @@ namespace WildTerraHook
             }
             catch { }
 
-            // --- ZARZĄDZANIE X-RAY (GLOW) ---
+            // --- ZARZĄDZANIE MATERIAŁAMI ---
 
-            // 1. Zbierz wszystkie renderery z nowej listy
+            // 1. Zidentyfikuj aktywne renderery
             foreach (var item in newCache)
             {
                 if (item.Renderers != null)
@@ -188,30 +198,29 @@ namespace WildTerraHook
                 }
             }
 
-            // 2. Wyczyść XRay z obiektów, których już nie ma na liście
+            // 2. Wyczyść stare (obiekty które zniknęły)
             List<Renderer> toRemove = new List<Renderer>();
             foreach (var kvp in _originalMaterials)
             {
                 if (kvp.Key == null || !currentRenderers.Contains(kvp.Key))
                 {
-                    // Restore original materials
-                    if (kvp.Key != null) kvp.Key.materials = kvp.Value;
+                    if (kvp.Key != null) kvp.Key.materials = kvp.Value; // Przywróć oryginał
                     toRemove.Add(kvp.Key);
                 }
             }
             foreach (var r in toRemove) _originalMaterials.Remove(r);
 
-            // 3. Aplikuj XRay na obecną listę
+            // 3. Aplikuj Glow (tylko tam gdzie ShouldGlow == true)
             if (ShowXRay)
             {
                 foreach (var item in newCache)
                 {
-                    ApplyXRay(item.Renderers, item.Color);
+                    if (item.ShouldGlow) ApplyXRay(item.Renderers, item.Color);
+                    else RestoreOriginal(item.Renderers); // Jeśli obiekt jest w liście (Inne), ale bez glow
                 }
             }
             else
             {
-                // Jeśli wyłączono globalnie, ale ESP działa - wyczyść wszystko
                 ClearAllXRay();
             }
 
@@ -227,6 +236,19 @@ namespace WildTerraHook
             _originalMaterials.Clear();
         }
 
+        private void RestoreOriginal(Renderer[] renderers)
+        {
+            if (renderers == null) return;
+            foreach (var r in renderers)
+            {
+                if (r != null && _originalMaterials.ContainsKey(r))
+                {
+                    r.materials = _originalMaterials[r];
+                    _originalMaterials.Remove(r);
+                }
+            }
+        }
+
         private List<string> GetActiveKeys(Dictionary<string, bool> dict)
         {
             List<string> active = new List<string>();
@@ -234,14 +256,14 @@ namespace WildTerraHook
             return active;
         }
 
-        private bool CheckList(string objName, List<string> activeKeys, global::WTObject obj, Color color, List<CachedObject> cache, bool isMob)
+        private bool CheckList(string objName, List<string> activeKeys, global::WTObject obj, Color color, List<CachedObject> cache, bool isMob, bool glow)
         {
             if (activeKeys.Count == 0) return false;
             foreach (var key in activeKeys)
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f);
+                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, glow);
                     return true;
                 }
             }
@@ -284,10 +306,10 @@ namespace WildTerraHook
                 if (_showRetaliating) { textColor = ConfigManager.Colors.MobFleeing; show = true; }
             }
 
-            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height);
+            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true);
         }
 
-        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h)
+        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow)
         {
             var rends = go.GetComponentsInChildren<Renderer>();
             cache.Add(new CachedObject
@@ -300,11 +322,12 @@ namespace WildTerraHook
                 HpText = hp,
                 IsMob = isMob,
                 Height = h,
+                ShouldGlow = glow,
                 Renderers = rends
             });
         }
 
-        // --- X-RAY LOGIC (MATERIAL OVERLAY) ---
+        // --- X-RAY LOGIC ---
 
         private void ApplyXRay(Renderer[] renderers, Color color)
         {
@@ -315,37 +338,33 @@ namespace WildTerraHook
                 if (r == null) continue;
                 if (r is ParticleSystemRenderer) continue;
 
-                // Jeśli nie mamy zapisanego oryginału, zapisz go
-                if (!_originalMaterials.ContainsKey(r))
-                {
-                    _originalMaterials[r] = r.materials; // Kopia tablicy
-                }
+                // Zapisz oryginał
+                if (!_originalMaterials.ContainsKey(r)) _originalMaterials[r] = r.sharedMaterials; // shared lepsze dla wydajności
 
-                // Sprawdź czy już ma dodany XRay na końcu
-                var currentMats = r.materials; // To tworzy instancję tablicy
+                var currentMats = r.materials;
                 bool hasXRay = false;
 
-                // Szybki check po nazwie shadera (instancja materiału ma nazwę "Name (Instance)")
                 if (currentMats.Length > 0)
                 {
                     var lastMat = currentMats[currentMats.Length - 1];
-                    if (lastMat.shader == _xrayMaterial.shader)
+                    // Sprawdzamy po nazwie shadera, bo to najpewniejsze
+                    if (lastMat.shader.name == _xrayMaterial.shader.name)
                     {
-                        // Już ma XRay, tylko zaktualizuj kolor
-                        if (lastMat.color != color) lastMat.color = new Color(color.r, color.g, color.b, 0.4f); // Półprzezroczysty
+                        // Aktualizuj kolor (z alphą 0.5 dla przezroczystości)
+                        Color targetColor = new Color(color.r, color.g, color.b, 0.5f);
+                        if (lastMat.color != targetColor) lastMat.color = targetColor;
                         hasXRay = true;
                     }
                 }
 
                 if (!hasXRay)
                 {
-                    // Dodaj XRay jako ostatni materiał
+                    // Dodaj materiał XRay na wierzch
                     Material[] newMats = new Material[currentMats.Length + 1];
                     Array.Copy(currentMats, newMats, currentMats.Length);
 
-                    // Stwórz instancję XRay dla tego obiektu (żeby mieć własny kolor)
                     Material instanceXRay = new Material(_xrayMaterial);
-                    instanceXRay.color = new Color(color.r, color.g, color.b, 0.4f); // Alpha 0.4f dla X-Ray effect
+                    instanceXRay.color = new Color(color.r, color.g, color.b, 0.5f);
 
                     newMats[newMats.Length - 1] = instanceXRay;
                     r.materials = newMats;
@@ -392,7 +411,7 @@ namespace WildTerraHook
 
                 GUILayout.BeginHorizontal();
                 ShowBoxes = GUILayout.Toggle(ShowBoxes, "Box ESP");
-                ShowXRay = GUILayout.Toggle(ShowXRay, "X-Ray Glow (Wallhack)");
+                ShowXRay = GUILayout.Toggle(ShowXRay, "X-Ray Glow (Visible Through Walls)");
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(10);
