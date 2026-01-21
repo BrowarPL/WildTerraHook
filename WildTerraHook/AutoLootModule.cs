@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using UnityEngine.EventSystems; // Wymagane do symulacji kliknięć
+using UnityEngine.EventSystems; // Niezbędne do symulacji kliknięć
 using System.Collections.Generic;
 using System.Reflection;
 using System;
@@ -11,7 +11,7 @@ namespace WildTerraHook
     {
         // --- USTAWIENIA ---
         public bool Enabled = false;
-        public float Delay = 0.3f; // Zmniejszyłem lekko domyślny czas dla szybszego zbierania
+        public float Delay = 0.2f; // Szybkie zbieranie
 
         // --- DANE ---
         private List<string> _allItemsCache = new List<string>();
@@ -31,7 +31,7 @@ namespace WildTerraHook
             var containerUI = global::WTUIContainer.instance;
             if (containerUI == null || !IsContainerVisible(containerUI))
             {
-                if (_status.StartsWith("Biorę") || _status.StartsWith("Kliknięto")) _status = "Czekam na okno...";
+                if (_status.StartsWith("Biorę") || _status.StartsWith("Klik")) _status = "Czekam na okno...";
                 return;
             }
 
@@ -63,7 +63,7 @@ namespace WildTerraHook
                             {
                                 foreach (object slot in list)
                                 {
-                                    if (ProcessSlot(slot)) return true; // Przeniesiono jeden przedmiot, czekamy (Delay)
+                                    if (ProcessSlot(slot)) return true; // Przeniesiono jeden przedmiot -> czekamy (Delay)
                                 }
                             }
                         }
@@ -77,7 +77,7 @@ namespace WildTerraHook
 
         private bool ProcessSlot(object slotObj)
         {
-            // Próba pobrania pola 'item' lub 'data' ze slotu
+            // 1. Sprawdź co jest w slocie
             var itemField = slotObj.GetType().GetField("item", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
             if (itemField == null) itemField = slotObj.GetType().GetField("data", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -88,46 +88,69 @@ namespace WildTerraHook
                 {
                     string itemName = GetItemName(item);
 
-                    // Sprawdzamy czy przedmiot jest na Whiteliście
+                    // 2. Jeśli przedmiot jest na liście -> KLIKNIJ
                     if (!string.IsNullOrEmpty(itemName) && ConfigManager.AutoLootList.Contains(itemName))
                     {
                         _status = $"Biorę: {itemName}";
 
-                        // --- METODA 1: Symulacja Prawego Kliknięcia (PointerClick) ---
-                        // To jest najbardziej uniwersalna metoda w Unity UI.
-                        // Prawy przycisk myszy w Wild Terra zazwyczaj przenosi item.
-                        try
+                        // Próbujemy kliknąć slot (jako MonoBehaviour/GameObject)
+                        MonoBehaviour mb = slotObj as MonoBehaviour;
+                        if (mb != null)
                         {
-                            if (EventSystem.current != null)
-                            {
-                                var pointerData = new PointerEventData(EventSystem.current);
-                                pointerData.button = PointerEventData.InputButton.Right; // Symulujemy PRAWY przycisk
-
-                                var clickMethod = slotObj.GetType().GetMethod("OnPointerClick");
-                                if (clickMethod != null)
-                                {
-                                    clickMethod.Invoke(slotObj, new object[] { pointerData });
-                                    _status = $"Kliknięto (Prawy): {itemName}";
-                                    return true;
-                                }
-                            }
-                        }
-                        catch { }
-
-                        // --- METODA 2: Bezpośrednie wywołanie OnClick (jeśli PointerClick zawiedzie) ---
-                        var methods = slotObj.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance);
-                        foreach (var m in methods)
-                        {
-                            if (m.Name.Equals("OnClick") || m.Name.Equals("OnQuickAction") || m.Name.Equals("OnDoubleClick"))
-                            {
-                                m.Invoke(slotObj, null);
-                                _status = $"Metoda {m.Name}: {itemName}";
-                                return true;
-                            }
+                            if (SimulateRightClick(mb.gameObject)) return true;
                         }
                     }
                 }
             }
+            return false;
+        }
+
+        // --- NAJWAŻNIEJSZA METODA: Symulacja Prawego Kliknięcia ---
+        private bool SimulateRightClick(GameObject target)
+        {
+            if (EventSystem.current == null) return false;
+
+            // Tworzymy dane zdarzenia (Prawy Przycisk = Quick Move)
+            PointerEventData pointerData = new PointerEventData(EventSystem.current)
+            {
+                button = PointerEventData.InputButton.Right,
+                position = Input.mousePosition // Czasami gra sprawdza pozycję
+            };
+
+            // 1. Próba bezpośrednia na obiekcie
+            if (ExecuteEvents.Execute(target, pointerData, ExecuteEvents.pointerClickHandler))
+            {
+                _status = "Klik: Direct";
+                return true;
+            }
+
+            // 2. Próba na dzieciach (często slot ma w środku 'Icon' lub 'Button', który odbiera kliknięcia)
+            foreach (Transform child in target.transform)
+            {
+                if (ExecuteEvents.Execute(child.gameObject, pointerData, ExecuteEvents.pointerClickHandler))
+                {
+                    _status = "Klik: Child";
+                    return true;
+                }
+                // Jeszcze głębiej (np. Slot -> Background -> Icon)
+                foreach (Transform grandChild in child)
+                {
+                    if (ExecuteEvents.Execute(grandChild.gameObject, pointerData, ExecuteEvents.pointerClickHandler))
+                    {
+                        _status = "Klik: GrandChild";
+                        return true;
+                    }
+                }
+            }
+
+            // 3. Fallback: PointerDown + PointerUp (jeśli gra nie obsługuje Click, a np. Drag/Down)
+            if (ExecuteEvents.Execute(target, pointerData, ExecuteEvents.pointerDownHandler))
+            {
+                ExecuteEvents.Execute(target, pointerData, ExecuteEvents.pointerUpHandler);
+                _status = "Klik: Down/Up";
+                return true;
+            }
+
             return false;
         }
 
@@ -143,6 +166,7 @@ namespace WildTerraHook
                 var pName = t.GetProperty("Name");
                 if (pName != null) return pName.GetValue(itemObj, null) as string;
 
+                // Częsty przypadek: Item -> Template -> Name
                 var fTemplate = t.GetField("template");
                 if (fTemplate != null)
                 {
@@ -192,7 +216,6 @@ namespace WildTerraHook
             GUILayout.Label($"{Localization.Get("LOOT_STATUS")}: {_status}");
             GUILayout.Space(10);
 
-            // Dwie kolumny: Whitelista | Wszystkie Itemki
             GUILayout.BeginHorizontal();
 
             // KOLUMNA 1: WHITELISTA
@@ -215,7 +238,7 @@ namespace WildTerraHook
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
 
-            // KOLUMNA 2: WYSZUKIWARKA I LISTA
+            // KOLUMNA 2: LISTA PRZEDMIOTÓW
             GUILayout.BeginVertical("box");
             GUILayout.Label($"<b>{Localization.Get("LOOT_HEADER_ALL")}</b>");
 
@@ -267,7 +290,7 @@ namespace WildTerraHook
 
             try
             {
-                // Skanowanie WTScriptableItem
+                // 1. Skanowanie ScriptableItems (baza danych gry)
                 var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
                 foreach (var s in scriptables)
                 {
@@ -277,7 +300,7 @@ namespace WildTerraHook
                     }
                 }
 
-                // Skanowanie Inventory
+                // 2. Skanowanie Ekwipunku (pewniak)
                 if (global::WTUIInventory.instance != null)
                 {
                     var inv = global::WTUIInventory.instance;
