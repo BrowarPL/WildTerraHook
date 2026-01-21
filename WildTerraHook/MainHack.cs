@@ -12,7 +12,6 @@ namespace WildTerraHook
         private AutoLootModule _lootModule;
 
         // --- GUI ---
-        // POSZERZONE OKNO DLA LEPSZEGO WYGLĄDU TABELI
         private Rect _menuRect = new Rect(20, 20, 600, 600);
 
         private bool _showMenu = true;
@@ -44,6 +43,7 @@ namespace WildTerraHook
                 _showMenu = !_showMenu;
             }
 
+            // Update modułów
             _espModule.Update();
             _miscModule.Update();
             _fishingModule.Update();
@@ -54,9 +54,12 @@ namespace WildTerraHook
         {
             if (!_globalUiVisible) return;
 
+            // Rysowanie na ekranie
             _espModule.DrawESP();
             _fishingModule.OnGUI();
+            _miscModule.OnGUI(); // NOWOŚĆ: Rysowanie okręgów agresji
 
+            // Menu
             if (_showMenu)
             {
                 _menuRect = GUILayout.Window(0, _menuRect, DrawMenuWindow, Localization.Get("MENU_TITLE"));

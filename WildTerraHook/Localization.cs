@@ -8,8 +8,6 @@ namespace WildTerraHook
     public static class Localization
     {
         private static Dictionary<string, string> _currentDict = new Dictionary<string, string>();
-
-        // Ścieżka do folderu z ustawieniami
         private static string _folderPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
 
         public static void Init()
@@ -25,8 +23,6 @@ namespace WildTerraHook
             string path = Path.Combine(_folderPath, fileName);
 
             bool loadedFromDisk = false;
-
-            // 1. Próba wczytania z dysku
             if (File.Exists(path))
             {
                 try
@@ -36,31 +32,18 @@ namespace WildTerraHook
                     {
                         if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
                         var parts = line.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2)
-                        {
-                            _currentDict[parts[0].Trim()] = parts[1].Trim();
-                        }
+                        if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim();
                     }
                     loadedFromDisk = true;
                 }
-                catch
-                {
-                    Debug.LogError("[Localization] Błąd odczytu pliku. Przywracam domyślne.");
-                }
+                catch { Debug.LogError("[Localization] Błąd odczytu pliku."); }
             }
 
-            // 2. AUTO-FIX: Jeśli brakuje nowych kluczy (np. od Loota), nadpisz plik
-            if (!loadedFromDisk || !_currentDict.ContainsKey("LOOT_PROFILES"))
+            // AUTO-FIX: Sprawdź czy jest klucz MISC_AGGRO_TITLE
+            if (!loadedFromDisk || !_currentDict.ContainsKey("MISC_AGGRO_TITLE"))
             {
                 string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
-                try
-                {
-                    File.WriteAllText(path, content);
-                    Debug.Log($"[Localization] Zaktualizowano plik językowy: {fileName}");
-                }
-                catch { }
-
-                // Przeładuj z pamięci
+                try { File.WriteAllText(path, content); } catch { }
                 LoadHardcoded(langCode);
             }
         }
@@ -68,10 +51,8 @@ namespace WildTerraHook
         public static string Get(string key)
         {
             if (_currentDict.ContainsKey(key)) return _currentDict[key];
-            return key; // Zwróć klucz jeśli brakuje tłumaczenia
+            return key;
         }
-
-        // --- DANE TŁUMACZEŃ (HARDCODED) ---
 
         private static void LoadHardcoded(string lang)
         {
@@ -105,6 +86,8 @@ MISC_ZOOM_SENS=Sensitivity
 MISC_FOV=Camera FOV
 MISC_RESET=Reset Defaults
 MISC_LANG_SEL=Language / Język
+MISC_AGGRO_TITLE=Mob Aggro Radius
+MISC_AGGRO_RANGE=Estimated Range
 
 ESP_MAIN_BTN=[ ENABLE / DISABLE ESP ]
 ESP_RES_TITLE=RESOURCES
@@ -184,6 +167,8 @@ MISC_ZOOM_SENS=Czułość Zoomu
 MISC_FOV=Kąt Widzenia (FOV)
 MISC_RESET=Przywróć Domyślne
 MISC_LANG_SEL=Język / Language
+MISC_AGGRO_TITLE=Zasięg Agresji Mobów
+MISC_AGGRO_RANGE=Szacowany Zasięg
 
 ESP_MAIN_BTN=[ WŁĄCZ / WYŁĄCZ ESP ]
 ESP_RES_TITLE=SUROWCE (RESOURCES)
