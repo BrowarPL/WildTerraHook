@@ -1,6 +1,9 @@
 ﻿using UnityEngine;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Linq;
+using System.Text;
 using JohnStairs.RCC.ThirdPerson;
 
 namespace WildTerraHook
@@ -16,7 +19,13 @@ namespace WildTerraHook
 
         // AGGRO
         public bool MobAggroEnabled = false;
-        public float AggroRadius = 10.0f; // Domyślny promień (można regulować)
+        public float DefaultAggroRadius = 10.0f; // Fallback
+        public bool ShowPassiveRanges = true; // Czy pokazywać zasięg wzroku pasywnych?
+
+        // DEBUGGER
+        private string _debugMobInfo = "";
+        private Vector2 _scrollDebug;
+        private bool _showDebugInfo = false;
 
         // --- LATARKA ---
         public float LightIntensity = 2.0f;
@@ -42,7 +51,13 @@ namespace WildTerraHook
         private float _cacheTimer = 0f;
 
         // --- AGGRO CACHE ---
-        private List<global::WTMob> _mobCache = new List<global::WTMob>();
+        private struct CachedMob
+        {
+            public global::WTMob Mob;
+            public float Range;
+            public bool IsAggressive;
+        }
+        private List<CachedMob> _mobCache = new List<CachedMob>();
         private float _mobScanTimer = 0f;
 
         // Metoda UPDATE
@@ -60,15 +75,14 @@ namespace WildTerraHook
             HandleFov();
             if (ZoomHackEnabled) HandleZoomHack();
 
-            // Cache mobów co 1 sekunda dla Aggro Radius
             if (MobAggroEnabled && Time.time > _mobScanTimer)
             {
-                ScanMobs();
+                ScanMobsSmart();
                 _mobScanTimer = Time.time + 1.0f;
             }
         }
 
-        // Metoda Rysowania (wołana z MainHack.OnGUI)
+        // Metoda Rysowania
         public void OnGUI()
         {
             if (MobAggroEnabled)
@@ -77,7 +91,7 @@ namespace WildTerraHook
             }
         }
 
-        private void ScanMobs()
+        private void ScanMobsSmart()
         {
             _mobCache.Clear();
             try
@@ -85,80 +99,217 @@ namespace WildTerraHook
                 var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
                 foreach (var mob in mobs)
                 {
-                    if (mob != null && mob.health > 0) _mobCache.Add(mob);
+                    if (mob != null && mob.health > 0)
+                    {
+                        // 1. Ustalanie agresywności (Heurystyka po nazwie lub klasie)
+                        bool isAggro = IsMobAggressive(mob);
+
+                        // 2. Pobieranie zasięgu
+                        float detectedRange = GetRealAggroRange(mob, isAggro);
+
+                        // Fallback tylko jeśli wykryto 0
+                        float finalRange = detectedRange > 0.5f ? detectedRange : DefaultAggroRadius;
+
+                        _mobCache.Add(new CachedMob { Mob = mob, Range = finalRange, IsAggressive = isAggro });
+                    }
                 }
             }
             catch { }
         }
+
+        private bool IsMobAggressive(global::WTMob mob)
+        {
+            string name = mob.name.ToLower();
+            // Lista pasywnych/płochliwych
+            if (name.Contains("hare") || name.Contains("deer") || name.Contains("stag") ||
+               (name.Contains("fox") && !name.Contains("large")) || name.Contains("pig") || name.Contains("sheep") || name.Contains("cow"))
+                return false;
+
+            return true; // Domyślnie zakładamy że wszystko inne chce nas zabić
+        }
+
+        private float GetRealAggroRange(global::WTMob mob, bool isAggressive)
+        {
+            // Słowa kluczowe których szukamy
+            // Dla agresywnych: aggro, attack, detect
+            // Dla pasywnych: sight, view, flee, run
+            var keywords = isAggressive
+                ? new string[] { "aggro", "attack", "detect", "radius", "range" }
+                : new string[] { "sight", "view", "flee", "run", "detect", "radius", "range" };
+
+            try
+            {
+                // Krok 1: Komponenty specyficzne (EntityAggro)
+                var aggroComp = mob.GetComponent("EntityAggro");
+                if (aggroComp != null)
+                {
+                    float val = ScanObjectForFloat(aggroComp, keywords);
+                    if (val > 0) return val;
+                }
+
+                // Krok 2: Główna klasa (WTMob / Monster)
+                float mobVal = ScanObjectForFloat(mob, keywords);
+                if (mobVal > 0) return mobVal;
+
+                // Krok 3: Dane (Data / Template / Settings)
+                // WTMob często ma pole 'data' lub 'settings' typu ScriptableObject
+                var dataObj = GetFieldObject(mob, "data") ?? GetFieldObject(mob, "template") ?? GetFieldObject(mob, "settings");
+                if (dataObj != null)
+                {
+                    float dataVal = ScanObjectForFloat(dataObj, keywords);
+                    if (dataVal > 0) return dataVal;
+                }
+            }
+            catch { }
+
+            return 0f;
+        }
+
+        private float ScanObjectForFloat(object obj, string[] keywords)
+        {
+            if (obj == null) return 0f;
+            Type type = obj.GetType();
+
+            // Szukamy wszystkich pól float
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+            foreach (var f in fields)
+            {
+                if (f.FieldType == typeof(float) || f.FieldType == typeof(int))
+                {
+                    string name = f.Name.ToLower();
+                    foreach (var kw in keywords)
+                    {
+                        if (name.Contains(kw))
+                        {
+                            float val = Convert.ToSingle(f.GetValue(obj));
+                            // Odrzucamy wartości nierealne (np. 0 albo > 100, chyba że to boss)
+                            if (val > 0.5f && val < 200f) return val;
+                        }
+                    }
+                }
+            }
+            return 0f;
+        }
+
+        private object GetFieldObject(object parent, string name)
+        {
+            var f = parent.GetType().GetField(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.IgnoreCase);
+            return f != null ? f.GetValue(parent) : null;
+        }
+
+        // --- DEBUGGER ---
+        private void AnalyzeNearestMob()
+        {
+            if (global::Player.localPlayer == null) return;
+            Vector3 myPos = global::Player.localPlayer.transform.position;
+
+            var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
+            global::WTMob nearest = null;
+            float minDist = 9999f;
+
+            foreach (var m in mobs)
+            {
+                float d = Vector3.Distance(myPos, m.transform.position);
+                if (d < minDist) { minDist = d; nearest = m; }
+            }
+
+            if (nearest == null) { _debugMobInfo = "Brak mobów w pobliżu."; return; }
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine($"<b>Mob: {nearest.name}</b> (Dist: {minDist:F1})");
+            sb.AppendLine($"Type: {nearest.GetType().Name}");
+
+            // Analiza Moba
+            sb.AppendLine("- Pola Moba:");
+            DumpFloatFields(nearest, sb);
+
+            // Analiza Komponentów
+            var comps = nearest.GetComponents<Component>();
+            foreach (var c in comps)
+            {
+                if (c == null || c is Transform || c is Collider) continue; // Pomiń nudne
+                sb.AppendLine($"- Komponent: {c.GetType().Name}");
+                DumpFloatFields(c, sb);
+            }
+
+            // Analiza Data/Template (jeśli istnieje)
+            var data = GetFieldObject(nearest, "data");
+            if (data != null)
+            {
+                sb.AppendLine($"- DATA ({data.GetType().Name}):");
+                DumpFloatFields(data, sb);
+            }
+
+            _debugMobInfo = sb.ToString();
+        }
+
+        private void DumpFloatFields(object obj, StringBuilder sb)
+        {
+            var fields = obj.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            foreach (var f in fields)
+            {
+                if (f.FieldType == typeof(float) || f.FieldType == typeof(int))
+                {
+                    try
+                    {
+                        float val = Convert.ToSingle(f.GetValue(obj));
+                        if (val > 0) sb.AppendLine($"   {f.Name} = {val}");
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        // --- RYSOWANIE ---
 
         private void DrawAggroCircles()
         {
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            foreach (var mob in _mobCache)
+            foreach (var item in _mobCache)
             {
-                if (mob == null || mob.health <= 0) continue;
+                if (item.Mob == null || item.Mob.health <= 0) continue;
+                if (!ShowPassiveRanges && !item.IsAggressive) continue;
 
-                // Sprawdź czy to mob agresywny (uproszczone po nazwie/typie)
-                // W WildTerra zazwyczaj "agresywny" oznacza Boss, LargeFox, Bear itp.
-                // Rysujemy dla wszystkich mobów, żeby gracz wiedział
-                // Można dodać filtrację, ale "Aggro Radius" przydaje się do wszystkiego co atakuje.
-
-                float radius = AggroRadius;
-                // Opcjonalnie: Spróbuj pobrać prawdziwy zasięg z moba przez Reflection
-                // var r = mob.GetType().GetField("aggroRange"); if (r != null) radius = (float)r.GetValue(mob);
-
-                DrawCircle(cam, mob.transform.position, radius, Color.red);
+                Color col = item.IsAggressive ? Color.red : Color.green;
+                DrawCircle(cam, item.Mob.transform.position, item.Range, col);
             }
         }
 
         private void DrawCircle(Camera cam, Vector3 position, float radius, Color color)
         {
-            // Rysowanie okręgu z odcinków
-            int segments = 24;
-            float angle = 0f;
+            int segments = 32;
             float angleStep = 360f / segments;
-
             Vector3 prevPos = Vector3.zero;
             bool prevVisible = false;
 
             for (int i = 0; i <= segments; i++)
             {
-                float x = Mathf.Sin(Mathf.Deg2Rad * angle) * radius;
-                float z = Mathf.Cos(Mathf.Deg2Rad * angle) * radius;
-
-                Vector3 point = position + new Vector3(x, 0.5f, z); // 0.5f nad ziemią
+                float rad = Mathf.Deg2Rad * (i * angleStep);
+                Vector3 point = position + new Vector3(Mathf.Sin(rad) * radius, 0.2f, Mathf.Cos(rad) * radius);
                 Vector3 screenPos = cam.WorldToScreenPoint(point);
-
                 bool isVisible = screenPos.z > 0;
 
                 if (i > 0 && isVisible && prevVisible)
-                {
-                    // Rysuj linię 2D
-                    DrawLine(new Vector2(prevPos.x, Screen.height - prevPos.y), new Vector2(screenPos.x, Screen.height - screenPos.y), color, 1.5f);
-                }
+                    DrawLine(new Vector2(prevPos.x, Screen.height - prevPos.y), new Vector2(screenPos.x, Screen.height - screenPos.y), color, 2f);
 
                 prevPos = screenPos;
                 prevVisible = isVisible;
-                angle += angleStep;
             }
         }
 
-        // Helper do rysowania linii w OnGUI
         private static Texture2D _lineTex;
-        private void DrawLine(Vector2 pointA, Vector2 pointB, Color color, float width)
+        private void DrawLine(Vector2 p1, Vector2 p2, Color col, float w)
         {
             if (_lineTex == null) { _lineTex = new Texture2D(1, 1); _lineTex.SetPixel(0, 0, Color.white); _lineTex.Apply(); }
-
-            float angle = Mathf.Rad2Deg * Mathf.Atan2(pointB.y - pointA.y, pointB.x - pointA.x);
-            float length = Vector2.Distance(pointA, pointB);
-
-            GUIUtility.RotateAroundPivot(angle, pointA);
-            GUI.color = color;
-            GUI.DrawTexture(new Rect(pointA.x, pointA.y, length, width), _lineTex);
+            float angle = Mathf.Rad2Deg * Mathf.Atan2(p2.y - p1.y, p2.x - p1.x);
+            float len = Vector2.Distance(p1, p2);
+            GUIUtility.RotateAroundPivot(angle, p1);
+            GUI.color = col;
+            GUI.DrawTexture(new Rect(p1.x, p1.y, len, w), _lineTex);
             GUI.color = Color.white;
-            GUIUtility.RotateAroundPivot(-angle, pointA);
+            GUIUtility.RotateAroundPivot(-angle, p1);
         }
 
         private void ApplyNoFog()
@@ -287,17 +438,34 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
 
-            // AGGRO RADIUS
+            // AGGRO
             MobAggroEnabled = GUILayout.Toggle(MobAggroEnabled, Localization.Get("MISC_AGGRO_TITLE"));
             if (MobAggroEnabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_AGGRO_RANGE")}: {AggroRadius:F1}", GUILayout.Width(140));
-                AggroRadius = GUILayout.HorizontalSlider(AggroRadius, 1f, 30f);
+                GUILayout.Label($"{Localization.Get("MISC_AGGRO_RANGE")}: {DefaultAggroRadius:F1}", GUILayout.Width(140));
+                DefaultAggroRadius = GUILayout.HorizontalSlider(DefaultAggroRadius, 1f, 30f);
                 GUILayout.EndHorizontal();
-            }
-            GUILayout.Space(5);
 
+                // INSPEKTOR MOBA
+                if (GUILayout.Button("Zbadaj Najbliższego Moba (Debug)"))
+                {
+                    AnalyzeNearestMob();
+                    _showDebugInfo = true;
+                }
+            }
+
+            // OKNO DEBUGOWE
+            if (_showDebugInfo && !string.IsNullOrEmpty(_debugMobInfo))
+            {
+                GUILayout.Label("--- Mob Debug Info ---");
+                _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(150));
+                GUILayout.TextArea(_debugMobInfo);
+                GUILayout.EndScrollView();
+                if (GUILayout.Button("Zamknij Debug")) _showDebugInfo = false;
+            }
+
+            GUILayout.Space(5);
             EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, Localization.Get("MISC_ETERNAL_DAY"));
             NoFogEnabled = GUILayout.Toggle(NoFogEnabled, Localization.Get("MISC_NO_FOG"));
             FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, Localization.Get("MISC_FULLBRIGHT"));
@@ -352,7 +520,7 @@ namespace WildTerraHook
                 ZoomSpeed = 60f;
                 LightIntensity = 2.0f;
                 LightRange = 1000f;
-                AggroRadius = 10.0f;
+                DefaultAggroRadius = 10.0f;
             }
 
             GUILayout.EndVertical();
