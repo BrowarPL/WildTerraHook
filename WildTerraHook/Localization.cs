@@ -9,12 +9,12 @@ namespace WildTerraHook
     {
         private static Dictionary<string, string> _currentDict = new Dictionary<string, string>();
 
-        // Ścieżki
+        // Ścieżka do %appdata%/WildTerraHook
         private static string _folderPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
 
         public static void Init()
         {
-            EnsureDefaultFiles();
+            if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
             LoadLanguage(ConfigManager.Language);
         }
 
@@ -24,6 +24,9 @@ namespace WildTerraHook
             string fileName = $"lang_{langCode}.txt";
             string path = Path.Combine(_folderPath, fileName);
 
+            bool loadedFromDisk = false;
+
+            // 1. Próba wczytania z dysku
             if (File.Exists(path))
             {
                 try
@@ -38,11 +41,28 @@ namespace WildTerraHook
                             _currentDict[parts[0].Trim()] = parts[1].Trim();
                         }
                     }
+                    loadedFromDisk = true;
                 }
-                catch { Debug.LogError("Błąd wczytywania języka"); }
+                catch
+                {
+                    Debug.LogError("[Localization] Błąd odczytu pliku. Przywracam domyślne.");
+                }
             }
-            else
+
+            // 2. SPRAWDZENIE AKTUALNOŚCI (AUTO-FIX)
+            // Jeśli pliku nie ma LUB brakuje w nim nowych kluczy (np. FISH_TITLE), nadpisujemy go
+            if (!loadedFromDisk || !_currentDict.ContainsKey("FISH_TITLE"))
             {
+                // Regeneracja pliku z aktualnymi danymi z kodu
+                string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
+                try
+                {
+                    File.WriteAllText(path, content);
+                    Debug.Log($"[Localization] Zaktualizowano plik językowy: {fileName}");
+                }
+                catch { }
+
+                // Wczytaj dane bezpośrednio z pamięci (żeby nie parsować pliku ponownie)
                 LoadHardcoded(langCode);
             }
         }
@@ -50,22 +70,14 @@ namespace WildTerraHook
         public static string Get(string key)
         {
             if (_currentDict.ContainsKey(key)) return _currentDict[key];
-            return key;
+            return key; // Zwraca nazwę klucza jeśli brak tłumaczenia (np. "FISH_TITLE")
         }
 
-        private static void EnsureDefaultFiles()
-        {
-            if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
-
-            string plPath = Path.Combine(_folderPath, "lang_pl.txt");
-            string enPath = Path.Combine(_folderPath, "lang_en.txt");
-
-            if (!File.Exists(enPath)) File.WriteAllText(enPath, GetDefaultEn());
-            if (!File.Exists(plPath)) File.WriteAllText(plPath, GetDefaultPl());
-        }
+        // --- DANE TŁUMACZEŃ (W Kodzie) ---
 
         private static void LoadHardcoded(string lang)
         {
+            _currentDict.Clear();
             string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn();
             foreach (var line in data.Split('\n'))
             {
@@ -103,11 +115,13 @@ ESP_DIST=Distance
 ESP_EDIT_COLORS=Edit ESP Colors
 ESP_HIDE_COLORS=Hide Colors
 ESP_SAVE_COLORS=Save Colors
+
 ESP_CAT_MINING=Mining
 ESP_CAT_GATHER=Gathering
 ESP_CAT_LUMBER=Lumberjacking
 ESP_CAT_GODSEND=Godsend (Chests)
 ESP_CAT_OTHERS=Others
+
 ESP_MOB_AGGRO=Aggressive (Boss/LargeFox)
 ESP_MOB_RETAL=Retaliating (Fox/Horse)
 ESP_MOB_PASSIVE=Passive (Deer/Hare)
@@ -164,11 +178,13 @@ ESP_DIST=Dystans Rysowania
 ESP_EDIT_COLORS=Edytuj Kolory ESP
 ESP_HIDE_COLORS=Ukryj Edytor Kolorów
 ESP_SAVE_COLORS=Zapisz Konfigurację
+
 ESP_CAT_MINING=Górnictwo (Mining)
 ESP_CAT_GATHER=Zbieractwo (Gathering)
 ESP_CAT_LUMBER=Drwalnictwo (Lumber)
 ESP_CAT_GODSEND=Skarby (Godsend)
 ESP_CAT_OTHERS=Inne (Others)
+
 ESP_MOB_AGGRO=Agresywne (Boss/LargeFox)
 ESP_MOB_RETAL=Oddające (Lis/Koń)
 ESP_MOB_PASSIVE=Pasywne (Jeleń/Zając)
