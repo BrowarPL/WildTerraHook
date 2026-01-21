@@ -1,301 +1,386 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 using System;
 
 namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA ---
-        public bool Enabled = true;
-        public bool ShowResources = true;
-        public bool ShowMobs = true;
-        public float MaxDistance = 100f;
+        // --- GŁÓWNE PRZEŁĄCZNIKI ---
+        public bool EspEnabled = false;
 
-        // Kategorie Surowców
-        public bool ShowMining = true;
-        public bool ShowGathering = true;
-        public bool ShowLumber = true;
-        public bool ShowGodsend = true; // Skrzynie
-        public bool ShowOthers = true;
+        private bool _showResources = false;
+        private bool _showMining = false;
+        private bool _showGathering = false;
+        private bool _showLumber = false;
+        private bool _showGodsend = false;
+        private bool _showOthers = false;
 
-        // Kategorie Mobów
-        public bool ShowAggressive = true;
-        public bool ShowPassive = true;
-        public bool ShowRetaliating = true;
+        private bool _showMobs = false;
+        private bool _showAggressive = false;
+        private bool _showRetaliating = false;
+        private bool _showPassive = false;
 
-        // --- CACHE DANYCH ---
-        private List<CachedResource> _resources = new List<CachedResource>();
-        private List<CachedMob> _mobs = new List<CachedMob>();
-        private float _scanTimer = 0f;
+        private bool _showColorMenu = false;
+        private float _maxDistance = 150f; // Suwak dystansu rysowania
 
-        // Struktury pomocnicze
-        private struct CachedResource
+        // --- LISTY SZCZEGÓŁOWE ---
+        private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
+        private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
+        private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
+        private Dictionary<string, bool> _godsendToggles = new Dictionary<string, bool>();
+
+        // Cache nazw do ignorowania (dla optymalizacji)
+        private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
+
+        // --- DANE CACHE ---
+        private List<CachedObject> _cachedObjects = new List<CachedObject>();
+        private float _lastScanTime = 0f;
+        private float _scanInterval = 1.5f; // Skanuj rzadziej żeby nie lagowało (1.5s)
+
+        // Style
+        private GUIStyle _styleLabel;
+        private GUIStyle _styleBackground;
+        private Texture2D _bgTexture;
+        private Vector2 _scrollPos;
+
+        private struct CachedObject
         {
-            public GameObject Go;
-            public string Name;
-            public ResourceType Type;
-            public Vector3 Pos;
+            public Vector3 Position;
+            public string Label;
+            public Color Color;
+            public string HpText; // Dodano dla HP
         }
 
-        private struct CachedMob
+        public ResourceEspModule()
         {
-            public global::WTMob MobScript; // Trzymamy referencję do skryptu dla HP
-            public string Name;
-            public MobType Type;
-            public Vector3 Pos;
+            InitializeLists();
         }
 
-        private enum ResourceType { Mining, Gathering, Lumber, Godsend, Other }
-        private enum MobType { Aggressive, Passive, Retaliating }
+        private void InitializeLists()
+        {
+            // Górnictwo
+            string[] mining = { "Rock", "Copper", "Tin", "Limestone", "Coal", "Sulfur", "Iron", "Marblestone", "Arsenic", "Zuperit", "Mortuus", "Sangit" };
+            foreach (var s in mining) _miningToggles[s] = false;
+
+            // Zbieractwo
+            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "Swamp thorn", "Mountain sage", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
+            foreach (var s in gathering) _gatheringToggles[s] = false;
+
+            // Drwalnictwo
+            string[] lumber = { "Apple tree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
+            foreach (var s in lumber) _lumberToggles[s] = false;
+
+            // Skarby
+            string[] godsend = { "Godsend" };
+            foreach (var s in godsend) _godsendToggles[s] = false;
+        }
 
         public void Update()
         {
-            if (!Enabled) return;
-
-            // Skanowanie co 1 sekundę dla wydajności
-            if (Time.time > _scanTimer)
+            if (EspEnabled && Time.time - _lastScanTime > _scanInterval)
             {
-                ScanWorld();
-                _scanTimer = Time.time + 1.0f;
+                ScanObjects();
+                _lastScanTime = Time.time;
             }
         }
 
-        public void DrawESP()
+        private void ScanObjects()
         {
-            if (!Enabled) return;
+            if (!EspEnabled) { _cachedObjects.Clear(); return; }
+            if (!_showResources && !_showMobs) { _cachedObjects.Clear(); return; }
 
-            Camera cam = Camera.main;
-            if (cam == null) return;
+            // Pobierz pozycję gracza raz, dla optymalizacji
+            Vector3 playerPos = Vector3.zero;
+            if (global::Player.localPlayer != null) playerPos = global::Player.localPlayer.transform.position;
+            else if (Camera.main != null) playerPos = Camera.main.transform.position;
 
-            // Ustal punkt odniesienia dla dystansu (Gracz, a jak brak to kamera)
-            Vector3 originPos = cam.transform.position;
-            if (global::Player.localPlayer != null)
-            {
-                originPos = global::Player.localPlayer.transform.position;
-            }
+            List<CachedObject> newCache = new List<CachedObject>();
 
-            // 1. RYSOWANIE SUROWCÓW
-            if (ShowResources)
-            {
-                foreach (var res in _resources)
-                {
-                    if (res.Go == null) continue;
-                    if (!IsResourceCategoryEnabled(res.Type)) continue;
-
-                    float dist = Vector3.Distance(originPos, res.Pos);
-                    if (dist > MaxDistance) continue;
-
-                    Vector3 screenPos = cam.WorldToScreenPoint(res.Pos);
-                    if (screenPos.z > 0)
-                    {
-                        Color col = GetResourceColor(res.Type);
-                        string label = $"{res.Name} [{dist:F0}m]";
-                        DrawLabel(screenPos, label, col);
-                    }
-                }
-            }
-
-            // 2. RYSOWANIE MOBÓW (Z HP)
-            if (ShowMobs)
-            {
-                foreach (var mob in _mobs)
-                {
-                    if (mob.MobScript == null || mob.MobScript.health <= 0) continue;
-                    if (!IsMobCategoryEnabled(mob.Type)) continue;
-
-                    // Aktualizacja pozycji (mob się rusza)
-                    Vector3 currentPos = mob.MobScript.transform.position;
-                    float dist = Vector3.Distance(originPos, currentPos);
-
-                    if (dist > MaxDistance) continue;
-
-                    Vector3 screenPos = cam.WorldToScreenPoint(currentPos + Vector3.up * 1.5f); // Nad głową
-                    if (screenPos.z > 0)
-                    {
-                        Color col = GetMobColor(mob.Type);
-
-                        // Formułowanie tekstu z HP
-                        int hp = mob.MobScript.health;
-                        int maxHp = mob.MobScript.healthMax; // Zakładam, że pole nazywa się healthMax w WTMob
-
-                        // Jeśli nie ma healthMax, spróbuj maxHealth (zależnie od wersji gry)
-                        // W razie błędu kompilacji na 'healthMax', zmień na 'maxHealth'
-
-                        string label = $"{mob.Name} [{dist:F0}m]\nHP: {hp}/{maxHp}";
-
-                        DrawLabel(screenPos, label, col, true); // true = pogrubienie dla mobów
-                    }
-                }
-            }
-        }
-
-        private void DrawLabel(Vector3 screenPos, string text, Color color, bool bold = false)
-        {
-            GUIContent content = new GUIContent(text);
-            GUIStyle style = new GUIStyle(GUI.skin.label);
-            style.normal.textColor = color;
-            style.alignment = TextAnchor.MiddleCenter;
-            style.fontSize = 12;
-            if (bold) style.fontStyle = FontStyle.Bold;
-
-            // Cień (Outline) dla czytelności
-            GUIStyle styleShadow = new GUIStyle(style);
-            styleShadow.normal.textColor = Color.black;
-
-            Vector2 size = style.CalcSize(content);
-            float x = screenPos.x - (size.x / 2);
-            float y = Screen.height - screenPos.y - size.y;
-
-            GUI.Label(new Rect(x + 1, y + 1, size.x, size.y), content, styleShadow);
-            GUI.Label(new Rect(x, y, size.x, size.y), content, style);
-        }
-
-        private void ScanWorld()
-        {
-            _resources.Clear();
-            _mobs.Clear();
-
-            // Skan Surowców (Harvestable)
-            // W Wild Terra surowce często mają komponenty 'HarvestableResource', 'Mineable', etc.
-            // Tutaj szukamy ogólnych obiektów interaktywnych
             try
             {
-                var allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
-                foreach (var go in allObjects)
+                // --- SUROWCE (WTObject) ---
+                if (_showResources)
                 {
-                    // Filtrowanie po warstwie lub nazwie (uproszczone)
-                    if (!go.activeInHierarchy) continue;
+                    // OPTYMALIZACJA: Zbuduj listę aktywnych słów kluczowych PRZED pętlą
+                    // Dzięki temu nie iterujemy po słowniku dla każdego z 1000 obiektów
+                    List<string> activeMining = GetActiveKeys(_miningToggles);
+                    List<string> activeGather = GetActiveKeys(_gatheringToggles);
+                    List<string> activeLumber = GetActiveKeys(_lumberToggles);
+                    List<string> activeGodsend = GetActiveKeys(_godsendToggles);
 
-                    // Logika rozpoznawania typu (przykładowa - dostosowana do WildTerra)
-                    string name = go.name.ToLower();
+                    // Znajdź wszystkie obiekty (to jest kosztowne, dlatego robimy rzadko)
+                    var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
 
-                    // Surowce
-                    if (go.GetComponent("HarvestableObject") != null || name.Contains("deposit") || name.Contains("tree") || name.Contains("bush"))
+                    foreach (var obj in objects)
                     {
-                        ResourceType type = ResourceType.Other;
-                        if (name.Contains("deposit") || name.Contains("rock") || name.Contains("ore") || name.Contains("vein")) type = ResourceType.Mining;
-                        else if (name.Contains("tree") || name.Contains("log")) type = ResourceType.Lumber;
-                        else if (name.Contains("bush") || name.Contains("plant") || name.Contains("flax") || name.Contains("cotton")) type = ResourceType.Gathering;
-                        else if (name.Contains("chest") || name.Contains("godsend") || name.Contains("treasure")) type = ResourceType.Godsend;
+                        if (obj == null) continue;
 
-                        _resources.Add(new CachedResource { Go = go, Name = go.name, Type = type, Pos = go.transform.position });
+                        // Szybki test dystansu (kwadratowy jest szybszy niż Distance)
+                        float distSqr = (obj.transform.position - playerPos).sqrMagnitude;
+                        if (distSqr > (_maxDistance * _maxDistance)) continue; // Ignoruj dalekie
+
+                        string name = obj.name;
+
+                        // Szybkie odrzucanie śmieci
+                        if (IsIgnored(name)) continue;
+
+                        bool matched = false;
+
+                        // Sprawdzamy tylko aktywne kategorie
+                        if (_showMining && CheckList(name, activeMining, obj.transform.position, ConfigManager.Colors.ResMining, newCache)) matched = true;
+                        else if (_showGathering && CheckList(name, activeGather, obj.transform.position, ConfigManager.Colors.ResGather, newCache)) matched = true;
+                        else if (_showLumber && CheckList(name, activeLumber, obj.transform.position, ConfigManager.Colors.ResLumber, newCache)) matched = true;
+                        else if (_showGodsend && CheckList(name, activeGodsend, obj.transform.position, new Color(0.8f, 0f, 1f), newCache)) matched = true;
+
+                        // Jeśli włączone "Inne" i nie znaleziono w listach
+                        if (!matched && _showOthers && !name.Contains("Player"))
+                        {
+                            // Tutaj ostrożnie, żeby nie zalać ekranu
+                            // newCache.Add(new CachedObject { Position = obj.transform.position, Label = name, Color = Color.white, HpText = "" });
+                        }
                     }
                 }
 
-                // Skan Mobów (WTMob)
-                var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
-                foreach (var m in mobs)
+                // --- MOBY (WTMob) ---
+                if (_showMobs)
                 {
-                    if (m != null && m.health > 0)
+                    var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
+                    foreach (var mob in mobs)
                     {
-                        MobType type = MobType.Aggressive; // Domyślnie
-                        string mName = m.name.ToLower();
+                        if (mob != null && mob.health > 0)
+                        {
+                            // Szybki test dystansu
+                            if ((mob.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance)) continue;
 
-                        // Prosta kategoryzacja po nazwie
-                        if (mName.Contains("hare") || mName.Contains("deer") || mName.Contains("cow") || mName.Contains("pig")) type = MobType.Passive;
-                        else if (mName.Contains("fox") && !mName.Contains("large")) type = MobType.Retaliating;
-
-                        _mobs.Add(new CachedMob { MobScript = m, Name = m.name, Type = type, Pos = m.transform.position });
+                            ProcessMob(mob, newCache);
+                        }
                     }
                 }
             }
             catch { }
+
+            _cachedObjects = newCache;
         }
 
-        // --- UI MENU (Obsługa Checkboxów) ---
+        private List<string> GetActiveKeys(Dictionary<string, bool> dict)
+        {
+            List<string> active = new List<string>();
+            foreach (var kvp in dict) if (kvp.Value) active.Add(kvp.Key);
+            return active;
+        }
+
+        private bool CheckList(string objName, List<string> activeKeys, Vector3 pos, Color color, List<CachedObject> cache)
+        {
+            if (activeKeys.Count == 0) return false;
+            foreach (var key in activeKeys)
+            {
+                if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    cache.Add(new CachedObject { Position = pos, Label = key, Color = color, HpText = "" });
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void ProcessMob(global::WTMob mob, List<CachedObject> cache)
+        {
+            string name = mob.name;
+            Vector3 pos = mob.transform.position;
+
+            // Pobieranie HP
+            int hp = mob.health;
+            int maxHp = mob.healthMax; // W niektórych wersjach może być maxHealth
+            string hpStr = $" [HP: {hp}/{maxHp}]";
+
+            bool isAggro = name.Contains("LargeFox") || name.Contains("Boss") || name.Contains("King") || name.Contains("Elite") || name.Contains("Bear") || name.Contains("Wolf");
+            bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep");
+
+            if (isAggro)
+            {
+                if (_showAggressive) cache.Add(new CachedObject { Position = pos, Label = "[!] " + name, Color = ConfigManager.Colors.MobAggressive, HpText = hpStr });
+            }
+            else if (isPassive)
+            {
+                if (_showPassive) cache.Add(new CachedObject { Position = pos, Label = name, Color = ConfigManager.Colors.MobPassive, HpText = hpStr });
+            }
+            else // Retaliating / Other
+            {
+                if (_showRetaliating) cache.Add(new CachedObject { Position = pos, Label = name, Color = ConfigManager.Colors.MobFleeing, HpText = hpStr });
+            }
+        }
+
+        private bool IsIgnored(string name)
+        {
+            // Szybki check
+            if (name.Length < 3) return true;
+            foreach (var ignore in _ignoreKeywords)
+                if (name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        private void CreateStyles()
+        {
+            if (_bgTexture == null) { _bgTexture = new Texture2D(1, 1); _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.7f)); _bgTexture.Apply(); }
+            if (_styleBackground == null) { _styleBackground = new GUIStyle(); _styleBackground.normal.background = _bgTexture; }
+            if (_styleLabel == null)
+            {
+                _styleLabel = new GUIStyle();
+                _styleLabel.normal.textColor = Color.white;
+                _styleLabel.alignment = TextAnchor.MiddleCenter;
+                _styleLabel.fontSize = 11;
+                _styleLabel.fontStyle = FontStyle.Bold;
+                // Usunąłem tło z labela żeby było czytelniej przy wielu obiektach, dodamy cień
+            }
+        }
+
         public void DrawMenu()
         {
-            GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("ESP_RES_TITLE")}</b>");
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(450));
 
-            Enabled = GUILayout.Toggle(Enabled, Localization.Get("ESP_MAIN_BTN"));
+            EspEnabled = GUILayout.Toggle(EspEnabled, $"<b>{Localization.Get("ESP_MAIN_BTN")}</b>");
             GUILayout.Space(5);
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{Localization.Get("ESP_DIST")}: {MaxDistance:F0}m", GUILayout.Width(100));
-            MaxDistance = GUILayout.HorizontalSlider(MaxDistance, 10f, 300f);
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(5);
-            ShowResources = GUILayout.Toggle(ShowResources, "Show Resources");
-            if (ShowResources)
+            if (EspEnabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.BeginVertical();
-                ShowMining = GUILayout.Toggle(ShowMining, Localization.Get("ESP_CAT_MINING"));
-                ShowLumber = GUILayout.Toggle(ShowLumber, Localization.Get("ESP_CAT_LUMBER"));
-                GUILayout.EndVertical();
-                GUILayout.BeginVertical();
-                ShowGathering = GUILayout.Toggle(ShowGathering, Localization.Get("ESP_CAT_GATHER"));
-                ShowGodsend = GUILayout.Toggle(ShowGodsend, Localization.Get("ESP_CAT_GODSEND"));
-                GUILayout.EndVertical();
+                GUILayout.Label($"{Localization.Get("ESP_DIST")}: {_maxDistance:F0}m", GUILayout.Width(100));
+                _maxDistance = GUILayout.HorizontalSlider(_maxDistance, 20f, 300f);
                 GUILayout.EndHorizontal();
+                GUILayout.Space(5);
+
+                _showResources = GUILayout.Toggle(_showResources, $"<b>{Localization.Get("ESP_RES_TITLE")}</b>");
+                if (_showResources)
+                {
+                    GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
+
+                    if (_showMining = GUILayout.Toggle(_showMining, Localization.Get("ESP_CAT_MINING"))) DrawDictionary(_miningToggles);
+                    if (_showGathering = GUILayout.Toggle(_showGathering, Localization.Get("ESP_CAT_GATHER"))) DrawDictionary(_gatheringToggles);
+                    if (_showLumber = GUILayout.Toggle(_showLumber, Localization.Get("ESP_CAT_LUMBER"))) DrawDictionary(_lumberToggles);
+
+                    GUILayout.Space(5);
+                    if (_showGodsend = GUILayout.Toggle(_showGodsend, Localization.Get("ESP_CAT_GODSEND"))) DrawDictionary(_godsendToggles);
+
+                    GUILayout.EndVertical(); GUILayout.EndHorizontal();
+                }
+
+                GUILayout.Space(10);
+
+                _showMobs = GUILayout.Toggle(_showMobs, $"<b>{Localization.Get("ESP_MOB_TITLE")}</b>");
+                if (_showMobs)
+                {
+                    GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
+                    _showAggressive = GUILayout.Toggle(_showAggressive, Localization.Get("ESP_MOB_AGGRO"));
+                    _showRetaliating = GUILayout.Toggle(_showRetaliating, Localization.Get("ESP_MOB_RETAL"));
+                    _showPassive = GUILayout.Toggle(_showPassive, Localization.Get("ESP_MOB_PASSIVE"));
+                    GUILayout.EndVertical(); GUILayout.EndHorizontal();
+                }
+
+                GUILayout.Space(15);
+
+                if (GUILayout.Button(_showColorMenu ? Localization.Get("ESP_HIDE_COLORS") : Localization.Get("ESP_EDIT_COLORS")))
+                {
+                    _showColorMenu = !_showColorMenu;
+                    if (!_showColorMenu) ConfigManager.Save();
+                }
+
+                if (_showColorMenu) DrawColorSettings();
             }
+
+            GUILayout.EndScrollView();
+        }
+
+        private void DrawColorSettings()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("ESP_EDIT_COLORS")}</b>");
+
+            GUILayout.Label("-- Moby --");
+            DrawColorPicker(Localization.Get("COLOR_MOB_AGGRO"), ref ConfigManager.Colors.MobAggressive);
+            DrawColorPicker(Localization.Get("COLOR_MOB_PASSIVE"), ref ConfigManager.Colors.MobPassive);
+            DrawColorPicker(Localization.Get("COLOR_MOB_FLEE"), ref ConfigManager.Colors.MobFleeing);
 
             GUILayout.Space(5);
-            ShowMobs = GUILayout.Toggle(ShowMobs, Localization.Get("ESP_MOB_TITLE"));
-            if (ShowMobs)
-            {
-                ShowAggressive = GUILayout.Toggle(ShowAggressive, Localization.Get("ESP_MOB_AGGRO"));
-                ShowPassive = GUILayout.Toggle(ShowPassive, Localization.Get("ESP_MOB_PASSIVE"));
-                ShowRetaliating = GUILayout.Toggle(ShowRetaliating, Localization.Get("ESP_MOB_RETAL"));
-            }
+            GUILayout.Label("-- Surowce --");
+            DrawColorPicker(Localization.Get("COLOR_RES_MINE"), ref ConfigManager.Colors.ResMining);
+            DrawColorPicker(Localization.Get("COLOR_RES_GATHER"), ref ConfigManager.Colors.ResGather);
+            DrawColorPicker(Localization.Get("COLOR_RES_LUMB"), ref ConfigManager.Colors.ResLumber);
 
-            // Edytor Kolorów
-            GUILayout.Space(10);
-            if (GUILayout.Button(Localization.Get("ESP_EDIT_COLORS")))
-            {
-                // Tutaj można dodać podmenu kolorów, dla uproszczenia pomijam w tym widoku
-            }
-
+            if (GUILayout.Button(Localization.Get("ESP_SAVE_COLORS"))) ConfigManager.Save();
             GUILayout.EndVertical();
         }
 
-        private bool IsResourceCategoryEnabled(ResourceType type)
+        private void DrawColorPicker(string label, ref Color col)
         {
-            switch (type)
-            {
-                case ResourceType.Mining: return ShowMining;
-                case ResourceType.Lumber: return ShowLumber;
-                case ResourceType.Gathering: return ShowGathering;
-                case ResourceType.Godsend: return ShowGodsend;
-                case ResourceType.Other: return ShowOthers;
-            }
-            return false;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(120));
+            GUI.color = col; GUILayout.Label("█", GUILayout.Width(20)); GUI.color = Color.white;
+            GUILayout.BeginVertical();
+            col.r = GUILayout.HorizontalSlider(col.r, 0f, 1f);
+            col.g = GUILayout.HorizontalSlider(col.g, 0f, 1f);
+            col.b = GUILayout.HorizontalSlider(col.b, 0f, 1f);
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
         }
 
-        private bool IsMobCategoryEnabled(MobType type)
+        private void DrawDictionary(Dictionary<string, bool> dict)
         {
-            switch (type)
-            {
-                case MobType.Aggressive: return ShowAggressive;
-                case MobType.Passive: return ShowPassive;
-                case MobType.Retaliating: return ShowRetaliating;
-            }
-            return false;
+            GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
+            var keys = new List<string>(dict.Keys);
+            foreach (var key in keys) dict[key] = GUILayout.Toggle(dict[key], key);
+            GUILayout.EndVertical(); GUILayout.EndHorizontal();
         }
 
-        private Color GetResourceColor(ResourceType type)
+        public void DrawESP()
         {
-            switch (type)
-            {
-                case ResourceType.Mining: return ConfigManager.Colors.ResMining;
-                case ResourceType.Lumber: return ConfigManager.Colors.ResLumber;
-                case ResourceType.Gathering: return ConfigManager.Colors.ResGather;
-                case ResourceType.Godsend: return Color.cyan;
-                default: return Color.white;
-            }
-        }
+            if (!EspEnabled) return;
+            CreateStyles();
+            Camera cam = Camera.main;
+            if (cam == null) return;
 
-        private Color GetMobColor(MobType type)
-        {
-            switch (type)
+            // Punkt odniesienia: GRACZ (jeśli istnieje), w p.p. Kamera
+            Vector3 originPos = cam.transform.position;
+            if (global::Player.localPlayer != null) originPos = global::Player.localPlayer.transform.position;
+
+            float screenW = Screen.width; float screenH = Screen.height;
+
+            foreach (var obj in _cachedObjects)
             {
-                case MobType.Aggressive: return ConfigManager.Colors.MobAggressive;
-                case MobType.Passive: return ConfigManager.Colors.MobPassive;
-                case MobType.Retaliating: return ConfigManager.Colors.MobFleeing;
-                default: return Color.red;
+                // Oblicz dystans od GRACZA
+                float dist = Vector3.Distance(originPos, obj.Position);
+
+                // Sprawdź suwak
+                if (dist > _maxDistance) continue;
+
+                Vector3 screenPos = cam.WorldToScreenPoint(obj.Position + Vector3.up * 1.5f);
+                bool isBehind = screenPos.z < 0;
+
+                // Proste odrzucanie obiektów poza ekranem (dla wydajności GUI)
+                if (isBehind) continue; // Nie rysujemy strzałek, bo to robi bałagan w izometrii
+
+                // Rysuj tylko jeśli na ekranie
+                if (screenPos.x > 0 && screenPos.x < screenW && screenPos.y > 0 && screenPos.y < screenH)
+                {
+                    screenPos.y = screenH - screenPos.y;
+
+                    string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
+
+                    // Rysowanie z cieniem (Outline)
+                    GUIContent content = new GUIContent(text);
+                    Vector2 size = _styleLabel.CalcSize(content);
+                    Rect r = new Rect(screenPos.x - size.x / 2, screenPos.y - size.y / 2, size.x, size.y);
+
+                    // Cień
+                    GUIStyle shadowStyle = new GUIStyle(_styleLabel);
+                    shadowStyle.normal.textColor = Color.black;
+                    GUI.Label(new Rect(r.x + 1, r.y + 1, r.width, r.height), text, shadowStyle);
+
+                    // Właściwy tekst
+                    _styleLabel.normal.textColor = obj.Color;
+                    GUI.Label(r, text, _styleLabel);
+                }
             }
         }
     }
