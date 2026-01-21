@@ -65,7 +65,7 @@ namespace WildTerraHook
             public string HpText;
             public bool IsMob;
             public float Height;
-            public int OutlineColorIndex; // Pamiętamy kolor dla Outline
+            public int OutlineColorIndex;
         }
 
         public ResourceEspModule()
@@ -93,18 +93,16 @@ namespace WildTerraHook
         {
             try
             {
-                // Próba znalezienia typów cakeslice
+                // Próba załadowania typów bezpośrednio z Assembly-CSharp
+                // Jeśli nazwa jest inna (np. QuickOutline), to trzeba tu zmienić. 
+                // Ale "cakeslice" to standard w WT2.
                 _outlineType = Type.GetType("cakeslice.Outline, Assembly-CSharp");
                 _outlineEffectType = Type.GetType("cakeslice.OutlineEffect, Assembly-CSharp");
 
                 if (_outlineType != null)
                 {
                     _outlineColorField = _outlineType.GetField("color");
-                    _outlineEnabledProp = _outlineType.GetProperty("enabled"); // enabled dziedziczy z Behaviour
-
-                    // Fallback jeśli enabled nie jest property w tej wersji Unity/Mono
-                    if (_outlineEnabledProp == null)
-                        _outlineEnabledProp = typeof(Behaviour).GetProperty("enabled");
+                    _outlineEnabledProp = _outlineType.GetProperty("enabled") ?? typeof(Behaviour).GetProperty("enabled");
                 }
                 _reflectionInitialized = true;
             }
@@ -116,7 +114,8 @@ namespace WildTerraHook
             if (!EspEnabled) return;
             if (!_reflectionInitialized) InitReflection();
 
-            if (ShowOutlines) EnsureCameraEffectReflection();
+            // Kontroluj główny efekt na kamerze
+            if (ShowOutlines) CheckCameraEffect();
 
             if (Time.time - _lastScanTime > _scanInterval)
             {
@@ -125,38 +124,44 @@ namespace WildTerraHook
             }
         }
 
-        // --- CAMERA EFFECT (GLOW MASTER) ---
-        private void EnsureCameraEffectReflection()
+        // --- ZARZĄDZANIE EFEKTEM KAMERY ---
+        // Poprawka: Nie dodajemy nowego na siłę, jeśli gra już go ma.
+        // Jeśli dodamy drugi, to shadery zwariują.
+        private void CheckCameraEffect()
         {
             if (_outlineEffectType == null) return;
             Camera cam = Camera.main;
             if (cam == null) return;
 
+            // Szukamy istniejącego
             Component effect = cam.GetComponent(_outlineEffectType);
 
+            // Jeśli nie ma, to znaczy że gra nie używa go w tej scenie -> Dodajemy
             if (effect == null)
             {
                 effect = cam.gameObject.AddComponent(_outlineEffectType);
-                // Ustawienia "Glow"
-                SetField(effect, "lineThickness", 1.8f); // Nieco grubiej
-                SetField(effect, "lineIntensity", 4.0f); // Bardzo jasne
+                // Domyślna konfiguracja (musi być, bo nowy komponent ma puste pola)
+                SetField(effect, "lineThickness", 1.5f);
+                SetField(effect, "lineIntensity", 3.0f);
                 SetField(effect, "fillAmount", 0.0f);
                 SetField(effect, "additiveRendering", false);
+                SetField(effect, "backfaceCulling", true);
             }
 
+            // Upewniamy się że jest włączony
             if (effect != null)
             {
-                // Kolory z Configa
-                SetField(effect, "lineColor0", ConfigManager.Colors.MobAggressive); // 0 = Agresywne
-                SetField(effect, "lineColor1", ConfigManager.Colors.MobPassive);    // 1 = Pasywne/Zasoby
-                SetField(effect, "lineColor2", ConfigManager.Colors.ResMining);     // 2 = Inne
-
-                // Wymuś włączenie
                 var p = _outlineEffectType.GetProperty("enabled") ?? typeof(Behaviour).GetProperty("enabled");
                 if (p != null && (bool)p.GetValue(effect, null) == false)
                 {
                     p.SetValue(effect, true, null);
                 }
+
+                // Aktualizujemy kolory (zawsze, żeby były zgodne z Configiem)
+                // cakeslice używa 0, 1, 2
+                SetField(effect, "lineColor0", ConfigManager.Colors.MobAggressive);
+                SetField(effect, "lineColor1", ConfigManager.Colors.MobPassive);
+                SetField(effect, "lineColor2", ConfigManager.Colors.ResMining);
             }
         }
 
@@ -182,7 +187,7 @@ namespace WildTerraHook
 
             try
             {
-                // --- RESOURCES ---
+                // RESOURCES
                 if (_showResources)
                 {
                     List<string> activeMining = GetActiveKeys(_miningToggles);
@@ -197,7 +202,6 @@ namespace WildTerraHook
                         if (obj == null) continue;
                         if ((obj.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance))
                         {
-                            // Usuń outline jeśli wyszedł poza zasięg
                             DisableOutlineRecursive(obj.gameObject);
                             continue;
                         }
@@ -206,7 +210,6 @@ namespace WildTerraHook
                         if (IsIgnored(name)) continue;
 
                         bool matched = false;
-                        // Kolor 2 (Niebieski) dla surowców twardych, 1 (Zielony) dla ziół
                         if (_showMining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false, 2)) matched = true;
                         else if (_showGathering && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false, 1)) matched = true;
                         else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false, 2)) matched = true;
@@ -222,7 +225,7 @@ namespace WildTerraHook
                     }
                 }
 
-                // --- MOBS ---
+                // MOBS
                 if (_showMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -269,41 +272,44 @@ namespace WildTerraHook
         private void ProcessMob(global::WTMob mob, List<CachedObject> cache)
         {
             string name = mob.name;
+
+            // HP handling
             int hp = mob.health;
-            int maxHp = hp; // default
+            int maxHp = hp;
             try
             {
                 var f = mob.GetType().GetField("healthMax");
                 if (f != null) maxHp = (int)f.GetValue(mob);
             }
             catch { }
-
             string hpStr = $" [HP: {hp}/{maxHp}]";
+
+            // Height for Box
             float height = 1.8f;
             try { var col = mob.GetComponent<Collider>(); if (col != null) height = col.bounds.size.y; } catch { }
 
             bool isAggro = name.Contains("LargeFox") || name.Contains("Boss") || name.Contains("King") || name.Contains("Elite") || name.Contains("Bear") || name.Contains("Wolf");
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep");
 
-            int colorIdx = 0;
+            int outlineColor = 0;
             Color textColor = Color.red;
             string label = name;
-
             bool show = false;
+
             if (isAggro)
             {
-                if (_showAggressive) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; colorIdx = 0; show = true; }
+                if (_showAggressive) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; outlineColor = 0; show = true; }
             }
             else if (isPassive)
             {
-                if (_showPassive) { textColor = ConfigManager.Colors.MobPassive; colorIdx = 1; show = true; }
+                if (_showPassive) { textColor = ConfigManager.Colors.MobPassive; outlineColor = 1; show = true; }
             }
             else
             {
-                if (_showRetaliating) { textColor = ConfigManager.Colors.MobFleeing; colorIdx = 0; show = true; }
+                if (_showRetaliating) { textColor = ConfigManager.Colors.MobFleeing; outlineColor = 0; show = true; }
             }
 
-            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, colorIdx);
+            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, outlineColor);
             else DisableOutlineRecursive(mob.gameObject);
         }
 
@@ -322,44 +328,51 @@ namespace WildTerraHook
                 OutlineColorIndex = outIdx
             });
 
-            // Aplikuj Outline (GLOW)
+            // Aktywacja Glow (Rekurencyjnie na renderery)
             ApplyOutlineRecursive(go, outIdx);
         }
 
-        // --- GLOW FIX: RECURSIVE SEARCH ---
-        // Szukamy MeshRenderer lub SkinnedMeshRenderer w dzieciach, bo tam trzeba dać Outline
+        // --- GLOW APPLICATION (Recursive) ---
+        // Outline musi być na obiekcie z Rendererem, nie na pustym rodzicu!
         private void ApplyOutlineRecursive(GameObject root, int colorIndex)
         {
             if (!ShowOutlines) { DisableOutlineRecursive(root); return; }
             if (_outlineType == null) return;
 
-            // Znajdź wszystkie renderery w tym obiekcie (Model 3D zazwyczaj jest niżej w hierarchii)
             var renderers = root.GetComponentsInChildren<Renderer>();
 
             foreach (var rend in renderers)
             {
                 if (rend == null) continue;
-                // Ignorujemy Particle Systemy i Sprite'y, chcemy tylko Meshe
-                if (rend is ParticleSystemRenderer) continue;
+                if (rend is ParticleSystemRenderer) continue; // Ignoruj cząsteczki
 
-                GameObject go = rend.gameObject;
+                GameObject targetGo = rend.gameObject;
 
-                // Dodajemy Outline do obiektu z Meshem
                 try
                 {
-                    Component outline = go.GetComponent(_outlineType);
-                    if (outline == null) outline = go.AddComponent(_outlineType);
+                    Component outline = targetGo.GetComponent(_outlineType);
+
+                    // Jeśli nie ma, dodajemy
+                    if (outline == null) outline = targetGo.AddComponent(_outlineType);
 
                     if (outline != null)
                     {
-                        if (_outlineColorField != null) _outlineColorField.SetValue(outline, colorIndex);
+                        // Ustaw kolor
+                        if (_outlineColorField != null)
+                        {
+                            // Sprawdź czy kolor się zmienił, żeby nie spamować
+                            int currCol = (int)_outlineColorField.GetValue(outline);
+                            if (currCol != colorIndex) _outlineColorField.SetValue(outline, colorIndex);
+                        }
 
-                        // Force Refresh
+                        // Upewnij się że włączone
                         if (_outlineEnabledProp != null)
                         {
-                            // Trik z wyłączeniem i włączeniem często naprawia cakeslice
-                            //_outlineEnabledProp.SetValue(outline, false, null); 
-                            _outlineEnabledProp.SetValue(outline, true, null);
+                            bool isEnabled = (bool)_outlineEnabledProp.GetValue(outline, null);
+                            if (!isEnabled)
+                            {
+                                _outlineEnabledProp.SetValue(outline, true, null);
+                            }
                         }
                     }
                 }
@@ -370,13 +383,18 @@ namespace WildTerraHook
         private void DisableOutlineRecursive(GameObject root)
         {
             if (_outlineType == null) return;
-            var outlines = root.GetComponentsInChildren(_outlineType);
+            // Pobieramy wszystkie outline'y w dzieciach (nawet wyłączone)
+            var outlines = root.GetComponentsInChildren(_outlineType, true);
 
             foreach (var outline in outlines)
             {
                 try
                 {
-                    if (_outlineEnabledProp != null) _outlineEnabledProp.SetValue(outline, false, null);
+                    if (_outlineEnabledProp != null)
+                    {
+                        if ((bool)_outlineEnabledProp.GetValue(outline, null) == true)
+                            _outlineEnabledProp.SetValue(outline, false, null);
+                    }
                 }
                 catch { }
             }
@@ -395,7 +413,6 @@ namespace WildTerraHook
             if (_bgTexture == null) { _bgTexture = new Texture2D(1, 1); _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.75f)); _bgTexture.Apply(); }
             if (_boxTexture == null) { _boxTexture = new Texture2D(1, 1); _boxTexture.SetPixel(0, 0, Color.white); _boxTexture.Apply(); }
             if (_styleBackground == null) { _styleBackground = new GUIStyle(); _styleBackground.normal.background = _bgTexture; }
-
             if (_styleLabel == null)
             {
                 _styleLabel = new GUIStyle();
@@ -406,7 +423,7 @@ namespace WildTerraHook
             }
         }
 
-        // --- DRAWING GUI ---
+        // --- GUI ---
         public void DrawMenu()
         {
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(450));
