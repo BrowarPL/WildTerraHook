@@ -13,6 +13,10 @@ namespace WildTerraHook
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
+        // --- RENDER DISTANCE (NOWOŚĆ) ---
+        public float RenderDistance = 1000f; // Wartość robocza
+        private float _originalRenderDist = 1000f; // Do resetu
+
         // --- LATARKA ---
         public float LightIntensity = 2.0f;
         public float LightRange = 1000f;
@@ -40,6 +44,27 @@ namespace WildTerraHook
         {
             if (global::Player.localPlayer == null) return;
 
+            // Inicjalizacja domyślnych wartości (raz)
+            if (!_defaultsInitialized && Camera.main != null)
+            {
+                _defaultFov = Camera.main.fieldOfView;
+                _originalRenderDist = Camera.main.farClipPlane;
+
+                // Ustaw suwak na startową wartość gry
+                if (RenderDistance == 1000f) RenderDistance = _originalRenderDist;
+
+                _defaultsInitialized = true;
+            }
+
+            // Obsługa Render Distance
+            if (Camera.main != null)
+            {
+                if (Math.Abs(Camera.main.farClipPlane - RenderDistance) > 1f)
+                {
+                    Camera.main.farClipPlane = RenderDistance;
+                }
+            }
+
             if (EternalDayEnabled && global::EnviroSky.instance != null)
                 global::EnviroSky.instance.SetTime(global::EnviroSky.instance.GameTime.Years, global::EnviroSky.instance.GameTime.Days, 12, 0, 0);
 
@@ -51,7 +76,7 @@ namespace WildTerraHook
             if (ZoomHackEnabled) HandleZoomHack();
         }
 
-        // Pozostawione puste, aby nie powodować błędu w MainHack
+        // Pusta metoda dla kompatybilności z MainHack
         public void OnGUI() { }
 
         private void ApplyNoFog()
@@ -90,12 +115,6 @@ namespace WildTerraHook
         {
             if (Camera.main != null)
             {
-                if (!_defaultsInitialized)
-                {
-                    _defaultFov = Camera.main.fieldOfView;
-                    if (CameraFov < 10) CameraFov = _defaultFov;
-                    _defaultsInitialized = true;
-                }
                 if (Math.Abs(Camera.main.fieldOfView - CameraFov) > 0.1f)
                     Camera.main.fieldOfView = CameraFov;
             }
@@ -180,6 +199,13 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
 
+            // --- RENDER DISTANCE ---
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Render Dist: {RenderDistance:F0}", GUILayout.Width(120));
+            RenderDistance = GUILayout.HorizontalSlider(RenderDistance, 100f, 5000f);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(5);
+
             EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, Localization.Get("MISC_ETERNAL_DAY"));
             NoFogEnabled = GUILayout.Toggle(NoFogEnabled, Localization.Get("MISC_NO_FOG"));
             FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, Localization.Get("MISC_FULLBRIGHT"));
@@ -229,6 +255,7 @@ namespace WildTerraHook
             if (GUILayout.Button(Localization.Get("MISC_RESET")))
             {
                 CameraFov = _defaultFov;
+                RenderDistance = _originalRenderDist; // Reset dystansu
                 MaxZoomLimit = 100f;
                 CameraAngle = 45f;
                 ZoomSpeed = 60f;
