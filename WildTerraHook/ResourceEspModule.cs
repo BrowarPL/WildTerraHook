@@ -2,18 +2,16 @@
 using System.Collections.Generic;
 using System.Linq;
 using System;
-using System.Reflection;
 
 namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA ---
+        // --- GŁÓWNE PRZEŁĄCZNIKI ---
         public bool EspEnabled = false;
         public bool ShowBoxes = true;
-        public bool ShowOutlines = false; // Glow / Outline
+        public bool ShowGlow = true; // Zmieniono nazwę z Outlines na Glow
 
-        // Kategorie
         private bool _showResources = false;
         private bool _showMining = false;
         private bool _showGathering = false;
@@ -29,7 +27,7 @@ namespace WildTerraHook
         private bool _showColorMenu = false;
         private float _maxDistance = 150f;
 
-        // Listy toggle
+        // --- LISTY SZCZEGÓŁOWE ---
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -37,20 +35,12 @@ namespace WildTerraHook
 
         private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
 
-        // Cache
+        // --- DANE CACHE ---
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
-        private float _scanInterval = 1.0f;
+        private float _scanInterval = 1.0f; // Skanowanie co 1s
 
-        // Reflection Variables
-        private Type _outlineType;
-        private Type _outlineEffectType;
-        private FieldInfo _outlineColorField;
-        private PropertyInfo _outlineEnabledProp;
-        private MethodInfo _effectUpdateMethod;
-        private bool _reflectionInit = false;
-
-        // GUI
+        // Style
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
@@ -67,13 +57,13 @@ namespace WildTerraHook
             public string HpText;
             public bool IsMob;
             public float Height;
-            public int OutlineIdx;
+            // Cache rendererów do podświetlania
+            public Renderer[] Renderers;
         }
 
         public ResourceEspModule()
         {
             InitializeLists();
-            InitReflection();
         }
 
         private void InitializeLists()
@@ -91,30 +81,18 @@ namespace WildTerraHook
             foreach (var s in godsend) _godsendToggles[s] = false;
         }
 
-        private void InitReflection()
-        {
-            try
-            {
-                // Ładujemy typy dynamicznie, żeby ominąć błędy kompilatora
-                _outlineType = Type.GetType("cakeslice.Outline, Assembly-CSharp");
-                _outlineEffectType = Type.GetType("cakeslice.OutlineEffect, Assembly-CSharp");
-
-                if (_outlineType != null)
-                {
-                    _outlineColorField = _outlineType.GetField("color");
-                    _outlineEnabledProp = _outlineType.GetProperty("enabled") ?? typeof(Behaviour).GetProperty("enabled");
-                }
-                _reflectionInit = true;
-            }
-            catch (Exception) { }
-        }
-
         public void Update()
         {
-            if (!EspEnabled) return;
-            if (!_reflectionInit) InitReflection();
-
-            if (ShowOutlines) SetupCameraForOutlines();
+            if (!EspEnabled)
+            {
+                // Jeśli wyłączono ESP, upewnij się, że wyłączyliśmy glow na wszystkim
+                if (_cachedObjects.Count > 0)
+                {
+                    foreach (var obj in _cachedObjects) DisableGlow(obj.Renderers);
+                    _cachedObjects.Clear();
+                }
+                return;
+            }
 
             if (Time.time - _lastScanTime > _scanInterval)
             {
@@ -123,63 +101,19 @@ namespace WildTerraHook
             }
         }
 
-        // --- KLUCZOWA NAPRAWA KAMERY ---
-        private void SetupCameraForOutlines()
-        {
-            if (_outlineEffectType == null) return;
-            Camera cam = Camera.main;
-            if (cam == null) return;
-
-            // 1. WYMUSZENIE DEPTH TEXTURE (Bez tego shader nie widzi krawędzi!)
-            if (cam.depthTextureMode != DepthTextureMode.Depth)
-            {
-                cam.depthTextureMode = DepthTextureMode.Depth;
-            }
-
-            // 2. Obsługa OutlineEffect
-            Component effect = cam.GetComponent(_outlineEffectType);
-            if (effect == null)
-            {
-                effect = cam.gameObject.AddComponent(_outlineEffectType);
-                // Ustawienia domyślne efektu (Hardcoded Reflection)
-                SetField(effect, "lineThickness", 1.6f);
-                SetField(effect, "lineIntensity", 3.5f);
-                SetField(effect, "fillAmount", 0.05f); // Lekkie wypełnienie dla lepszej widoczności
-                SetField(effect, "additiveRendering", false);
-            }
-
-            if (effect != null)
-            {
-                // Kolory
-                SetField(effect, "lineColor0", ConfigManager.Colors.MobAggressive); // 0 = Agresywne
-                SetField(effect, "lineColor1", ConfigManager.Colors.MobPassive);    // 1 = Pasywne
-                SetField(effect, "lineColor2", ConfigManager.Colors.ResMining);     // 2 = Surowce
-
-                // Włącz
-                var mb = effect as Behaviour;
-                if (mb != null && !mb.enabled) mb.enabled = true;
-            }
-        }
-
-        private void SetField(object obj, string name, object value)
-        {
-            if (obj == null) return;
-            var f = obj.GetType().GetField(name);
-            if (f != null) f.SetValue(obj, value);
-        }
-
         // --- SKANOWANIE ---
 
         private void ScanObjects()
         {
-            if (!EspEnabled) { _cachedObjects.Clear(); return; }
-            if (!_showResources && !_showMobs) { _cachedObjects.Clear(); return; }
-
             Vector3 playerPos = Vector3.zero;
             if (global::Player.localPlayer != null) playerPos = global::Player.localPlayer.transform.position;
             else if (Camera.main != null) playerPos = Camera.main.transform.position;
 
+            // Przygotuj nową listę
             List<CachedObject> newCache = new List<CachedObject>();
+
+            // Stara lista (do wyczyszczenia glow na obiektach, które zniknęły)
+            HashSet<GameObject> newObjectsSet = new HashSet<GameObject>();
 
             try
             {
@@ -196,28 +130,22 @@ namespace WildTerraHook
                     foreach (var obj in objects)
                     {
                         if (obj == null) continue;
-                        if ((obj.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance))
-                        {
-                            DisableOutlineRecursive(obj.gameObject);
-                            continue;
-                        }
+                        if ((obj.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance)) continue;
 
                         string name = obj.name;
                         if (IsIgnored(name)) continue;
 
                         bool matched = false;
-                        if (_showMining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false, 2)) matched = true;
-                        else if (_showGathering && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false, 1)) matched = true;
-                        else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false, 2)) matched = true;
-                        else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false, 0)) matched = true;
+                        if (_showMining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false)) matched = true;
+                        else if (_showGathering && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false)) matched = true;
+                        else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false)) matched = true;
+                        else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false)) matched = true;
 
                         if (!matched && _showOthers && !name.Contains("Player") && !name.Contains("Character"))
                         {
-                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, 2);
+                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f);
                             matched = true;
                         }
-
-                        if (!matched) DisableOutlineRecursive(obj.gameObject);
                     }
                 }
 
@@ -229,17 +157,33 @@ namespace WildTerraHook
                     {
                         if (mob != null && mob.health > 0)
                         {
-                            if ((mob.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance))
-                            {
-                                DisableOutlineRecursive(mob.gameObject);
-                                continue;
-                            }
+                            if ((mob.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance)) continue;
                             ProcessMob(mob, newCache);
                         }
                     }
                 }
             }
             catch { }
+
+            // LOGIKA GLOW:
+            // 1. Zidentyfikuj obiekty, które są na nowej liście
+            foreach (var item in newCache) newObjectsSet.Add(item.GameObject);
+
+            // 2. Wyłącz glow na obiektach, których już nie ma na liście (wyszły z zasięgu)
+            foreach (var oldItem in _cachedObjects)
+            {
+                if (oldItem.GameObject != null && !newObjectsSet.Contains(oldItem.GameObject))
+                {
+                    DisableGlow(oldItem.Renderers);
+                }
+            }
+
+            // 3. Zastosuj glow na nowej liście (jeśli włączone)
+            foreach (var item in newCache)
+            {
+                if (ShowGlow) ApplyGlow(item.Renderers, item.Color);
+                else DisableGlow(item.Renderers); // Jeśli wyłączono opcję globalnie
+            }
 
             _cachedObjects = newCache;
         }
@@ -251,14 +195,14 @@ namespace WildTerraHook
             return active;
         }
 
-        private bool CheckList(string objName, List<string> activeKeys, global::WTObject obj, Color color, List<CachedObject> cache, bool isMob, int outlineColorIndex)
+        private bool CheckList(string objName, List<string> activeKeys, global::WTObject obj, Color color, List<CachedObject> cache, bool isMob)
         {
             if (activeKeys.Count == 0) return false;
             foreach (var key in activeKeys)
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, outlineColorIndex);
+                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f);
                     return true;
                 }
             }
@@ -284,30 +228,31 @@ namespace WildTerraHook
             bool isAggro = name.Contains("LargeFox") || name.Contains("Boss") || name.Contains("King") || name.Contains("Elite") || name.Contains("Bear") || name.Contains("Wolf");
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep");
 
-            int outlineColor = 0;
             Color textColor = Color.red;
             string label = name;
             bool show = false;
 
             if (isAggro)
             {
-                if (_showAggressive) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; outlineColor = 0; show = true; }
+                if (_showAggressive) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; show = true; }
             }
             else if (isPassive)
             {
-                if (_showPassive) { textColor = ConfigManager.Colors.MobPassive; outlineColor = 1; show = true; }
+                if (_showPassive) { textColor = ConfigManager.Colors.MobPassive; show = true; }
             }
             else
             {
-                if (_showRetaliating) { textColor = ConfigManager.Colors.MobFleeing; outlineColor = 0; show = true; }
+                if (_showRetaliating) { textColor = ConfigManager.Colors.MobFleeing; show = true; }
             }
 
-            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, outlineColor);
-            else DisableOutlineRecursive(mob.gameObject);
+            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height);
         }
 
-        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, int outIdx)
+        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h)
         {
+            // Pobieramy renderery raz, przy dodawaniu do cache, żeby nie robić tego co klatkę
+            var rends = go.GetComponentsInChildren<Renderer>();
+
             cache.Add(new CachedObject
             {
                 GameObject = go,
@@ -318,70 +263,45 @@ namespace WildTerraHook
                 HpText = hp,
                 IsMob = isMob,
                 Height = h,
-                OutlineIdx = outIdx
+                Renderers = rends
             });
-
-            ApplyOutlineRecursive(go, outIdx);
         }
 
-        // --- REFLECTION OUTLINE LOGIC ---
+        // --- GLOW LOGIC (MATERIAL EMISSION) ---
 
-        private void ApplyOutlineRecursive(GameObject root, int colorIndex)
+        private void ApplyGlow(Renderer[] renderers, Color glowColor)
         {
-            if (!ShowOutlines) { DisableOutlineRecursive(root); return; }
-            if (_outlineType == null) return;
-
-            // Szukamy rendererów (Meshy) w dzieciach, bo tam trzeba nałożyć efekt
-            var renderers = root.GetComponentsInChildren<Renderer>();
-
-            foreach (var rend in renderers)
+            if (renderers == null) return;
+            foreach (var r in renderers)
             {
-                if (rend == null) continue;
-                if (rend is ParticleSystemRenderer) continue;
+                if (r == null) continue;
+                if (r is ParticleSystemRenderer) continue; // Ignoruj efekty cząsteczkowe
 
-                GameObject go = rend.gameObject;
-
-                try
+                foreach (var mat in r.materials)
                 {
-                    Component outline = go.GetComponent(_outlineType);
-                    if (outline == null) outline = go.AddComponent(_outlineType);
+                    if (mat == null) continue;
 
-                    if (outline != null)
-                    {
-                        // Ustaw kolor
-                        if (_outlineColorField != null)
-                        {
-                            int curr = (int)_outlineColorField.GetValue(outline);
-                            if (curr != colorIndex) _outlineColorField.SetValue(outline, colorIndex);
-                        }
+                    // Włącz emisję
+                    if (!mat.IsKeywordEnabled("_EMISSION")) mat.EnableKeyword("_EMISSION");
 
-                        // Force Enable (ważne!)
-                        if (_outlineEnabledProp != null)
-                        {
-                            bool isEn = (bool)_outlineEnabledProp.GetValue(outline, null);
-                            if (!isEn) _outlineEnabledProp.SetValue(outline, true, null);
-                        }
-                    }
+                    // Ustaw kolor (pomnóż dla jasności)
+                    mat.SetColor("_EmissionColor", glowColor * 1.5f);
                 }
-                catch { }
             }
         }
 
-        private void DisableOutlineRecursive(GameObject root)
+        private void DisableGlow(Renderer[] renderers)
         {
-            if (_outlineType == null) return;
-            var outlines = root.GetComponentsInChildren(_outlineType, true);
-            foreach (var outline in outlines)
+            if (renderers == null) return;
+            foreach (var r in renderers)
             {
-                try
+                if (r == null) continue;
+                foreach (var mat in r.materials)
                 {
-                    if (_outlineEnabledProp != null)
-                    {
-                        if ((bool)_outlineEnabledProp.GetValue(outline, null) == true)
-                            _outlineEnabledProp.SetValue(outline, false, null);
-                    }
+                    if (mat == null) continue;
+                    // Wyłącz emisję
+                    if (mat.IsKeywordEnabled("_EMISSION")) mat.DisableKeyword("_EMISSION");
                 }
-                catch { }
             }
         }
 
@@ -424,7 +344,7 @@ namespace WildTerraHook
 
                 GUILayout.BeginHorizontal();
                 ShowBoxes = GUILayout.Toggle(ShowBoxes, "Box ESP");
-                ShowOutlines = GUILayout.Toggle(ShowOutlines, "Glow (Wymaga Depth)");
+                ShowGlow = GUILayout.Toggle(ShowGlow, "Shader Glow (Jasne)");
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(10);
