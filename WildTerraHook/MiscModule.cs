@@ -13,9 +13,9 @@ namespace WildTerraHook
         public bool NoFogEnabled = false;
         public bool ZoomHackEnabled = false;
 
-        // --- RENDER DISTANCE (NOWOŚĆ) ---
-        public float RenderDistance = 1000f; // Wartość robocza
-        private float _originalRenderDist = 1000f; // Do resetu
+        // --- RENDER DISTANCE ---
+        public float RenderDistance = 500f; // ZMIANA: Domyślnie 500
+        private float _originalRenderDist = 500f;
 
         // --- LATARKA ---
         public float LightIntensity = 2.0f;
@@ -44,21 +44,27 @@ namespace WildTerraHook
         {
             if (global::Player.localPlayer == null) return;
 
-            // Inicjalizacja domyślnych wartości (raz)
+            // Inicjalizacja
             if (!_defaultsInitialized && Camera.main != null)
             {
                 _defaultFov = Camera.main.fieldOfView;
                 _originalRenderDist = Camera.main.farClipPlane;
 
-                // Ustaw suwak na startową wartość gry
-                if (RenderDistance == 1000f) RenderDistance = _originalRenderDist;
+                // Jeśli użytkownik nie ruszał suwaka (jest 500), nadpisz go oryginałem z gry,
+                // chyba że oryginał jest mniejszy niż 500, wtedy wymuś 500.
+                if (Math.Abs(RenderDistance - 500f) < 1f)
+                {
+                    // Opcjonalnie: RenderDistance = _originalRenderDist; 
+                    // Ale chciałeś wymusić startowe 500, więc zostawiamy jak jest.
+                }
 
                 _defaultsInitialized = true;
             }
 
-            // Obsługa Render Distance
+            // Obsługa Render Distance (Far Clip Plane)
             if (Camera.main != null)
             {
+                // Ustawiamy tylko jeśli różnica jest zauważalna
                 if (Math.Abs(Camera.main.farClipPlane - RenderDistance) > 1f)
                 {
                     Camera.main.farClipPlane = RenderDistance;
@@ -76,7 +82,6 @@ namespace WildTerraHook
             if (ZoomHackEnabled) HandleZoomHack();
         }
 
-        // Pusta metoda dla kompatybilności z MainHack
         public void OnGUI() { }
 
         private void ApplyNoFog()
@@ -202,6 +207,7 @@ namespace WildTerraHook
             // --- RENDER DISTANCE ---
             GUILayout.BeginHorizontal();
             GUILayout.Label($"Render Dist: {RenderDistance:F0}", GUILayout.Width(120));
+            // Suwak od 100 do 5000
             RenderDistance = GUILayout.HorizontalSlider(RenderDistance, 100f, 5000f);
             GUILayout.EndHorizontal();
             GUILayout.Space(5);
@@ -255,7 +261,7 @@ namespace WildTerraHook
             if (GUILayout.Button(Localization.Get("MISC_RESET")))
             {
                 CameraFov = _defaultFov;
-                RenderDistance = _originalRenderDist; // Reset dystansu
+                RenderDistance = 500f; // Reset na 500
                 MaxZoomLimit = 100f;
                 CameraAngle = 45f;
                 ZoomSpeed = 60f;
