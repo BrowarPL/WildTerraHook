@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.Reflection;
 
 namespace WildTerraHook
 {
@@ -40,6 +41,13 @@ namespace WildTerraHook
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f; // Skanowanie co 1s
 
+        // --- CACHE REFLECTION (Dla cakeslice) ---
+        private Type _outlineType;
+        private Type _outlineEffectType;
+        private FieldInfo _outlineColorField;
+        private PropertyInfo _outlineEnabledProp;
+        private bool _reflectionInitialized = false;
+
         // Style
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
@@ -62,6 +70,7 @@ namespace WildTerraHook
         public ResourceEspModule()
         {
             InitializeLists();
+            InitReflection();
         }
 
         private void InitializeLists()
@@ -79,12 +88,31 @@ namespace WildTerraHook
             foreach (var s in godsend) _godsendToggles[s] = false;
         }
 
+        private void InitReflection()
+        {
+            try
+            {
+                _outlineType = Type.GetType("cakeslice.Outline, Assembly-CSharp");
+                _outlineEffectType = Type.GetType("cakeslice.OutlineEffect, Assembly-CSharp");
+
+                if (_outlineType != null)
+                {
+                    _outlineColorField = _outlineType.GetField("color");
+                    // Enabled jest we właściwościach MonoBehaviour (rodzica)
+                    _outlineEnabledProp = _outlineType.GetProperty("enabled");
+                }
+                _reflectionInitialized = true;
+            }
+            catch { }
+        }
+
         public void Update()
         {
             if (!EspEnabled) return;
+            if (!_reflectionInitialized) InitReflection();
 
             // Upewnij się, że kamera ma efekt Outline (wymagane dla glow)
-            if (ShowOutlines) EnsureCameraEffect();
+            if (ShowOutlines) EnsureCameraEffectReflection();
 
             if (Time.time - _lastScanTime > _scanInterval)
             {
@@ -93,33 +121,49 @@ namespace WildTerraHook
             }
         }
 
-        // --- CAMERA EFFECT SETUP ---
-        private void EnsureCameraEffect()
+        // --- CAMERA EFFECT SETUP (REFLECTION) ---
+        private void EnsureCameraEffectReflection()
         {
+            if (_outlineEffectType == null) return;
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            // Szukamy efektu na kamerze (wymagane przez cakeslice)
-            var effect = cam.GetComponent<global::cakeslice.OutlineEffect>();
+            // Pobierz komponent (jako Component/Object)
+            Component effect = cam.GetComponent(_outlineEffectType);
+
+            // Jeśli nie ma, dodaj
             if (effect == null)
             {
-                effect = cam.gameObject.AddComponent<global::cakeslice.OutlineEffect>();
-                // Domyślna konfiguracja, żeby było widać
-                effect.lineThickness = 1.2f;
-                effect.lineIntensity = 3.0f; // Mocny glow
-                effect.fillAmount = 0.0f;    // Tylko obrys
+                effect = cam.gameObject.AddComponent(_outlineEffectType);
+
+                // Ustaw domyślne parametry (Thickness, Intensity)
+                SetField(effect, "lineThickness", 1.3f);
+                SetField(effect, "lineIntensity", 2.5f);
+                SetField(effect, "fillAmount", 0.0f);
             }
 
-            // Aktualizacja kolorów efektu na podstawie Configa
-            // cakeslice ma zazwyczaj 3 sloty kolorów (0, 1, 2)
+            // Aktualizuj kolory i włącz
             if (effect != null)
             {
-                effect.lineColor0 = ConfigManager.Colors.MobAggressive; // Slot 0: Agresywne
-                effect.lineColor1 = ConfigManager.Colors.MobPassive;    // Slot 1: Pasywne / Zasoby
-                effect.lineColor2 = ConfigManager.Colors.ResMining;     // Slot 2: Inne
+                SetField(effect, "lineColor0", ConfigManager.Colors.MobAggressive);
+                SetField(effect, "lineColor1", ConfigManager.Colors.MobPassive);
+                SetField(effect, "lineColor2", ConfigManager.Colors.ResMining);
 
-                if (!effect.enabled) effect.enabled = true;
+                // Włącz komponent (property 'enabled')
+                var p = _outlineEffectType.GetProperty("enabled");
+                if (p != null && (bool)p.GetValue(effect, null) == false)
+                {
+                    p.SetValue(effect, true, null);
+                }
             }
+        }
+
+        // Pomocnicza metoda do ustawiania pól przez Reflection
+        private void SetField(object obj, string name, object value)
+        {
+            if (obj == null) return;
+            var f = obj.GetType().GetField(name);
+            if (f != null) f.SetValue(obj, value);
         }
 
         // --- SCANNING & LOGIC ---
@@ -152,7 +196,7 @@ namespace WildTerraHook
                         float distSqr = (obj.transform.position - playerPos).sqrMagnitude;
                         if (distSqr > (_maxDistance * _maxDistance))
                         {
-                            DisableOutline(obj.gameObject);
+                            DisableOutlineReflection(obj.gameObject);
                             continue;
                         }
 
@@ -166,7 +210,7 @@ namespace WildTerraHook
                         else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false, 2)) matched = true;
                         else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false, 0)) matched = true;
 
-                        if (!matched && _showOthers && !name.Contains("Player"))
+                        if (!matched && _showOthers && !name.Contains("Player") && !name.Contains("Character"))
                         {
                             newCache.Add(new CachedObject
                             {
@@ -179,11 +223,11 @@ namespace WildTerraHook
                                 IsMob = false,
                                 Height = 0f
                             });
-                            ApplyOutline(obj.gameObject, 2);
+                            ApplyOutlineReflection(obj.gameObject, 2);
                             matched = true;
                         }
 
-                        if (!matched) DisableOutline(obj.gameObject);
+                        if (!matched) DisableOutlineReflection(obj.gameObject);
                     }
                 }
 
@@ -196,7 +240,7 @@ namespace WildTerraHook
                         {
                             if ((mob.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance))
                             {
-                                DisableOutline(mob.gameObject);
+                                DisableOutlineReflection(mob.gameObject);
                                 continue;
                             }
                             ProcessMob(mob, newCache);
@@ -235,7 +279,7 @@ namespace WildTerraHook
                         Height = 0f
                     });
 
-                    ApplyOutline(obj.gameObject, outlineColorIndex);
+                    ApplyOutlineReflection(obj.gameObject, outlineColorIndex);
                     return true;
                 }
             }
@@ -281,56 +325,75 @@ namespace WildTerraHook
                 Height = height
             };
 
-            // Slot 0 = Aggro (Czerwony), Slot 1 = Passive (Zielony)
             int outlineColor = 0;
 
             if (isAggro)
             {
                 if (_showAggressive) { obj.Color = ConfigManager.Colors.MobAggressive; obj.Label = "[!] " + name; cache.Add(obj); outlineColor = 0; }
-                else DisableOutline(mob.gameObject);
+                else DisableOutlineReflection(mob.gameObject);
             }
             else if (isPassive)
             {
                 if (_showPassive) { obj.Color = ConfigManager.Colors.MobPassive; cache.Add(obj); outlineColor = 1; }
-                else DisableOutline(mob.gameObject);
+                else DisableOutlineReflection(mob.gameObject);
             }
-            else // Retaliating / Other
+            else // Retaliating
             {
                 if (_showRetaliating) { obj.Color = ConfigManager.Colors.MobFleeing; cache.Add(obj); outlineColor = 0; }
-                else DisableOutline(mob.gameObject);
+                else DisableOutlineReflection(mob.gameObject);
             }
 
             if (cache.Count > 0 && cache[cache.Count - 1].GameObject == mob.gameObject)
             {
-                ApplyOutline(mob.gameObject, outlineColor);
+                ApplyOutlineReflection(mob.gameObject, outlineColor);
             }
         }
 
-        // --- DIRECT OUTLINE HANDLING ---
+        // --- OUTLINE HANDLING (REFLECTION) ---
 
-        private void ApplyOutline(GameObject go, int colorIndex)
+        private void ApplyOutlineReflection(GameObject go, int colorIndex)
         {
             if (!ShowOutlines)
             {
-                DisableOutline(go);
+                DisableOutlineReflection(go);
                 return;
             }
+            if (_outlineType == null) return;
 
-            // Używamy bezpośredniego typu (wymaga referencji Assembly-CSharp.dll)
-            var outline = go.GetComponent<global::cakeslice.Outline>();
-            if (outline == null) outline = go.AddComponent<global::cakeslice.Outline>();
-
-            if (outline != null)
+            try
             {
-                if (outline.color != colorIndex) outline.color = colorIndex;
-                if (!outline.enabled) outline.enabled = true;
+                Component outline = go.GetComponent(_outlineType);
+                if (outline == null) outline = go.AddComponent(_outlineType);
+
+                if (outline != null)
+                {
+                    // Ustawienie koloru
+                    if (_outlineColorField != null) _outlineColorField.SetValue(outline, colorIndex);
+
+                    // Włączenie (enabled)
+                    if (_outlineEnabledProp != null)
+                    {
+                        if ((bool)_outlineEnabledProp.GetValue(outline, null) == false)
+                            _outlineEnabledProp.SetValue(outline, true, null);
+                    }
+                }
             }
+            catch { }
         }
 
-        private void DisableOutline(GameObject go)
+        private void DisableOutlineReflection(GameObject go)
         {
-            var outline = go.GetComponent<global::cakeslice.Outline>();
-            if (outline != null && outline.enabled) outline.enabled = false;
+            if (_outlineType == null) return;
+            try
+            {
+                Component outline = go.GetComponent(_outlineType);
+                if (outline != null && _outlineEnabledProp != null)
+                {
+                    if ((bool)_outlineEnabledProp.GetValue(outline, null) == true)
+                        _outlineEnabledProp.SetValue(outline, false, null);
+                }
+            }
+            catch { }
         }
 
         private bool IsIgnored(string name)
@@ -494,6 +557,7 @@ namespace WildTerraHook
 
                 if (isOffScreen)
                 {
+                    // STRZAŁKI NA KRAWĘDZIACH
                     Vector3 screenPos = screenHead;
                     if (isBehind) { screenPos.x *= -1; screenPos.y *= -1; }
 
@@ -522,6 +586,7 @@ namespace WildTerraHook
                 }
                 else
                 {
+                    // NORMALNY WIDOK
                     float feetY = screenH - screenFeet.y;
                     float headY = screenH - screenHead.y;
 
