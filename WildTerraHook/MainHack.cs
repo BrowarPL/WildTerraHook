@@ -9,15 +9,16 @@ namespace WildTerraHook
         private ResourceEspModule _espModule;
         private MiscModule _miscModule;
         private ColorFishingModule _fishingModule;
+        private AutoLootModule _lootModule; // NOWOŚĆ
 
         // --- GUI ---
-        private Rect _menuRect = new Rect(20, 20, 350, 600);
+        private Rect _menuRect = new Rect(20, 20, 420, 600); // Nieco szersze menu dla tabeli lootu
         private bool _showMenu = true;
         private bool _globalUiVisible = true;
 
         private int _selectedTab = 0;
-        // Zaktualizowana lista zakładek
-        private string[] _tabNames = { "ESP", "Fishing", "Misc" };
+        // Dodano "Loot" do zakładek
+        private string[] _tabNames = { "ESP", "Fishing", "Loot", "Misc" };
 
         public void Start()
         {
@@ -27,6 +28,7 @@ namespace WildTerraHook
             _espModule = new ResourceEspModule();
             _miscModule = new MiscModule();
             _fishingModule = new ColorFishingModule();
+            _lootModule = new AutoLootModule(); // Inicjalizacja
         }
 
         public void Update()
@@ -41,10 +43,11 @@ namespace WildTerraHook
                 _showMenu = !_showMenu;
             }
 
-            // Update modułów
+            // Update wszystkich modułów
             _espModule.Update();
             _miscModule.Update();
             _fishingModule.Update();
+            _lootModule.Update(); // Update Lootera
         }
 
         public void OnGUI()
@@ -76,7 +79,10 @@ namespace WildTerraHook
                 case 1: // Fishing
                     _fishingModule.DrawMenu();
                     break;
-                case 2: // Misc
+                case 2: // Loot (NOWOŚĆ)
+                    _lootModule.DrawMenu();
+                    break;
+                case 3: // Misc
                     _miscModule.DrawMenu();
                     break;
             }

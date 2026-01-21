@@ -1,26 +1,29 @@
 ﻿using System;
+using System.Collections.Generic; // Wymagane dla List
 using System.IO;
 using System.Globalization;
+using System.Linq; // Wymagane dla string.Join
 using UnityEngine;
 
 namespace WildTerraHook
 {
     public static class ConfigManager
     {
-        // Struktura przechowująca kolory
         public static class Colors
         {
             public static Color MobAggressive = Color.red;
             public static Color MobPassive = Color.green;
-            public static Color MobFleeing = new Color(1f, 0.64f, 0f); // Orange
-
-            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f); // Brown
+            public static Color MobFleeing = new Color(1f, 0.64f, 0f);
+            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f);
             public static Color ResMining = Color.gray;
             public static Color ResGather = Color.white;
         }
 
         // --- USTAWIENIA OGÓLNE ---
-        public static string Language = "en"; // Domyślnie angielski (pl/en)
+        public static string Language = "en";
+
+        // --- AUTO LOOT ---
+        public static List<string> AutoLootList = new List<string>();
 
         private static string _folderPath;
         private static string _filePath;
@@ -29,7 +32,6 @@ namespace WildTerraHook
         {
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
             _filePath = Path.Combine(_folderPath, "config.txt");
-
             Load();
         }
 
@@ -41,14 +43,16 @@ namespace WildTerraHook
 
                 using (StreamWriter sw = new StreamWriter(_filePath))
                 {
-                    // Zapis języka
                     sw.WriteLine($"Language={Language}");
 
-                    // Zapis kolorów
+                    // Zapis Whitelist (oddzielone średnikami)
+                    // Zabezpieczenie przed pustymi wpisami
+                    string lootString = string.Join(";", AutoLootList.Where(x => !string.IsNullOrEmpty(x)));
+                    sw.WriteLine($"AutoLootList={lootString}");
+
                     sw.WriteLine($"MobAggressive={ColorToString(Colors.MobAggressive)}");
                     sw.WriteLine($"MobPassive={ColorToString(Colors.MobPassive)}");
                     sw.WriteLine($"MobFleeing={ColorToString(Colors.MobFleeing)}");
-
                     sw.WriteLine($"ResLumber={ColorToString(Colors.ResLumber)}");
                     sw.WriteLine($"ResMining={ColorToString(Colors.ResMining)}");
                     sw.WriteLine($"ResGather={ColorToString(Colors.ResGather)}");
@@ -62,11 +66,7 @@ namespace WildTerraHook
 
         public static void Load()
         {
-            if (!File.Exists(_filePath))
-            {
-                Save(); // Zapisz domyślne
-                return;
-            }
+            if (!File.Exists(_filePath)) { Save(); return; }
 
             try
             {
@@ -75,25 +75,29 @@ namespace WildTerraHook
                 {
                     if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
 
-                    string[] parts = line.Split('=');
+                    string[] parts = line.Split(new[] { '=' }, 2);
                     string key = parts[0].Trim();
                     string value = parts[1].Trim();
 
-                    // Ładowanie języka
-                    if (key == "Language")
+                    if (key == "Language") Language = value;
+                    else if (key == "AutoLootList")
                     {
-                        Language = value;
-                        continue;
+                        AutoLootList.Clear();
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            AutoLootList.AddRange(value.Split(';'));
+                        }
                     }
-
-                    // Ładowanie kolorów
-                    Color col = StringToColor(value);
-                    if (key == "MobAggressive") Colors.MobAggressive = col;
-                    else if (key == "MobPassive") Colors.MobPassive = col;
-                    else if (key == "MobFleeing") Colors.MobFleeing = col;
-                    else if (key == "ResLumber") Colors.ResLumber = col;
-                    else if (key == "ResMining") Colors.ResMining = col;
-                    else if (key == "ResGather") Colors.ResGather = col;
+                    else
+                    {
+                        Color col = StringToColor(value);
+                        if (key == "MobAggressive") Colors.MobAggressive = col;
+                        else if (key == "MobPassive") Colors.MobPassive = col;
+                        else if (key == "MobFleeing") Colors.MobFleeing = col;
+                        else if (key == "ResLumber") Colors.ResLumber = col;
+                        else if (key == "ResMining") Colors.ResMining = col;
+                        else if (key == "ResGather") Colors.ResGather = col;
+                    }
                 }
             }
             catch { }

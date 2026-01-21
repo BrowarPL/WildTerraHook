@@ -8,8 +8,6 @@ namespace WildTerraHook
     public static class Localization
     {
         private static Dictionary<string, string> _currentDict = new Dictionary<string, string>();
-
-        // Ścieżka do %appdata%/WildTerraHook
         private static string _folderPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
 
         public static void Init()
@@ -25,8 +23,6 @@ namespace WildTerraHook
             string path = Path.Combine(_folderPath, fileName);
 
             bool loadedFromDisk = false;
-
-            // 1. Próba wczytania z dysku
             if (File.Exists(path))
             {
                 try
@@ -36,33 +32,18 @@ namespace WildTerraHook
                     {
                         if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
                         var parts = line.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2)
-                        {
-                            _currentDict[parts[0].Trim()] = parts[1].Trim();
-                        }
+                        if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim();
                     }
                     loadedFromDisk = true;
                 }
-                catch
-                {
-                    Debug.LogError("[Localization] Błąd odczytu pliku. Przywracam domyślne.");
-                }
+                catch { Debug.LogError("[Localization] Błąd odczytu pliku."); }
             }
 
-            // 2. SPRAWDZENIE AKTUALNOŚCI (AUTO-FIX)
-            // Jeśli pliku nie ma LUB brakuje w nim nowych kluczy (np. FISH_TITLE), nadpisujemy go
-            if (!loadedFromDisk || !_currentDict.ContainsKey("FISH_TITLE"))
+            // AUTO-FIX: Sprawdź czy jest klucz LOOT_TITLE (nowy moduł)
+            if (!loadedFromDisk || !_currentDict.ContainsKey("LOOT_TITLE"))
             {
-                // Regeneracja pliku z aktualnymi danymi z kodu
                 string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
-                try
-                {
-                    File.WriteAllText(path, content);
-                    Debug.Log($"[Localization] Zaktualizowano plik językowy: {fileName}");
-                }
-                catch { }
-
-                // Wczytaj dane bezpośrednio z pamięci (żeby nie parsować pliku ponownie)
+                try { File.WriteAllText(path, content); } catch { }
                 LoadHardcoded(langCode);
             }
         }
@@ -70,10 +51,8 @@ namespace WildTerraHook
         public static string Get(string key)
         {
             if (_currentDict.ContainsKey(key)) return _currentDict[key];
-            return key; // Zwraca nazwę klucza jeśli brak tłumaczenia (np. "FISH_TITLE")
+            return key;
         }
-
-        // --- DANE TŁUMACZEŃ (W Kodzie) ---
 
         private static void LoadHardcoded(string lang)
         {
@@ -115,13 +94,11 @@ ESP_DIST=Distance
 ESP_EDIT_COLORS=Edit ESP Colors
 ESP_HIDE_COLORS=Hide Colors
 ESP_SAVE_COLORS=Save Colors
-
 ESP_CAT_MINING=Mining
 ESP_CAT_GATHER=Gathering
 ESP_CAT_LUMBER=Lumberjacking
 ESP_CAT_GODSEND=Godsend (Chests)
 ESP_CAT_OTHERS=Others
-
 ESP_MOB_AGGRO=Aggressive (Boss/LargeFox)
 ESP_MOB_RETAL=Retaliating (Fox/Horse)
 ESP_MOB_PASSIVE=Passive (Deer/Hare)
@@ -147,6 +124,17 @@ FISH_ATT_ID=Attack ID
 FISH_ROD_ID=Rod ID
 FISH_TARGET=Target
 FISH_NONE=None
+
+LOOT_TITLE=Auto Loot (Whitelist)
+LOOT_ENABLE=Enable Auto Loot
+LOOT_DELAY=Delay (s)
+LOOT_FILTER=Search Item...
+LOOT_BTN_ADD=Add
+LOOT_BTN_REMOVE=Remove
+LOOT_BTN_REFRESH=Refresh Item List
+LOOT_HEADER_WHITE=Whitelist
+LOOT_HEADER_ALL=All Items
+LOOT_STATUS=Status
 ".Trim();
         }
 
@@ -178,13 +166,11 @@ ESP_DIST=Dystans Rysowania
 ESP_EDIT_COLORS=Edytuj Kolory ESP
 ESP_HIDE_COLORS=Ukryj Edytor Kolorów
 ESP_SAVE_COLORS=Zapisz Konfigurację
-
 ESP_CAT_MINING=Górnictwo (Mining)
 ESP_CAT_GATHER=Zbieractwo (Gathering)
 ESP_CAT_LUMBER=Drwalnictwo (Lumber)
 ESP_CAT_GODSEND=Skarby (Godsend)
 ESP_CAT_OTHERS=Inne (Others)
-
 ESP_MOB_AGGRO=Agresywne (Boss/LargeFox)
 ESP_MOB_RETAL=Oddające (Lis/Koń)
 ESP_MOB_PASSIVE=Pasywne (Jeleń/Zając)
@@ -210,6 +196,17 @@ FISH_ATT_ID=Atak ID
 FISH_ROD_ID=Wędka ID
 FISH_TARGET=Cel
 FISH_NONE=Brak
+
+LOOT_TITLE=Auto Loot (Whitelist)
+LOOT_ENABLE=Włącz Auto Loot
+LOOT_DELAY=Opóźnienie (s)
+LOOT_FILTER=Szukaj Przedmiotu...
+LOOT_BTN_ADD=Dodaj
+LOOT_BTN_REMOVE=Usuń
+LOOT_BTN_REFRESH=Odśwież Listę Itemów
+LOOT_HEADER_WHITE=Twoja Whitelista
+LOOT_HEADER_ALL=Dostępne Przedmioty
+LOOT_STATUS=Status
 ".Trim();
         }
     }
