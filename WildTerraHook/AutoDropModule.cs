@@ -14,16 +14,16 @@ namespace WildTerraHook
         private Vector2 _activeListScrollPos;
         private Vector2 _savedProfilesScroll;
         private string _newProfileName = "";
-
-        // NOWOŚĆ: Pole do ręcznego wpisania nazwy
         private string _manualMethodName = "";
 
         private List<string> _allGameItems = new List<string>();
         private float _lastCacheTime = 0f;
         private float _debugTimer = 0f;
 
+        // --- REFLECTION ---
         private MethodInfo _dropMethod;
         private bool _initReflection = false;
+        private bool _useSingleParam = false; // Czy metoda bierze tylko index?
 
         public void Update()
         {
@@ -32,7 +32,7 @@ namespace WildTerraHook
             var player = global::Player.localPlayer as global::WTPlayer;
             if (player == null || player.inventory == null) return;
 
-            // Inicjalizacja (ponowna, jeśli user zmienił nazwę ręczną)
+            // Inicjalizacja
             if (!_initReflection)
             {
                 InitDropMethod(player);
@@ -41,9 +41,11 @@ namespace WildTerraHook
 
             if (Time.time < _nextDropTime) return;
 
+            // Debug stanu
             if (ConfigManager.Drop_Debug && Time.time > _debugTimer)
             {
-                Debug.Log($"[AutoDrop] Skanowanie plecaka... (Metoda: {(_dropMethod != null ? _dropMethod.Name : "BRAK")})");
+                string mName = _dropMethod != null ? $"{_dropMethod.Name} (1 Param: {_useSingleParam})" : "BRAK";
+                Debug.Log($"[AutoDrop] Status: Metoda={mName}");
                 _debugTimer = Time.time + 5.0f;
             }
 
@@ -52,6 +54,7 @@ namespace WildTerraHook
             List<string> blackList = ConfigManager.GetCombinedActiveDropList();
             if (blackList.Count == 0) return;
 
+            // Iteracja po plecaku
             for (int i = 0; i < player.inventory.Count; i++)
             {
                 var slot = player.inventory[i];
@@ -81,17 +84,27 @@ namespace WildTerraHook
                 {
                     try
                     {
-                        _dropMethod.Invoke(player, new object[] { i, slot.amount });
+                        // WYWOŁANIE METODY
+                        // Logi pokazały: CmdDropInventoryItem(Int32 slotIndex)
+                        if (_useSingleParam)
+                        {
+                            _dropMethod.Invoke(player, new object[] { i });
+                        }
+                        else
+                        {
+                            // Fallback dla starych metod (index, amount)
+                            _dropMethod.Invoke(player, new object[] { i, slot.amount });
+                        }
 
                         if (ConfigManager.Drop_Debug)
-                            Debug.Log($"[AutoDrop] WYRZUCANIE: {itemName} (Slot: {i})");
+                            Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (Slot: {i})");
 
                         _nextDropTime = Time.time + ConfigManager.Drop_Delay;
                         return;
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[AutoDrop] Wyjątek przy dropowaniu: {ex.Message}");
+                        Debug.LogError($"[AutoDrop] Wyjątek dropowania: {ex.Message}");
                     }
                 }
             }
@@ -105,44 +118,68 @@ namespace WildTerraHook
                 Type type = playerInstance.GetType();
                 var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
 
-                // 1. Jeśli użytkownik podał nazwę ręcznie, szukamy jej w pierwszej kolejności
+                // 1. Manual Override
                 if (!string.IsNullOrEmpty(_manualMethodName))
                 {
-                    Debug.Log($"[AutoDrop] Szukam ręcznej metody: {_manualMethodName}...");
                     foreach (var m in methods)
                     {
                         if (m.Name.Equals(_manualMethodName, StringComparison.OrdinalIgnoreCase))
                         {
                             _dropMethod = m;
-                            Debug.Log($"[AutoDrop] Znalazłem metodę ręczną: {m.Name}");
+                            _useSingleParam = m.GetParameters().Length == 1;
+                            Debug.Log($"[AutoDrop] Manual Override: {m.Name} (1 Param: {_useSingleParam})");
                             return;
                         }
                     }
-                    Debug.LogError($"[AutoDrop] Nie znaleziono metody o nazwie: {_manualMethodName}");
                 }
 
-                // 2. Automatyczne szukanie (tylko jeśli nie podano ręcznej lub nie znaleziono)
+                // 2. Szukanie "CmdDropInventoryItem" (znalezione w logach użytkownika)
+                // Sygnatura: void CmdDropInventoryItem(int slotIndex)
+                foreach (var m in methods)
+                {
+                    if (m.Name.Equals("CmdDropInventoryItem", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var pars = m.GetParameters();
+                        if (pars.Length == 1 && pars[0].ParameterType == typeof(int))
+                        {
+                            _dropMethod = m;
+                            _useSingleParam = true;
+                            Debug.Log($"[AutoDrop] SUKCES! Znaleziono: {m.Name}");
+                            return;
+                        }
+                    }
+                }
+
+                // 3. Fallback - szukanie czegokolwiek z "Drop" i "Cmd"
                 if (_dropMethod == null)
                 {
                     foreach (var m in methods)
                     {
-                        // Szukamy metody DropItem, CmdDropItem, itp.
-                        if (m.Name.IndexOf("Drop", StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (m.Name.IndexOf("Drop", StringComparison.OrdinalIgnoreCase) >= 0 && m.Name.StartsWith("Cmd"))
                         {
                             var pars = m.GetParameters();
-                            // Standard: (int index, int amount)
-                            if (pars.Length == 2 && pars[0].ParameterType == typeof(int) && pars[1].ParameterType == typeof(int))
+
+                            // Sprawdzamy wersję 1-parametrową (tylko index)
+                            if (pars.Length == 1 && pars[0].ParameterType == typeof(int))
                             {
-                                if (m.Name.StartsWith("Cmd"))
-                                {
-                                    _dropMethod = m;
-                                    Debug.Log($"[AutoDrop] Auto-wykryto metodę: {m.Name}");
-                                    return;
-                                }
+                                _dropMethod = m;
+                                _useSingleParam = true;
+                                Debug.Log($"[AutoDrop] Auto-wykryto (1 param): {m.Name}");
+                                return;
+                            }
+                            // Sprawdzamy wersję 2-parametrową (index, amount)
+                            else if (pars.Length == 2 && pars[0].ParameterType == typeof(int) && pars[1].ParameterType == typeof(int))
+                            {
+                                _dropMethod = m;
+                                _useSingleParam = false;
+                                Debug.Log($"[AutoDrop] Auto-wykryto (2 params): {m.Name}");
+                                return;
                             }
                         }
                     }
                 }
+
+                if (_dropMethod == null) Debug.LogError("[AutoDrop] Nie znaleziono metody dropowania!");
             }
             catch (Exception ex) { Debug.LogError($"[AutoDrop] Init Error: {ex.Message}"); }
         }
@@ -153,17 +190,13 @@ namespace WildTerraHook
             if (global::Player.localPlayer == null) { Debug.LogError("Brak gracza!"); return; }
 
             Type t = typeof(global::WTPlayer);
-            Debug.Log($"Skanowanie klasy: {t.Name}");
-
             var methods = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
 
             foreach (var m in methods)
             {
-                // Wypisz wszystko co ma Drop, Remove, Destroy lub Trash w nazwie
                 if (m.Name.IndexOf("Drop", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     m.Name.IndexOf("Remove", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    m.Name.IndexOf("Trash", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    m.Name.IndexOf("Destroy", StringComparison.OrdinalIgnoreCase) >= 0)
+                    m.Name.IndexOf("Trash", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     string pars = string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name).ToArray());
                     Debug.Log($"METODA: {m.Name} (Parametry: {pars})");
@@ -185,20 +218,16 @@ namespace WildTerraHook
             if (debugVal != ConfigManager.Drop_Debug) { ConfigManager.Drop_Debug = debugVal; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
 
-            // NOWOŚĆ: Pole do wpisania nazwy metody
+            // Pole Override (gdyby automat zawiódł)
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Metoda (Opcjonalne):", GUILayout.Width(120));
+            GUILayout.Label("Override Nazwy:", GUILayout.Width(100));
             string newMethod = GUILayout.TextField(_manualMethodName);
-            if (newMethod != _manualMethodName)
-            {
-                _manualMethodName = newMethod;
-                _initReflection = false; // Wymuś re-init przy zmianie
-            }
+            if (newMethod != _manualMethodName) { _manualMethodName = newMethod; _initReflection = false; }
             GUILayout.EndHorizontal();
 
             if (ConfigManager.Drop_Debug)
             {
-                if (GUILayout.Button("DIAGNOSTYKA (Wypisz metody do konsoli)"))
+                if (GUILayout.Button("DIAGNOSTYKA (Wypisz metody)"))
                 {
                     RunDiagnostics();
                 }
@@ -214,7 +243,6 @@ namespace WildTerraHook
             GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
 
-            // Wyszukiwarka
             GUILayout.Label("<b>Dodaj do Blacklisty:</b>");
             _searchQuery = GUILayout.TextField(_searchQuery);
 
@@ -256,8 +284,7 @@ namespace WildTerraHook
             GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
 
-            // Lista aktywna
-            GUILayout.Label("<b>Aktywna Lista:</b>");
+            GUILayout.Label("<b>Aktywna Lista (Wyrzucane):</b>");
             var combinedList = ConfigManager.GetCombinedActiveDropList();
 
             if (combinedList.Count == 0)
@@ -292,8 +319,6 @@ namespace WildTerraHook
                 }
             }
 
-            GUILayout.Space(5);
-            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
             DrawProfileManager();
             GUILayout.EndVertical();
@@ -332,7 +357,6 @@ namespace WildTerraHook
         private void DrawProfileManager()
         {
             GUILayout.Label("<b>Zarządzanie Profilami:</b>");
-
             _savedProfilesScroll = GUILayout.BeginScrollView(_savedProfilesScroll, GUILayout.Height(80));
             foreach (var profileKey in ConfigManager.DropProfiles.Keys.ToList())
             {
