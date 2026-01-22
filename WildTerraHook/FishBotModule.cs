@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System;
 using System.Linq;
-using System.Collections;
+using System.Text;
 
 namespace WildTerraHook
 {
@@ -15,13 +15,13 @@ namespace WildTerraHook
         private string _status = "Init";
         private bool _reflectionInit = false;
 
-        // Pola UI (Obrazki)
+        // Przyciski UI
         private FieldInfo _fBtnDragImg;
         private FieldInfo _fBtnPullImg;
         private FieldInfo _fBtnStrikeImg;
 
-        // Lista akcji
-        private FieldInfo _fFishActions;
+        // Lista pól typu FishingUse znaleziona w kontrolerze
+        private List<FieldInfo> _fishingUseFields = new List<FieldInfo>();
 
         public void Update()
         {
@@ -47,22 +47,36 @@ namespace WildTerraHook
                 Type uiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // 1. UI Images - Te pola istnieją w WTUIFishingActions
+                // 1. UI Images (Pola UI istnieją na pewno)
                 _fBtnDragImg = uiType.GetField("dragOutActionButtonImage", flags);
                 _fBtnPullImg = uiType.GetField("pullActionButtonImage", flags);
                 _fBtnStrikeImg = uiType.GetField("strikeActionButtonImage", flags);
 
-                // 2. Lista akcji - To jest lista typu List<FishBite> (gdzie FishBite to Enum : byte)
-                _fFishActions = uiType.GetField("fishActions", flags);
+                // 2. SZUKAMY ZMIENNEJ ROZKAZU (FishingUse)
+                // Zamiast zgadywać nazwę ("correctButtonId" itp.), pobieramy WSZYSTKIE pola,
+                // które są typu FishingUse. Jedno z nich musi być tym, które steruje logiką.
+                _fishingUseFields.Clear();
+                foreach (var field in uiType.GetFields(flags))
+                {
+                    if (field.FieldType == typeof(global::FishingUse))
+                    {
+                        _fishingUseFields.Add(field);
+                    }
+                }
 
-                if (_fBtnDragImg == null || _fFishActions == null)
-                    _status = "BŁĄD STRUKTURY GRY (Refleksja)";
+                if (_fBtnDragImg == null) _status = "BŁĄD: Brak przycisków w UI";
+                else if (_fishingUseFields.Count == 0) _status = "BŁĄD: Nie znaleziono żadnych zmiennych FishingUse!";
                 else
+                {
                     _reflectionInit = true;
+                    // Wypisz w logu co znaleźliśmy (dla debugowania)
+                    string found = string.Join(", ", _fishingUseFields.Select(f => f.Name).ToArray());
+                    Debug.Log($"[FishBot] Znaleziono pola FishingUse: {found}");
+                }
             }
             catch (Exception ex)
             {
-                _status = "Ref Crash: " + ex.Message;
+                _status = "Crash: " + ex.Message;
             }
         }
 
@@ -79,60 +93,63 @@ namespace WildTerraHook
 
             try
             {
-                // Pobierz listę
-                var list = _fFishActions.GetValue(ui) as IList;
+                // Szukamy aktywnego rozkazu
+                global::FishingUse activeCommand = global::FishingUse.None;
+                string activeFieldName = "";
 
-                if (list == null || list.Count == 0)
+                // Sprawdzamy wszystkie pola typu FishingUse.
+                // Szukamy takiego, które NIE JEST "None" (czyli 0).
+                // Jeśli jest DragOut, Pull lub Strike - to jest nasz cel.
+                foreach (var field in _fishingUseFields)
                 {
-                    _status = "Oczekiwanie na rybę...";
+                    var val = (global::FishingUse)field.GetValue(ui);
+                    if (val != global::FishingUse.None)
+                    {
+                        // Dodatkowy filtr: ignorujemy pola, które mogą być "ostatnią akcją" jeśli są,
+                        // ale zazwyczaj w tej grze aktywne pole ma wartość tylko podczas trwania akcji.
+                        activeCommand = val;
+                        activeFieldName = field.Name;
+                        break; // Znaleźliśmy aktywny rozkaz
+                    }
+                }
+
+                if (activeCommand == global::FishingUse.None)
+                {
+                    _status = "Czekam na rozkaz (None)...";
                     return;
                 }
 
-                // Ostatni element to aktualna akcja
-                object currentActionObj = list[list.Count - 1];
-
-                // Ponieważ FishBite to Enum (byte), możemy to rzutować na int
-                int actionId = Convert.ToInt32(currentActionObj);
-
-                // Pobierz przyciski
+                // Mapowanie rozkazu na przycisk
                 Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);
                 Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);
                 Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui);
 
                 Button targetBtn = null;
-                string actionName = actionId.ToString();
+                string actionName = activeCommand.ToString();
 
-                // MAPOWANIE: Enum zazwyczaj idzie w kolejności definicji.
-                // 0 = DragOut, 1 = Pull, 2 = Strike (Standardowo w tej grze)
-
-                switch (actionId)
+                switch (activeCommand)
                 {
-                    case 0: // DragOut
+                    case global::FishingUse.DragOut:
                         targetBtn = btnDrag;
-                        actionName = "Drag (0)";
                         break;
-                    case 1: // Pull
+                    case global::FishingUse.Pull:
                         targetBtn = btnPull;
-                        actionName = "Pull (1)";
                         break;
-                    case 2: // Strike
+                    case global::FishingUse.Strike:
                         targetBtn = btnStrike;
-                        actionName = "Strike (2)";
                         break;
-                    default:
-                        _status = $"Nieznane ID akcji: {actionId}";
-                        return;
                 }
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
                 {
-                    _status = $"Cel: {actionName}";
+                    _status = $"[{activeFieldName}] CEL: {actionName}";
 
                     if (ConfigManager.MemFish_AutoPress && Time.time > _actionTimer)
                     {
                         if (targetBtn.interactable)
                         {
                             targetBtn.onClick.Invoke();
+                            // Dodajemy losowość
                             float delay = ConfigManager.MemFish_ReactionTime + UnityEngine.Random.Range(0.05f, 0.15f);
                             _actionTimer = Time.time + delay;
                         }
@@ -140,7 +157,7 @@ namespace WildTerraHook
                 }
                 else
                 {
-                    _status = $"Przycisk dla {actionName} nieaktywny";
+                    _status = $"Rozkaz: {actionName} (Przycisk nieaktywny)";
                 }
             }
             catch (Exception ex) { _status = "Run Error: " + ex.Message; }
@@ -156,17 +173,26 @@ namespace WildTerraHook
 
             try
             {
-                var list = _fFishActions.GetValue(ui) as IList;
-                if (list == null || list.Count == 0) return;
-
-                int actionId = Convert.ToInt32(list[list.Count - 1]);
-                Button targetBtn = null;
-
-                switch (actionId)
+                // Ta sama logika szukania co w ProcessFishing
+                global::FishingUse activeCommand = global::FishingUse.None;
+                foreach (var field in _fishingUseFields)
                 {
-                    case 0: targetBtn = GetButtonFromImageField(_fBtnDragImg, ui); break;
-                    case 1: targetBtn = GetButtonFromImageField(_fBtnPullImg, ui); break;
-                    case 2: targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui); break;
+                    var val = (global::FishingUse)field.GetValue(ui);
+                    if (val != global::FishingUse.None)
+                    {
+                        activeCommand = val;
+                        break;
+                    }
+                }
+
+                if (activeCommand == global::FishingUse.None) return;
+
+                Button targetBtn = null;
+                switch (activeCommand)
+                {
+                    case global::FishingUse.DragOut: targetBtn = GetButtonFromImageField(_fBtnDragImg, ui); break;
+                    case global::FishingUse.Pull: targetBtn = GetButtonFromImageField(_fBtnPullImg, ui); break;
+                    case global::FishingUse.Strike: targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui); break;
                 }
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
@@ -204,10 +230,9 @@ namespace WildTerraHook
             style.normal.textColor = Color.magenta;
             style.fontStyle = FontStyle.Bold;
             style.alignment = TextAnchor.MiddleCenter;
-            GUI.Label(new Rect(x, y - 20, w, 20), "HIT!", style);
+            GUI.Label(new Rect(x, y - 20, w, 20), "MEMORY HIT", style);
         }
 
-        // Ta metoda rysuje TYLKO opcje (nagłówek i toggle rysuje MainHack)
         public void DrawMenu()
         {
             bool esp = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
