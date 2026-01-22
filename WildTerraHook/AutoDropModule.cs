@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace WildTerraHook
 {
@@ -15,33 +16,72 @@ namespace WildTerraHook
         private List<string> _allGameItems = new List<string>();
         private float _lastCacheTime = 0f;
 
+        // --- REFLECTION DO DROPWANIA ---
+        private MethodInfo _dropMethod;
+        private bool _initReflection = false;
+
         public void Update()
         {
             if (!ConfigManager.Drop_Enabled) return;
             if (Time.time < _nextDropTime) return;
 
-            // Rzutujemy na WTPlayer, aby mieć dostęp do CmdDropItem
+            // Pobierz gracza
             var player = global::Player.localPlayer as global::WTPlayer;
             if (player == null) return;
 
+            // Pobierz inwentarz
             if (player.inventory == null) return;
+
+            // Inicjalizacja metody dropowania (szukamy metody CmdDropItem lub podobnej)
+            if (!_initReflection)
+            {
+                // Szukamy metody w WTPlayer, która ma "Drop" w nazwie i bierze 2 inty (slotIndex, amount)
+                var methods = typeof(global::WTPlayer).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var m in methods)
+                {
+                    if (m.Name.IndexOf("Drop", System.StringComparison.OrdinalIgnoreCase) >= 0 && m.Name.StartsWith("Cmd"))
+                    {
+                        var pars = m.GetParameters();
+                        if (pars.Length == 2 && pars[0].ParameterType == typeof(int) && pars[1].ParameterType == typeof(int))
+                        {
+                            _dropMethod = m;
+                            Debug.Log($"[AutoDrop] Znaleziono metodę dropowania: {m.Name}");
+                            break;
+                        }
+                    }
+                }
+                _initReflection = true;
+            }
+
+            if (_dropMethod == null) return; // Nie znaleziono metody, nie możemy działać
 
             List<string> blackList = ConfigManager.GetCombinedActiveDropList();
             if (blackList.Count == 0) return;
 
+            // Iteracja po plecaku
             for (int i = 0; i < player.inventory.Count; i++)
             {
-                // ItemSlot jest strukturą (struct), więc nie może być null
-                // Sprawdzamy zawartość slotu
+                // FIX: ItemSlot to struct, nie może być null. Pobieramy go przez wartość.
                 var slot = player.inventory[i];
 
-                // FIX: Sprawdź czy przedmiot w slocie istnieje
-                if (slot.item == null || slot.amount <= 0) continue;
+                // FIX: Sprawdzamy czy slot jest pusty po ilości (Amount > 0)
+                if (slot.amount <= 0) continue;
 
-                // FIX: Pobierz nazwę z wewnętrznego obiektu item
-                string itemName = slot.item.name;
+                // FIX: Pobieramy nazwę z wnętrza struktury Item.
+                // Struktura to zazwyczaj: ItemSlot -> Item -> name
+                string itemName = "";
+                try
+                {
+                    itemName = slot.item.name;
+                }
+                catch
+                {
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(itemName)) continue;
 
+                // Sprawdzanie blacklisty
                 bool shouldDrop = false;
                 foreach (string badItem in blackList)
                 {
@@ -56,18 +96,19 @@ namespace WildTerraHook
                 {
                     try
                     {
-                        // FIX: Używamy rzutowanego gracza (WTPlayer)
-                        player.CmdDropItem(i, slot.amount);
+                        // WYWOŁANIE PRZEZ REFLECTION (omija błąd kompilacji CS1061)
+                        // Wywołujemy np. CmdDropItem(i, slot.amount)
+                        _dropMethod.Invoke(player, new object[] { i, slot.amount });
 
                         if (ConfigManager.Drop_Debug)
                             Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (x{slot.amount}) ze slotu {i}");
 
                         _nextDropTime = Time.time + ConfigManager.Drop_Delay;
-                        return;
+                        return; // Wyrzucamy tylko jeden przedmiot na cykl (bezpieczeństwo)
                     }
                     catch (System.Exception ex)
                     {
-                        Debug.LogError($"[AutoDrop] Błąd dropowania: {ex.Message}");
+                        Debug.LogError($"[AutoDrop] Błąd podczas wyrzucania: {ex.Message}");
                     }
                 }
             }
@@ -87,11 +128,15 @@ namespace WildTerraHook
             if (Mathf.Abs(newDelay - ConfigManager.Drop_Delay) > 0.01f) { ConfigManager.Drop_Delay = newDelay; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
 
+            bool debugVal = GUILayout.Toggle(ConfigManager.Drop_Debug, " Debug Mode (Logi)");
+            if (debugVal != ConfigManager.Drop_Debug) { ConfigManager.Drop_Debug = debugVal; ConfigManager.Save(); }
+
             GUILayout.Space(10);
 
             GUILayout.Label("<b>Dodaj do Blacklisty:</b>");
             _searchQuery = GUILayout.TextField(_searchQuery);
 
+            // Pobieranie listy przedmiotów z gry (Cache co 5s)
             if (Time.time - _lastCacheTime > 5.0f && global::ScriptableItem.dict != null)
             {
                 _allGameItems = global::ScriptableItem.dict.Values.Select(x => x.name).ToList();
@@ -102,6 +147,7 @@ namespace WildTerraHook
             {
                 _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(100));
                 var matches = _allGameItems.Where(x => x.IndexOf(_searchQuery, System.StringComparison.OrdinalIgnoreCase) >= 0).Take(20);
+
                 foreach (var item in matches)
                 {
                     if (GUILayout.Button(item))
