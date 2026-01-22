@@ -9,15 +9,17 @@ namespace WildTerraHook
         private AutoDropModule _dropModule;
         private MiscModule _miscModule;
         private ColorFishingModule _colorFishModule;
+        private FishBotModule _memFishModule; // Ukryty
 
-        // [MEMORY BOT] - Ukryty
-        private FishBotModule _memFishModule;
+        // NOWOŚĆ: Konsola
+        private DebugConsoleModule _consoleModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
         private bool _isInitialized = false;
 
-        private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Auto Drop", "Misc" };
+        // Dodano "CONSOLE" na końcu
+        private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Auto Drop", "Misc", "CONSOLE" };
         private int _currentTab = 0;
 
         public void Start()
@@ -26,18 +28,30 @@ namespace WildTerraHook
             ConfigManager.Load();
 
             _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
-            if (_windowRect.width < 350) _windowRect.width = 450;
+            if (_windowRect.width < 450) _windowRect.width = 500;
             if (_windowRect.height < 50) _windowRect.height = 0;
 
             _currentTab = ConfigManager.Menu_Tab;
-            _isInitialized = true;
 
+            // Inicjalizacja modułów
             _espModule = new ResourceEspModule();
             _lootModule = new AutoLootModule();
             _dropModule = new AutoDropModule();
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
+
+            // Start konsoli
+            _consoleModule = new DebugConsoleModule();
+            Debug.Log("[MainHack] Konsola uruchomiona. Witaj w WildTerraHook!");
+
+            _isInitialized = true;
+        }
+
+        public void OnDestroy()
+        {
+            // Bardzo ważne: odpinamy event logowania, żeby nie było wycieków pamięci
+            if (_consoleModule != null) _consoleModule.Shutdown();
         }
 
         public void Update()
@@ -81,8 +95,6 @@ namespace WildTerraHook
 
         private void DrawWindow(int windowID)
         {
-            // Usunięto blokowanie inputu tutaj, bo psuło UI
-
             GUILayout.BeginVertical();
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
@@ -109,6 +121,7 @@ namespace WildTerraHook
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: _dropModule.DrawMenu(); break;
                 case 4: DrawMiscTab(); break;
+                case 5: _consoleModule.DrawMenu(); break; // Rysowanie konsoli
             }
 
             GUILayout.Space(10);
