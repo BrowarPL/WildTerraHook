@@ -22,12 +22,9 @@ namespace WildTerraHook
             Localization.Init();
             ConfigManager.Load();
 
-            // Wczytanie z Configu
             _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
-
-            // Minimalne bezpieczne wymiary startowe
-            if (_windowRect.width < 300) _windowRect.width = 450;
-            if (_windowRect.height < 50) _windowRect.height = 0; // 0 = auto-height
+            if (_windowRect.height < 50) _windowRect.height = 0;
+            if (_windowRect.width < 400) _windowRect.width = 450; // Minimalna startowa szerokość
 
             _currentTab = ConfigManager.Menu_Tab;
             _isInitialized = true;
@@ -73,8 +70,8 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                // Rysowanie okna
-                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(350));
+                // GUILayout.Window automatycznie dopasuje wysokość do zawartości
+                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(400));
 
                 GUI.matrix = oldMatrix;
             }
@@ -84,38 +81,29 @@ namespace WildTerraHook
         {
             GUILayout.BeginVertical();
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
-            GUILayout.Space(5);
+            GUILayout.Space(10);
 
-            // --- SZEROKIE ZAKŁADKI (90% szerokości okna) ---
+            // --- SZEROKIE ZAKŁADKI (90% szerokości) ---
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            // Obliczamy szerokość na podstawie aktualnej szerokości okna
-            float toolbarWidth = _windowRect.width * 0.92f;
-            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(28), GUILayout.Width(toolbarWidth));
+            float width = _windowRect.width * 0.9f;
+            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30), GUILayout.Width(width));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            // -----------------------------------------------
 
             if (newTab != _currentTab)
             {
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
-                _windowRect.height = 0; // Reset wysokości przy zmianie zakładki
+                _windowRect.height = 0; // Reset wysokości dla auto-fit
             }
 
-            GUILayout.Space(10);
+            GUILayout.Space(15);
 
-            // Zawartość zakładek
             switch (_currentTab)
             {
                 case 0: _espModule.DrawMenu(); break;
-                case 1:
-                    GUILayout.BeginVertical("box");
-                    _colorFishModule.DrawMenu();
-                    GUILayout.Space(10);
-                    _memFishModule.DrawMenu();
-                    GUILayout.EndVertical();
-                    break;
+                case 1: DrawFishingTab(); break;
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: DrawMiscTab(); break;
             }
@@ -126,8 +114,36 @@ namespace WildTerraHook
             DrawResizer();
             GUI.DragWindow(new Rect(0, 0, 10000, 20));
 
-            // Zapisz konfigurację okna przy puszczeniu myszki (żeby nie spamować dysku)
+            // Zapisz tylko przy puszczeniu myszki lub zmianie layoutu
             if (GUI.changed || Input.GetMouseButtonUp(0)) SaveWindowConfig();
+        }
+
+        private void DrawFishingTab()
+        {
+            // Wrapper dla ColorBota
+            bool colorEn = ConfigManager.ColorFish_Enabled;
+            if (DrawWideToggle(ref colorEn, "Color Bot (Standard)"))
+            {
+                ConfigManager.ColorFish_Enabled = colorEn;
+                if (colorEn) ConfigManager.MemFish_Enabled = false;
+                ConfigManager.Save();
+            }
+
+            if (ConfigManager.ColorFish_Enabled)
+            {
+                GUILayout.BeginVertical("box");
+                _colorFishModule.DrawMenu();
+                GUILayout.EndVertical();
+            }
+
+            GUILayout.Space(10);
+
+            // Wrapper dla MemoryBota (DrawMenu wewnątrz modułu też zostało poprawione w FishBotModule.cs)
+            // Ale tutaj wywołujemy tylko DrawMenu modułu, który sam rysuje nagłówek i toggle
+            // Aby zachować spójność, w FishBotModule.cs użyłem metody ToggleBtn która rysuje szeroko.
+
+            // Tutaj po prostu wywołujemy moduł, który sam ogarnia swoje UI
+            _memFishModule.DrawMenu();
         }
 
         private void DrawMiscTab()
@@ -142,6 +158,17 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
         }
 
+        // Pomocnicza metoda do rysowania szerokiego Toggle w stylu przycisku
+        private bool DrawWideToggle(ref bool value, string text)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            bool ret = GUILayout.Toggle(value, text, "button", GUILayout.Width(_windowRect.width * 0.9f), GUILayout.Height(30));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            return ret;
+        }
+
         private void DrawResizer()
         {
             Vector2 resizeHandleSize = new Vector2(20, 20);
@@ -154,8 +181,7 @@ namespace WildTerraHook
             {
                 _windowRect.width += e.delta.x;
                 _windowRect.height += e.delta.y;
-                // Limity minimalne
-                if (_windowRect.width < 350) _windowRect.width = 350;
+                if (_windowRect.width < 400) _windowRect.width = 400;
                 e.Use();
             }
         }

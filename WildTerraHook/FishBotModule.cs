@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System;
 using System.Linq;
+using System.Text;
 
 namespace WildTerraHook
 {
@@ -14,13 +15,16 @@ namespace WildTerraHook
         private string _status = "Init";
         private bool _reflectionInit = false;
 
-        // Pola UI (Obrazki)
-        private FieldInfo _fBtnDragImg;
-        private FieldInfo _fBtnPullImg;
-        private FieldInfo _fBtnStrikeImg;
+        // --- KLUCZOWE ZMIENNE ---
+        private FieldInfo _fCorrectId;   // To jest ID przycisku, który gra uważa za poprawny (0, 1, 2)
 
-        // Pola Danych
-        private FieldInfo _fFishActions;
+        // Przyciski UI
+        private FieldInfo _fBtnDragImg;  // Button 0 (Drag)
+        private FieldInfo _fBtnPullImg;  // Button 1 (Pull)
+        private FieldInfo _fBtnStrikeImg; // Button 2 (Strike)
+
+        // Debugger pól (do znalezienia właściwej zmiennej, jeśli 'correctButtonId' zawiedzie)
+        private string _debugFieldList = "";
 
         public void Update()
         {
@@ -31,7 +35,7 @@ namespace WildTerraHook
 
             if (fishingUI == null || !fishingUI.gameObject.activeSelf)
             {
-                _status = "Czekam na UI...";
+                _status = "Oczekiwanie na okno łowienia...";
                 return;
             }
 
@@ -46,18 +50,34 @@ namespace WildTerraHook
                 Type uiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // 1. UI Images
+                // 1. Pobieramy przyciski (poprzez Image, bo to najpewniejszy punkt zaczepienia w tym UI)
                 _fBtnDragImg = uiType.GetField("dragOutActionButtonImage", flags);
                 _fBtnPullImg = uiType.GetField("pullActionButtonImage", flags);
                 _fBtnStrikeImg = uiType.GetField("strikeActionButtonImage", flags);
 
-                // 2. Lista akcji
-                _fFishActions = uiType.GetField("fishActions", flags);
+                // 2. SZUKAMY ZMIENNEJ "CORRECT ID"
+                // W WT2 ta zmienna steruje logiką sukcesu. Może nazywać się:
+                // correctButtonId, correctIndex, currentSuccessIndex, activeActionIndex
+                _fCorrectId = uiType.GetField("correctButtonId", flags)
+                           ?? uiType.GetField("correctIndex", flags)
+                           ?? uiType.GetField("currentSuccessIndex", flags)
+                           ?? uiType.GetField("correctAction", flags);
 
-                if (_fBtnDragImg == null || _fFishActions == null)
-                    _status = "Błąd: Zmiana nazw w UI gry.";
+                // DEBUG: Jeśli nie znaleźliśmy standardowej nazwy, pobieramy listę wszystkich intów
+                if (_fCorrectId == null)
+                {
+                    StringBuilder sb = new StringBuilder();
+                    foreach (var f in uiType.GetFields(flags))
+                    {
+                        if (f.FieldType == typeof(int)) sb.Append(f.Name + ", ");
+                    }
+                    _debugFieldList = sb.ToString();
+                    _status = "BŁĄD: Nie znaleziono ID. Dostępne inty: " + _debugFieldList;
+                }
                 else
+                {
                     _reflectionInit = true;
+                }
             }
             catch (Exception ex)
             {
@@ -69,7 +89,7 @@ namespace WildTerraHook
         {
             if (field == null || instance == null) return null;
             var img = field.GetValue(instance) as Image;
-            return img != null ? img.GetComponent<Button>() : null;
+            return img != null ? img.GetComponent<Button>() : null; // Image jest zazwyczaj na tym samym obiekcie co Button
         }
 
         private void ProcessFishing(global::WTUIFishingActions ui)
@@ -78,63 +98,45 @@ namespace WildTerraHook
 
             try
             {
-                // Pobierz listę
-                var actionsList = _fFishActions.GetValue(ui) as System.Collections.IList;
+                // Odczytujemy ID poprawnego przycisku z pamięci
+                int winningId = (int)_fCorrectId.GetValue(ui);
 
-                if (actionsList == null || actionsList.Count == 0)
-                {
-                    _status = "Czekam na rybę...";
-                    return;
-                }
-
-                // Ostatnia akcja na liście = aktualna
-                object currentBite = actionsList[actionsList.Count - 1];
-
-                // Odczytujemy nazwę enuma (np. "Down", "Side", "Up")
-                string actionName = currentBite.ToString();
-
-                // Pobierz przyciski
-                Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);
-                Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);
-                Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui);
+                // Pobieramy instancje przycisków
+                Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);   // ID 0 (zazwyczaj)
+                Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);   // ID 1 (zazwyczaj)
+                Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui); // ID 2 (zazwyczaj)
 
                 Button targetBtn = null;
+                string actionName = "?";
 
-                // LOGIKA MAPOWANIA (Down/Side/Up -> Przyciski)
-                if (actionName.IndexOf("Down", StringComparison.OrdinalIgnoreCase) >= 0)
+                // Mapowanie ID na przycisk
+                // UWAGA: Kolejność może zależeć od wersji gry. Standardowo:
+                // 0 = DragOut, 1 = Pull, 2 = Strike.
+                // Jeśli bot klika źle, zamienimy te numerki.
+                switch (winningId)
                 {
-                    targetBtn = btnDrag; // Down -> DragOut
+                    case 0: targetBtn = btnDrag; actionName = "Drag (0)"; break;
+                    case 1: targetBtn = btnPull; actionName = "Pull (1)"; break;
+                    case 2: targetBtn = btnStrike; actionName = "Strike (2)"; break;
+                    default:
+                        _status = $"Czekam... (ID: {winningId})";
+                        return; // ID -1 lub inne oznacza brak akcji
                 }
-                else if (actionName.IndexOf("Side", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    targetBtn = btnStrike; // Side -> Strike
-                }
-                else if (actionName.IndexOf("Up", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    targetBtn = btnPull; // Up -> Pull
-                }
-                // Fallback dla starych nazw
-                else if (actionName.IndexOf("Drag", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnDrag;
-                else if (actionName.IndexOf("Pull", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnPull;
-                else if (actionName.IndexOf("Strike", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnStrike;
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
                 {
-                    _status = $"Cel: {targetBtn.name} ({actionName})";
+                    _status = $"Cel Memory: {actionName}";
 
                     if (ConfigManager.MemFish_AutoPress && Time.time > _actionTimer)
                     {
                         if (targetBtn.interactable)
                         {
                             targetBtn.onClick.Invoke();
+                            // Dodajemy losowość, aby uniknąć wykrycia
                             float delay = ConfigManager.MemFish_ReactionTime + UnityEngine.Random.Range(0.05f, 0.15f);
                             _actionTimer = Time.time + delay;
                         }
                     }
-                }
-                else
-                {
-                    _status = $"Nieznana akcja: {actionName}";
                 }
             }
             catch (Exception ex) { _status = "Run Error: " + ex.Message; }
@@ -150,21 +152,15 @@ namespace WildTerraHook
 
             try
             {
-                var actionsList = _fFishActions.GetValue(ui) as System.Collections.IList;
-                if (actionsList == null || actionsList.Count == 0) return;
-
-                object currentBite = actionsList[actionsList.Count - 1];
-                string actionName = currentBite.ToString();
-
+                int winningId = (int)_fCorrectId.GetValue(ui);
                 Button targetBtn = null;
-                if (actionName.IndexOf("Down", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnDragImg, ui);
-                else if (actionName.IndexOf("Side", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui);
-                else if (actionName.IndexOf("Up", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnPullImg, ui);
 
-                // Fallback
-                else if (actionName.IndexOf("Drag", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnDragImg, ui);
-                else if (actionName.IndexOf("Pull", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnPullImg, ui);
-                else if (actionName.IndexOf("Strike", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui);
+                switch (winningId)
+                {
+                    case 0: targetBtn = GetButtonFromImageField(_fBtnDragImg, ui); break;
+                    case 1: targetBtn = GetButtonFromImageField(_fBtnPullImg, ui); break;
+                    case 2: targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui); break;
+                }
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
                 {
@@ -201,14 +197,17 @@ namespace WildTerraHook
             style.normal.textColor = Color.magenta;
             style.fontStyle = FontStyle.Bold;
             style.alignment = TextAnchor.MiddleCenter;
-            GUI.Label(new Rect(x, y - 20, w, 20), "MEMORY HIT", style);
+            style.fontSize = 14;
+            GUI.Label(new Rect(x, y - 25, w, 25), "MEMORY HIT", style);
         }
 
         public void DrawMenu()
         {
+            // Nowy styl przycisków: 90% szerokości
+            GUILayout.BeginVertical("box");
             GUILayout.Label("<b>Memory Bot (Jaskinie)</b>");
 
-            bool newVal = GUILayout.Toggle(ConfigManager.MemFish_Enabled, "Włącz (Memory)");
+            bool newVal = ToggleBtn(ConfigManager.MemFish_Enabled, "WŁĄCZ (Memory)");
             if (newVal != ConfigManager.MemFish_Enabled)
             {
                 ConfigManager.MemFish_Enabled = newVal;
@@ -218,10 +217,10 @@ namespace WildTerraHook
 
             if (ConfigManager.MemFish_Enabled)
             {
-                bool esp = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
+                bool esp = ToggleBtn(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
                 if (esp != ConfigManager.MemFish_ShowESP) { ConfigManager.MemFish_ShowESP = esp; ConfigManager.Save(); }
 
-                bool auto = GUILayout.Toggle(ConfigManager.MemFish_AutoPress, "Auto Klikanie");
+                bool auto = ToggleBtn(ConfigManager.MemFish_AutoPress, "Auto Klikanie");
                 if (auto != ConfigManager.MemFish_AutoPress) { ConfigManager.MemFish_AutoPress = auto; ConfigManager.Save(); }
 
                 if (ConfigManager.MemFish_AutoPress)
@@ -234,7 +233,22 @@ namespace WildTerraHook
                 }
 
                 GUILayout.Label($"Status: {_status}");
+                if (!string.IsNullOrEmpty(_debugFieldList))
+                    GUILayout.Label($"Pola int: {_debugFieldList}");
             }
+            GUILayout.EndVertical();
+        }
+
+        // Pomocnicza metoda do szerokich przycisków
+        private bool ToggleBtn(bool val, string text)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            // Przycisk na 90% szerokości dostępnego obszaru (wewnątrz Vertical box)
+            bool ret = GUILayout.Toggle(val, text, "button", GUILayout.Width(250), GUILayout.Height(25));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            return ret;
         }
     }
 }
