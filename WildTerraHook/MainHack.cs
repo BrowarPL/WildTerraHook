@@ -8,6 +8,8 @@ namespace WildTerraHook
         private AutoLootModule _lootModule;
         private MiscModule _miscModule;
         private ColorFishingModule _colorFishModule;
+
+        // [MEMORY BOT] - Zatrzymany do czasu znalezienia zmiennych
         private FishBotModule _memFishModule;
 
         private bool _showMenu = true;
@@ -33,6 +35,8 @@ namespace WildTerraHook
             _lootModule = new AutoLootModule();
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
+
+            // [MEMORY BOT] Inicjalizacja (można zostawić, nie obciąża)
             _memFishModule = new FishBotModule();
         }
 
@@ -51,7 +55,9 @@ namespace WildTerraHook
             _lootModule.Update();
             _miscModule.Update();
             _colorFishModule.Update();
-            _memFishModule.Update();
+
+            // [MEMORY BOT] Wyłączony Update
+            // _memFishModule.Update();
         }
 
         public void OnGUI()
@@ -60,7 +66,9 @@ namespace WildTerraHook
 
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
-            _memFishModule.DrawESP();
+
+            // [MEMORY BOT] Wyłączony ESP
+            // _memFishModule.DrawESP();
 
             if (_showMenu)
             {
@@ -119,15 +127,15 @@ namespace WildTerraHook
             GUILayout.BeginVertical("box");
 
             // --- COLOR BOT CHECKBOX ---
+            // Tylko ten bot jest teraz widoczny dla użytkownika
             bool colorEn = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, " <b>Color Bot</b> (Standard)");
             if (colorEn != ConfigManager.ColorFish_Enabled)
             {
                 ConfigManager.ColorFish_Enabled = colorEn;
-                if (colorEn) ConfigManager.MemFish_Enabled = false; // Wyłączamy konkurencję
+                // if (colorEn) ConfigManager.MemFish_Enabled = false; // Memory wyłączony na stałe w kodzie
                 ConfigManager.Save();
             }
 
-            // Opcje Color Bota (widoczne tylko jak zaznaczony)
             if (ConfigManager.ColorFish_Enabled)
             {
                 GUILayout.BeginVertical(GUI.skin.box);
@@ -135,24 +143,24 @@ namespace WildTerraHook
                 GUILayout.EndVertical();
             }
 
+            // [MEMORY BOT] Sekcja ukryta
+            /*
             GUILayout.Space(5);
-
-            // --- MEMORY BOT CHECKBOX ---
             bool memEn = GUILayout.Toggle(ConfigManager.MemFish_Enabled, " <b>Memory Bot</b> (Cave / Hidden)");
             if (memEn != ConfigManager.MemFish_Enabled)
             {
                 ConfigManager.MemFish_Enabled = memEn;
-                if (memEn) ConfigManager.ColorFish_Enabled = false; // Wyłączamy konkurencję
+                if (memEn) ConfigManager.ColorFish_Enabled = false;
                 ConfigManager.Save();
             }
 
-            // Opcje Memory Bota (widoczne tylko jak zaznaczony)
             if (ConfigManager.MemFish_Enabled)
             {
                 GUILayout.BeginVertical(GUI.skin.box);
                 _memFishModule.DrawMenu();
                 GUILayout.EndVertical();
             }
+            */
 
             GUILayout.EndVertical();
         }
