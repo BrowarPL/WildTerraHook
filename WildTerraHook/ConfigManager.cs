@@ -19,8 +19,8 @@ namespace WildTerraHook
         {
             public static Color MobAggressive = Color.red;
             public static Color MobPassive = Color.green;
-            public static Color MobFleeing = new Color(1f, 0.64f, 0f); // Orange
-            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f); // Brown
+            public static Color MobFleeing = new Color(1f, 0.64f, 0f);
+            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f);
             public static Color ResMining = Color.gray;
             public static Color ResGather = Color.white;
         }
@@ -32,11 +32,17 @@ namespace WildTerraHook
         public static float Loot_Delay = 0.2f;
         public static bool Loot_Debug = false;
 
-        // --- FISH BOT ---
-        public static bool Fish_Enabled = false;
-        public static bool Fish_AutoPress = false;
-        public static float Fish_ReactionTime = 0.3f;
-        public static bool Fish_ShowESP = true;
+        // --- FISH BOT: COLOR (Stary) ---
+        public static bool ColorFish_Enabled = false;
+        public static bool ColorFish_AutoPress = false;
+        public static float ColorFish_ReactionTime = 0.3f;
+        public static bool ColorFish_ShowESP = true;
+
+        // --- FISH BOT: MEMORY (Nowy - FishBotModule) ---
+        public static bool MemFish_Enabled = false;
+        public static bool MemFish_AutoPress = false;
+        public static float MemFish_ReactionTime = 0.3f;
+        public static bool MemFish_ShowESP = true;
 
         // --- MISC ---
         public static bool Misc_EternalDay = false;
@@ -75,13 +81,13 @@ namespace WildTerraHook
         public static string Esp_List_Lumber = "";
         public static string Esp_List_Godsend = "";
 
-        // --- MENU SETTINGS ---
+        // --- MENU ---
         public static float Menu_Scale = 1.0f;
         public static float Menu_X = 20f;
         public static float Menu_Y = 20f;
-        public static float Menu_W = 450f; // Domyślna szerokość
-        public static float Menu_H = 0f;   // 0 oznacza auto-height
-        public static int Menu_Tab = 0;    // Zapamiętana zakładka
+        public static float Menu_W = 450f;
+        public static float Menu_H = 0f;
+        public static int Menu_Tab = 0;
 
         static ConfigManager()
         {
@@ -96,17 +102,6 @@ namespace WildTerraHook
             Load();
         }
 
-        public static List<string> GetCombinedActiveList()
-        {
-            HashSet<string> combined = new HashSet<string>();
-            foreach (var profName in ActiveProfiles)
-            {
-                if (LootProfiles.ContainsKey(profName))
-                    foreach (var item in LootProfiles[profName]) combined.Add(item);
-            }
-            return combined.ToList();
-        }
-
         public static string SerializeToggleList(Dictionary<string, bool> dict)
         {
             List<string> active = new List<string>();
@@ -119,9 +114,7 @@ namespace WildTerraHook
             if (string.IsNullOrEmpty(data)) return;
             var keys = new List<string>(dict.Keys);
             foreach (var k in keys) dict[k] = false;
-
-            string[] parts = data.Split(',');
-            foreach (var p in parts)
+            foreach (var p in data.Split(','))
             {
                 string trimmed = p.Trim();
                 if (dict.ContainsKey(trimmed)) dict[trimmed] = true;
@@ -136,25 +129,27 @@ namespace WildTerraHook
                 using (StreamWriter sw = new StreamWriter(_filePath))
                 {
                     sw.WriteLine($"Language={Language}");
-
-                    // Menu
                     sw.WriteLine($"Menu_Scale={Menu_Scale.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Menu_Tab={Menu_Tab}");
                     sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
 
-                    // Loot
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Loot_Debug={Loot_Debug}");
                     sw.WriteLine($"ActiveProfiles={string.Join(",", ActiveProfiles)}");
 
-                    // Fish
-                    sw.WriteLine($"Fish_Enabled={Fish_Enabled}");
-                    sw.WriteLine($"Fish_AutoPress={Fish_AutoPress}");
-                    sw.WriteLine($"Fish_ReactionTime={Fish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
-                    sw.WriteLine($"Fish_ShowESP={Fish_ShowESP}");
+                    // Color Bot
+                    sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
+                    sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
+                    sw.WriteLine($"ColorFish_ReactionTime={ColorFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"ColorFish_ShowESP={ColorFish_ShowESP}");
 
-                    // Misc
+                    // Memory Bot
+                    sw.WriteLine($"MemFish_Enabled={MemFish_Enabled}");
+                    sw.WriteLine($"MemFish_AutoPress={MemFish_AutoPress}");
+                    sw.WriteLine($"MemFish_ReactionTime={MemFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"MemFish_ShowESP={MemFish_ShowESP}");
+
                     sw.WriteLine($"Misc_EternalDay={Misc_EternalDay}");
                     sw.WriteLine($"Misc_NoFog={Misc_NoFog}");
                     sw.WriteLine($"Misc_Fullbright={Misc_Fullbright}");
@@ -168,14 +163,12 @@ namespace WildTerraHook
                     sw.WriteLine($"Misc_Fov={Misc_Fov.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Misc_RenderDistance={Misc_RenderDistance.ToString(CultureInfo.InvariantCulture)}");
 
-                    // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
                     sw.WriteLine($"Esp_ShowXRay={Esp_ShowXRay}");
                     sw.WriteLine($"Esp_ShowResources={Esp_ShowResources}");
                     sw.WriteLine($"Esp_ShowMobs={Esp_ShowMobs}");
-
                     sw.WriteLine($"Esp_Cat_Mining={Esp_Cat_Mining}");
                     sw.WriteLine($"Esp_Cat_Gather={Esp_Cat_Gather}");
                     sw.WriteLine($"Esp_Cat_Lumber={Esp_Cat_Lumber}");
@@ -184,7 +177,6 @@ namespace WildTerraHook
                     sw.WriteLine($"Esp_Mob_Aggro={Esp_Mob_Aggro}");
                     sw.WriteLine($"Esp_Mob_Retal={Esp_Mob_Retal}");
                     sw.WriteLine($"Esp_Mob_Passive={Esp_Mob_Passive}");
-
                     sw.WriteLine($"Esp_List_Mining={Esp_List_Mining}");
                     sw.WriteLine($"Esp_List_Gather={Esp_List_Gather}");
                     sw.WriteLine($"Esp_List_Lumber={Esp_List_Lumber}");
@@ -223,7 +215,6 @@ namespace WildTerraHook
                     string val = parts[1].Trim();
 
                     if (key == "Language") Language = val;
-
                     else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
                     else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
                     else if (key == "Menu_Rect")
@@ -237,8 +228,6 @@ namespace WildTerraHook
                             float.TryParse(r[3], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_H);
                         }
                     }
-
-                    // Loot
                     else if (key == "Loot_Enabled") bool.TryParse(val, out Loot_Enabled);
                     else if (key == "Loot_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Loot_Delay);
                     else if (key == "Loot_Debug") bool.TryParse(val, out Loot_Debug);
@@ -247,14 +236,17 @@ namespace WildTerraHook
                         ActiveProfiles.Clear();
                         foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveProfiles.Add(p);
                     }
+                    // Color Bot
+                    else if (key == "ColorFish_Enabled") bool.TryParse(val, out ColorFish_Enabled);
+                    else if (key == "ColorFish_AutoPress") bool.TryParse(val, out ColorFish_AutoPress);
+                    else if (key == "ColorFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ReactionTime);
+                    else if (key == "ColorFish_ShowESP") bool.TryParse(val, out ColorFish_ShowESP);
+                    // Memory Bot
+                    else if (key == "MemFish_Enabled") bool.TryParse(val, out MemFish_Enabled);
+                    else if (key == "MemFish_AutoPress") bool.TryParse(val, out MemFish_AutoPress);
+                    else if (key == "MemFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out MemFish_ReactionTime);
+                    else if (key == "MemFish_ShowESP") bool.TryParse(val, out MemFish_ShowESP);
 
-                    // Fish
-                    else if (key == "Fish_Enabled") bool.TryParse(val, out Fish_Enabled);
-                    else if (key == "Fish_AutoPress") bool.TryParse(val, out Fish_AutoPress);
-                    else if (key == "Fish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Fish_ReactionTime);
-                    else if (key == "Fish_ShowESP") bool.TryParse(val, out Fish_ShowESP);
-
-                    // Misc
                     else if (key == "Misc_EternalDay") bool.TryParse(val, out Misc_EternalDay);
                     else if (key == "Misc_NoFog") bool.TryParse(val, out Misc_NoFog);
                     else if (key == "Misc_Fullbright") bool.TryParse(val, out Misc_Fullbright);
@@ -268,24 +260,20 @@ namespace WildTerraHook
                     else if (key == "Misc_Fov") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_Fov);
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
 
-                    // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
                     else if (key == "Esp_ShowXRay") bool.TryParse(val, out Esp_ShowXRay);
                     else if (key == "Esp_ShowResources") bool.TryParse(val, out Esp_ShowResources);
                     else if (key == "Esp_ShowMobs") bool.TryParse(val, out Esp_ShowMobs);
-
                     else if (key == "Esp_Cat_Mining") bool.TryParse(val, out Esp_Cat_Mining);
                     else if (key == "Esp_Cat_Gather") bool.TryParse(val, out Esp_Cat_Gather);
                     else if (key == "Esp_Cat_Lumber") bool.TryParse(val, out Esp_Cat_Lumber);
                     else if (key == "Esp_Cat_Godsend") bool.TryParse(val, out Esp_Cat_Godsend);
                     else if (key == "Esp_Cat_Others") bool.TryParse(val, out Esp_Cat_Others);
-
                     else if (key == "Esp_Mob_Aggro") bool.TryParse(val, out Esp_Mob_Aggro);
                     else if (key == "Esp_Mob_Retal") bool.TryParse(val, out Esp_Mob_Retal);
                     else if (key == "Esp_Mob_Passive") bool.TryParse(val, out Esp_Mob_Passive);
-
                     else if (key == "Esp_List_Mining") Esp_List_Mining = val;
                     else if (key == "Esp_List_Gather") Esp_List_Gather = val;
                     else if (key == "Esp_List_Lumber") Esp_List_Lumber = val;
@@ -334,6 +322,18 @@ namespace WildTerraHook
             }
             catch { }
             return Color.white;
+        }
+
+        // Helper dla Listy aktywnych profili
+        public static List<string> GetCombinedActiveList()
+        {
+            HashSet<string> combined = new HashSet<string>();
+            foreach (var profName in ActiveProfiles)
+            {
+                if (LootProfiles.ContainsKey(profName))
+                    foreach (var item in LootProfiles[profName]) combined.Add(item);
+            }
+            return combined.ToList();
         }
     }
 }
