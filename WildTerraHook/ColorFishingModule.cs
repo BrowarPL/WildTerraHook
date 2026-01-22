@@ -4,11 +4,15 @@ using System.Reflection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Mirror;
 
 namespace WildTerraHook
 {
     public class ColorFishingModule
     {
+        // --- TEXTURES FOR ESP ---
+        private Texture2D _boxTexture;
+
         private enum BotState
         {
             WAITING_FOR_MANUAL,
@@ -51,6 +55,7 @@ namespace WildTerraHook
             _currentState = BotState.WAITING_FOR_MANUAL;
             _fishingSkillIndex = -1;
             _combatSkillIndex = -1;
+            Debug.Log("[BOT] RESET.");
         }
 
         public void Update()
@@ -82,7 +87,7 @@ namespace WildTerraHook
                     _hasCalibration = true;
 
                     EnterFishingState();
-                    _debugMsg = $"Skalibrowano! Cel: {_savedCastPoint}";
+                    Debug.Log($"[BOT] Skalibrowano! Cel: {_savedCastPoint}");
                 }
                 else
                 {
@@ -97,7 +102,7 @@ namespace WildTerraHook
                 {
                     if (wtPlayer.target.health > 0)
                     {
-                        _debugMsg = "ATAK! Przerywam.";
+                        Debug.Log("[BOT] ATAK! Przerywam.");
                         _currentState = BotState.COMBAT_PREPARE;
                         _stateTimer = Time.time + 0.1f;
                         return;
@@ -120,6 +125,10 @@ namespace WildTerraHook
                 }
             }
 
+            _debugMsg = $"STAN: {_currentState} | Timer: {Mathf.Max(0, _stateTimer - Time.time):F1}s\n" +
+                        $"Atak ID: {_combatSkillIndex} | Wędka ID: {_fishingSkillIndex}\n" +
+                        $"Cel: {(wtPlayer.target != null ? wtPlayer.target.name : "Brak")}";
+
             switch (_currentState)
             {
                 case BotState.FISHING: HandleFishing(wtPlayer, fishingUI); break;
@@ -130,6 +139,66 @@ namespace WildTerraHook
                 case BotState.CAST_COOLDOWN: HandleCastCooldown(wtPlayer); break;
             }
         }
+
+        // --- BRAKUJĄCA METODA DLA MAINHACK.CS ---
+        public void DrawESP()
+        {
+            if (!ConfigManager.ColorFish_Enabled || !ConfigManager.ColorFish_ShowESP) return;
+
+            var fishingUI = global::WTUIFishingActions.instance;
+            if (fishingUI == null) return;
+
+            // Sprawdzamy, czy panel jest aktywny (używając logiki z IsUIReal)
+            if (!IsUIReal()) return;
+
+            try
+            {
+                Color32 success = GetField<Color32>(fishingUI, "successButtonColor");
+
+                // Sprawdzamy 3 główne przyciski
+                CheckAndDrawESP(fishingUI, "dragOutActionButtonImage", success);
+                CheckAndDrawESP(fishingUI, "pullActionButtonImage", success);
+                CheckAndDrawESP(fishingUI, "strikeActionButtonImage", success);
+            }
+            catch { }
+        }
+
+        private void CheckAndDrawESP(object ui, string fName, Color32 target)
+        {
+            var img = GetField<Image>(ui, fName);
+            if (img != null && img.gameObject.activeInHierarchy)
+            {
+                Color32 c = img.color;
+                // Jeśli kolor pasuje do sukcesu (zielony), rysuj ramkę
+                if (c.r == target.r && c.g == target.g && c.b == target.b)
+                {
+                    // Rysujemy na RectTransformie rodzica (bo Image jest na dziecku zazwyczaj) lub samym Image
+                    DrawBoxOnRect(img.rectTransform);
+                }
+            }
+        }
+
+        private void DrawBoxOnRect(RectTransform rect)
+        {
+            if (rect == null) return;
+            Vector3[] corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+
+            float x = corners[0].x;
+            float y = Screen.height - corners[1].y;
+            float w = corners[2].x - corners[0].x;
+            float h = corners[1].y - corners[0].y;
+
+            if (_boxTexture == null)
+            {
+                _boxTexture = new Texture2D(1, 1);
+                _boxTexture.SetPixel(0, 0, new Color(0, 1, 0, 0.4f));
+                _boxTexture.Apply();
+            }
+
+            GUI.DrawTexture(new Rect(x, y, w, h), _boxTexture);
+        }
+        // ----------------------------------------
 
         private void ScanMethods(global::WTPlayer player)
         {
@@ -331,6 +400,7 @@ namespace WildTerraHook
             return (f != null) ? (T)f.GetValue(obj) : default(T);
         }
 
+        // Metoda do menu (obsługiwana przez MainHack, ale tutaj zostawiona dla porządku GUI)
         public void DrawMenu()
         {
             GUILayout.Label("<b>Color Bot (Inteligentny)</b>");
@@ -340,12 +410,15 @@ namespace WildTerraHook
             {
                 ConfigManager.ColorFish_Enabled = newVal;
                 if (newVal) ConfigManager.MemFish_Enabled = false; // Wykluczenie
-                if (!newVal) OnDisable(); // Reset bota przy wyłączeniu
+                if (!newVal) OnDisable();
                 ConfigManager.Save();
             }
 
             if (ConfigManager.ColorFish_Enabled)
             {
+                bool esp = GUILayout.Toggle(ConfigManager.ColorFish_ShowESP, "Pokaż ESP (Zielony)");
+                if (esp != ConfigManager.ColorFish_ShowESP) { ConfigManager.ColorFish_ShowESP = esp; ConfigManager.Save(); }
+
                 GUILayout.Label($"Timeout: {ConfigManager.ColorFish_Timeout:F0}s");
                 float newT = GUILayout.HorizontalSlider(ConfigManager.ColorFish_Timeout, 10f, 60f);
                 if (Math.Abs(newT - ConfigManager.ColorFish_Timeout) > 1f) { ConfigManager.ColorFish_Timeout = newT; ConfigManager.Save(); }
