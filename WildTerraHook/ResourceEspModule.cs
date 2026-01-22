@@ -22,6 +22,10 @@ namespace WildTerraHook
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
+        private float _lastDrawTime = 0f; // Timer rysowania
+
+        // Max Health Cache (Highest Seen)
+        private Dictionary<int, int> _maxHealthCache = new Dictionary<int, int>();
 
         // X-RAY & MAT
         private Material _xrayMaterial;
@@ -126,6 +130,7 @@ namespace WildTerraHook
 
             List<CachedObject> newCache = new List<CachedObject>();
             HashSet<Renderer> currentRenderers = new HashSet<Renderer>();
+            HashSet<int> activeMobIds = new HashSet<int>(); // Do czyszczenia cache HP
 
             try
             {
@@ -169,11 +174,21 @@ namespace WildTerraHook
                         {
                             if ((mob.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
                             ProcessMob(mob, newCache);
+                            activeMobIds.Add(mob.GetInstanceID());
                         }
                     }
                 }
             }
             catch { }
+
+            // Czyszczenie starego cache HP dla mobów, których już nie widzimy
+            List<int> toRemoveHP = new List<int>();
+            foreach (var key in _maxHealthCache.Keys)
+            {
+                if (!activeMobIds.Contains(key)) toRemoveHP.Add(key);
+            }
+            foreach (var k in toRemoveHP) _maxHealthCache.Remove(k);
+
 
             foreach (var item in newCache)
             {
@@ -254,13 +269,13 @@ namespace WildTerraHook
         {
             string name = mob.name;
             int hp = mob.health;
-            int maxHp = hp;
-            try
-            {
-                var f = mob.GetType().GetField("healthMax");
-                if (f != null) maxHp = (int)f.GetValue(mob);
-            }
-            catch { }
+            int id = mob.GetInstanceID();
+
+            // HIGHEST SEEN LOGIC
+            if (!_maxHealthCache.ContainsKey(id)) _maxHealthCache[id] = hp;
+            else if (hp > _maxHealthCache[id]) _maxHealthCache[id] = hp;
+
+            int maxHp = _maxHealthCache[id];
             string hpStr = $" [HP: {hp}/{maxHp}]";
 
             float height = 1.8f;
@@ -382,6 +397,13 @@ namespace WildTerraHook
                 if (Math.Abs(newFloat - ConfigManager.Esp_Distance) > 0.1f) { ConfigManager.Esp_Distance = newFloat; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
+                // NOWY SUWAK FPS
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{Localization.Get("ESP_FPS")}: {ConfigManager.Esp_RefreshRate:F0}", GUILayout.Width(100));
+                newFloat = GUILayout.HorizontalSlider(ConfigManager.Esp_RefreshRate, 30f, 120f);
+                if (Math.Abs(newFloat - ConfigManager.Esp_RefreshRate) > 1f) { ConfigManager.Esp_RefreshRate = newFloat; ConfigManager.Save(); }
+                GUILayout.EndHorizontal();
+
                 GUILayout.BeginHorizontal();
                 newVal = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, Localization.Get("ESP_BOX"));
                 if (newVal != ConfigManager.Esp_ShowBoxes) { ConfigManager.Esp_ShowBoxes = newVal; ConfigManager.Save(); }
@@ -495,6 +517,12 @@ namespace WildTerraHook
         public void DrawESP()
         {
             if (!ConfigManager.Esp_Enabled) return;
+
+            // --- KONTROLA FPS (ODŚWIEŻANIA) ---
+            // Pomijamy klatki, jeśli czas od ostatniego rysowania jest mniejszy niż wymagany odstęp
+            if (Time.unscaledTime - _lastDrawTime < (1f / ConfigManager.Esp_RefreshRate)) return;
+            _lastDrawTime = Time.unscaledTime;
+
             CreateStyles();
             Camera cam = Camera.main;
             if (cam == null) return;
@@ -505,6 +533,7 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
+                // Używamy Transform.position dla maksymalnej płynności (live update)
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
