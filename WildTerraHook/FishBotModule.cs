@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System;
 using System.Linq;
+using System.Text;
 
 namespace WildTerraHook
 {
@@ -14,14 +15,15 @@ namespace WildTerraHook
         private string _status = "Init";
         private bool _reflectionInit = false;
 
-        // Pola UI (Obrazki, z których pobierzemy przyciski)
+        // Pola UI
         private FieldInfo _fBtnDragImg;
         private FieldInfo _fBtnPullImg;
         private FieldInfo _fBtnStrikeImg;
-
-        // Pola Danych (logika gry)
         private FieldInfo _fFishActions;
-        private FieldInfo _fBiteUse;
+
+        // Dynamiczne uchwyty do danych FishBite
+        private FieldInfo _fBiteUseField;     // Jeśli to pole
+        private PropertyInfo _pBiteUseProp;   // Jeśli to właściwość
 
         public void Update()
         {
@@ -47,37 +49,54 @@ namespace WildTerraHook
                 Type uiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // 1. Pobieramy OBRAZKI przycisków (bo te pola istnieją na pewno)
+                // 1. UI Images (Pola te istnieją na pewno w WTUIFishingActions)
                 _fBtnDragImg = uiType.GetField("dragOutActionButtonImage", flags);
                 _fBtnPullImg = uiType.GetField("pullActionButtonImage", flags);
                 _fBtnStrikeImg = uiType.GetField("strikeActionButtonImage", flags);
-
-                // 2. Pobieramy listę akcji
                 _fFishActions = uiType.GetField("fishActions", flags);
 
-                // 3. Szukamy pola typu FishingUse w klasie FishBite
+                if (_fBtnDragImg == null || _fFishActions == null)
+                {
+                    _status = "Błąd: Zmiana nazw w UI gry.";
+                    return;
+                }
+
+                // 2. Analiza klasy FishBite
                 Type biteType = typeof(global::FishBite);
+
+                // Szukamy pola lub właściwości typu FishingUse (enum)
                 foreach (var field in biteType.GetFields(flags))
                 {
-                    if (field.FieldType == typeof(global::FishingUse))
+                    if (field.FieldType == typeof(global::FishingUse)) { _fBiteUseField = field; break; }
+                }
+
+                if (_fBiteUseField == null)
+                {
+                    foreach (var prop in biteType.GetProperties(flags))
                     {
-                        _fBiteUse = field;
-                        break;
+                        if (prop.PropertyType == typeof(global::FishingUse)) { _pBiteUseProp = prop; break; }
                     }
                 }
 
-                // Fallback nazwy
-                if (_fBiteUse == null)
-                    _fBiteUse = biteType.GetField("use", flags) ?? biteType.GetField("action", flags);
+                // Fallback po nazwach (gdyby typ był inny, np. int)
+                if (_fBiteUseField == null && _pBiteUseProp == null)
+                {
+                    _fBiteUseField = biteType.GetField("action", flags) ?? biteType.GetField("use", flags) ?? biteType.GetField("type", flags);
+                }
 
-                if (_fBtnDragImg == null || _fBtnPullImg == null || _fBtnStrikeImg == null)
-                    _status = "Błąd: Brak pól Image";
-                else if (_fFishActions == null)
-                    _status = "Błąd: Brak listy akcji";
-                else if (_fBiteUse == null)
-                    _status = "Błąd: Nieznana struktura FishBite";
-                else
+                if (_fBiteUseField != null || _pBiteUseProp != null)
+                {
                     _reflectionInit = true;
+                    _status = "Gotowy (Refleksja OK)";
+                }
+                else
+                {
+                    // DEBUGGER STRUKTURY: Jeśli nie znaleziono, wypisz co jest w środku
+                    StringBuilder sb = new StringBuilder("Błąd struktury FishBite! Dostępne: ");
+                    foreach (var f in biteType.GetFields(flags)) sb.Append($"F:{f.Name}({f.FieldType.Name}) ");
+                    foreach (var p in biteType.GetProperties(flags)) sb.Append($"P:{p.Name} ");
+                    _status = sb.ToString();
+                }
             }
             catch (Exception ex)
             {
@@ -85,7 +104,6 @@ namespace WildTerraHook
             }
         }
 
-        // Pomocnicza metoda do wyciągania przycisku z pola Image
         private Button GetButtonFromImageField(FieldInfo field, object instance)
         {
             if (field == null || instance == null) return null;
@@ -107,9 +125,15 @@ namespace WildTerraHook
                 }
 
                 object currentBite = actionsList[actionsList.Count - 1];
-                global::FishingUse requiredAction = (global::FishingUse)_fBiteUse.GetValue(currentBite);
+                global::FishingUse requiredAction = global::FishingUse.None;
 
-                // Pobieramy przyciski z obrazków
+                // Pobieramy wartość akcji (z pola lub właściwości)
+                if (_fBiteUseField != null)
+                    requiredAction = (global::FishingUse)_fBiteUseField.GetValue(currentBite);
+                else if (_pBiteUseProp != null)
+                    requiredAction = (global::FishingUse)_pBiteUseProp.GetValue(currentBite, null);
+
+                // Pobieramy przyciski
                 Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);
                 Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);
                 Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui);
@@ -138,7 +162,7 @@ namespace WildTerraHook
                 }
                 else
                 {
-                    _status = "Błąd celu (Button null?)";
+                    _status = $"Nieznany cel dla akcji: {requiredAction}";
                 }
             }
             catch (Exception ex) { _status = "Run Error: " + ex.Message; }
@@ -158,7 +182,10 @@ namespace WildTerraHook
                 if (actionsList == null || actionsList.Count == 0) return;
 
                 object currentBite = actionsList[actionsList.Count - 1];
-                global::FishingUse requiredAction = (global::FishingUse)_fBiteUse.GetValue(currentBite);
+                global::FishingUse requiredAction = global::FishingUse.None;
+
+                if (_fBiteUseField != null) requiredAction = (global::FishingUse)_fBiteUseField.GetValue(currentBite);
+                else if (_pBiteUseProp != null) requiredAction = (global::FishingUse)_pBiteUseProp.GetValue(currentBite, null);
 
                 Button targetBtn = null;
                 switch (requiredAction)
@@ -193,7 +220,7 @@ namespace WildTerraHook
             if (_boxTexture == null)
             {
                 _boxTexture = new Texture2D(1, 1);
-                _boxTexture.SetPixel(0, 0, new Color(1f, 0f, 1f, 0.5f)); // Fioletowy
+                _boxTexture.SetPixel(0, 0, new Color(1f, 0f, 1f, 0.5f));
                 _boxTexture.Apply();
             }
 
@@ -234,7 +261,9 @@ namespace WildTerraHook
                     if (Math.Abs(newF - ConfigManager.MemFish_ReactionTime) > 0.01f) { ConfigManager.MemFish_ReactionTime = newF; ConfigManager.Save(); }
                     GUILayout.EndHorizontal();
                 }
-                GUILayout.Label($"Status: {_status}");
+
+                // Pole statusu, które pokaże listę pól w przypadku błędu
+                GUILayout.Label($"Status: {_status}", GUILayout.ExpandWidth(true));
             }
         }
     }
