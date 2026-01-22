@@ -8,11 +8,30 @@ namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA LOKALNE (Reszta w ConfigManager) ---
-        public bool DebugCastVars = false; // Przełącznik debugowania nazw zmiennych
-        private bool _showColorMenu = false;
+        // --- USTAWIENIA ---
+        public bool EspEnabled = false;
+        public bool ShowBoxes = true;
+        public bool ShowXRay = true;
+        public bool ShowCastBars = true;
+        public bool DebugCastVars = false; // "Deep Scan" Debugger
 
-        // Toggle Lists (Szczegółowe)
+        // Kategorie
+        private bool _showResources = false;
+        private bool _showMining = false;
+        private bool _showGathering = false;
+        private bool _showLumber = false;
+        private bool _showGodsend = false;
+        private bool _showOthers = false;
+
+        private bool _showMobs = false;
+        private bool _showAggressive = false;
+        private bool _showRetaliating = false;
+        private bool _showPassive = false;
+
+        private bool _showColorMenu = false;
+        private float _maxDistance = 150f;
+
+        // Toggle Lists
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -25,15 +44,14 @@ namespace WildTerraHook
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
 
-        // X-RAY & REFLECTION
+        // X-RAY & MAT
         private Material _xrayMaterial;
         private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
 
-        // CAST BAR CACHE
-        private FieldInfo _fCastEndTime;
-        private FieldInfo _fCastTotalTime;
-        private bool _castReflectionInit = false;
-        private FieldInfo[] _debugAllFields; // Do debugowania
+        // --- CAST BAR LOGIC ---
+        // Tu wpiszemy poprawne dane jak je znajdziemy debugerem
+        private string _foundComponentName = "";
+        private string _foundFieldName = "";
 
         // GUI
         private GUIStyle _styleLabel;
@@ -43,6 +61,7 @@ namespace WildTerraHook
         private Texture2D _castBarTexture;
         private Texture2D _castBackgroundTexture;
         private Vector2 _scrollPos;
+        private Vector2 _debugScroll;
 
         private struct CachedObject
         {
@@ -56,7 +75,6 @@ namespace WildTerraHook
             public float Height;
             public bool ShouldGlow;
             public Renderer[] Renderers;
-            public object MobScript;
         }
 
         public ResourceEspModule()
@@ -87,6 +105,7 @@ namespace WildTerraHook
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Gather, _gatheringToggles);
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Lumber, _lumberToggles);
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Godsend, _godsendToggles);
+            ShowCastBars = ConfigManager.Esp_ShowCastBars;
         }
 
         private void SyncToConfig()
@@ -95,6 +114,7 @@ namespace WildTerraHook
             ConfigManager.Esp_List_Gather = ConfigManager.SerializeToggleList(_gatheringToggles);
             ConfigManager.Esp_List_Lumber = ConfigManager.SerializeToggleList(_lumberToggles);
             ConfigManager.Esp_List_Godsend = ConfigManager.SerializeToggleList(_godsendToggles);
+            ConfigManager.Esp_ShowCastBars = ShowCastBars;
             ConfigManager.Save();
         }
 
@@ -112,36 +132,6 @@ namespace WildTerraHook
                 _xrayMaterial.SetInt("_Cull", 0);
                 _xrayMaterial.renderQueue = 5000;
             }
-        }
-
-        private void InitCastReflection(object mobObj)
-        {
-            if (_castReflectionInit || mobObj == null) return;
-            try
-            {
-                Type t = mobObj.GetType();
-                BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-
-                // Próba znalezienia pól czasu
-                _fCastEndTime = t.GetField("castEndTime", flags) ?? t.GetField("castingEndTime", flags)
-                             ?? t.GetField("skillFinishTime", flags) ?? t.GetField("actionEndTime", flags)
-                             ?? t.GetField("m_castEndTime", flags);
-
-                _fCastTotalTime = t.GetField("castTime", flags) ?? t.GetField("castDuration", flags)
-                               ?? t.GetField("totalCastTime", flags) ?? t.GetField("actionDuration", flags)
-                               ?? t.GetField("m_castTime", flags);
-
-                // Pobranie wszystkich pól liczbowych do debugowania
-                if (DebugCastVars)
-                {
-                    _debugAllFields = t.GetFields(flags)
-                        .Where(f => f.FieldType == typeof(float) || f.FieldType == typeof(double) || f.FieldType == typeof(int))
-                        .ToArray();
-                }
-
-                _castReflectionInit = true;
-            }
-            catch { }
         }
 
         public void Update()
@@ -170,7 +160,6 @@ namespace WildTerraHook
 
             try
             {
-                // --- RESOURCES ---
                 if (ConfigManager.Esp_ShowResources)
                 {
                     List<string> activeMining = GetActiveKeys(_miningToggles);
@@ -196,13 +185,12 @@ namespace WildTerraHook
 
                         if (!matched && ConfigManager.Esp_Cat_Others && !name.Contains("Player") && !name.Contains("Character"))
                         {
-                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false, null);
+                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false);
                             matched = true;
                         }
                     }
                 }
 
-                // --- MOBS ---
                 if (ConfigManager.Esp_ShowMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -218,7 +206,6 @@ namespace WildTerraHook
             }
             catch { }
 
-            // X-RAY Logic
             foreach (var item in newCache)
             {
                 if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
@@ -287,7 +274,7 @@ namespace WildTerraHook
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true, null);
+                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true);
                     return true;
                 }
             }
@@ -332,13 +319,11 @@ namespace WildTerraHook
 
             if (show)
             {
-                // Jeśli debug włączony, odświeżamy refleksję żeby pobrać wszystkie pola
-                if (!_castReflectionInit || DebugCastVars) InitCastReflection(mob);
-                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true, mob);
+                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true);
             }
         }
 
-        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow, object script)
+        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow)
         {
             var rends = go.GetComponentsInChildren<Renderer>();
             cache.Add(new CachedObject
@@ -352,8 +337,7 @@ namespace WildTerraHook
                 IsMob = isMob,
                 Height = h,
                 ShouldGlow = glow,
-                Renderers = rends,
-                MobScript = script
+                Renderers = rends
             });
         }
 
@@ -386,7 +370,6 @@ namespace WildTerraHook
             }
         }
 
-        // --- PRZYWRÓCONA METODA ---
         private bool IsIgnored(string name)
         {
             if (name.Length < 3) return true;
@@ -413,7 +396,6 @@ namespace WildTerraHook
             }
         }
 
-        // --- GUI ---
         public void DrawMenu()
         {
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(450));
@@ -442,8 +424,8 @@ namespace WildTerraHook
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowCastBars, Localization.Get("ESP_CAST_BARS"));
-                if (newVal != ConfigManager.Esp_ShowCastBars) { ConfigManager.Esp_ShowCastBars = newVal; ConfigManager.Save(); }
+                newVal = GUILayout.Toggle(ShowCastBars, Localization.Get("ESP_CAST_BARS"));
+                if (newVal != ShowCastBars) { ShowCastBars = newVal; SyncToConfig(); }
 
                 DebugCastVars = GUILayout.Toggle(DebugCastVars, "Debug Cast Vars");
                 GUILayout.EndHorizontal();
@@ -615,32 +597,48 @@ namespace WildTerraHook
                     Vector2 textPos = new Vector2(screenHead.x, headY - 15);
                     DrawLabelWithBackground(textPos, text, obj.Color);
 
-                    if (obj.IsMob && ConfigManager.Esp_ShowCastBars && obj.MobScript != null)
+                    // Pasek castowania
+                    if (obj.IsMob && ShowCastBars)
                     {
-                        DrawCastBar(obj, textPos);
+                        // Jeśli znamy zmienne, rysuj prawdziwy pasek
+                        if (!string.IsNullOrEmpty(_foundFieldName))
+                        {
+                            DrawRealCastBar(obj, textPos);
+                        }
+                        // Fallback: Jeśli mob ma Animatora, sprawdź czy gra animację castowania
+                        else
+                        {
+                            DrawAnimatorCastBar(obj, textPos);
+                        }
                     }
                 }
             }
 
-            if (DebugCastVars && closestMob.MobScript != null) DrawDebugInfo(closestMob);
+            if (DebugCastVars && closestMob.GameObject != null) DrawDeepDebugInfo(closestMob);
         }
 
-        private void DrawCastBar(CachedObject obj, Vector2 textPos)
+        private void DrawRealCastBar(CachedObject obj, Vector2 textPos)
         {
-            if (_fCastEndTime == null) return;
+            // Tu w przyszłości wstawimy kod do czytania znalezionego pola
+        }
+
+        private void DrawAnimatorCastBar(CachedObject obj, Vector2 textPos)
+        {
+            // Fallback: Wykrywanie animacji
             try
             {
-                float endTime = Convert.ToSingle(_fCastEndTime.GetValue(obj.MobScript));
-                if (endTime > Time.time)
+                Animator anim = obj.GameObject.GetComponent<Animator>();
+                if (anim == null) return;
+
+                AnimatorStateInfo state = anim.GetCurrentAnimatorStateInfo(0);
+
+                // Sprawdź tag lub nazwę stanu (przykładowe słowa kluczowe)
+                // W trybie debugera zobaczysz nazwy stanów, to je tu dopiszemy
+                bool isCasting = state.IsTag("Cast") || state.IsTag("Skill") || state.IsTag("Attack");
+
+                if (isCasting)
                 {
-                    float totalTime = 1.0f;
-                    if (_fCastTotalTime != null) totalTime = Convert.ToSingle(_fCastTotalTime.GetValue(obj.MobScript));
-                    if (totalTime <= 0) totalTime = 1.0f;
-
-                    float remaining = endTime - Time.time;
-                    float progress = 1.0f - (remaining / totalTime);
-                    if (progress < 0) progress = 0; if (progress > 1) progress = 1;
-
+                    float progress = state.normalizedTime % 1.0f;
                     float barW = 60f; float barH = 6f;
                     Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
 
@@ -651,31 +649,66 @@ namespace WildTerraHook
             catch { }
         }
 
-        private void DrawDebugInfo(CachedObject mob)
+        // --- DEEP DEBUGGER ---
+        private void DrawDeepDebugInfo(CachedObject mob)
         {
-            float y = 200;
-            float x = Screen.width - 350;
+            float x = Screen.width - 450;
+            float y = 100;
+            float w = 440;
+            float h = 600;
 
-            GUI.Box(new Rect(x, y, 300, 600), "DEBUG: " + mob.Label);
-            y += 30;
+            GUI.Box(new Rect(x, y, w, h), $"DEBUG: {mob.Label}");
+            _debugScroll = GUI.BeginScrollView(new Rect(x, y + 20, w, h - 20), _debugScroll, new Rect(0, 0, w - 20, 2000));
 
-            if (_debugAllFields != null)
+            float currY = 0;
+
+            // 1. Sprawdź Animator
+            try
             {
-                foreach (var f in _debugAllFields)
+                Animator anim = mob.GameObject.GetComponent<Animator>();
+                if (anim != null)
                 {
-                    string n = f.Name.ToLower();
-                    if (n.Contains("time") || n.Contains("cast") || n.Contains("end") || n.Contains("dur"))
+                    AnimatorStateInfo s = anim.GetCurrentAnimatorStateInfo(0);
+                    GUI.Label(new Rect(5, currY, 400, 20), $"[Animator] State Hash: {s.shortNameHash}, NormTime: {s.normalizedTime:F2}");
+                    currY += 20;
+                }
+            }
+            catch { }
+
+            // 2. Skaner Komponentów
+            MonoBehaviour[] scripts = mob.GameObject.GetComponents<MonoBehaviour>();
+            foreach (var script in scripts)
+            {
+                if (script == null) continue;
+                Type t = script.GetType();
+
+                // Ignoruj standardowe Unity
+                if (t.Namespace != null && (t.Namespace.StartsWith("UnityEngine") || t.Namespace.StartsWith("System"))) continue;
+
+                GUI.Label(new Rect(5, currY, 400, 20), $"<b>--- {t.Name} ---</b>");
+                currY += 20;
+
+                var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var f in fields)
+                {
+                    if (f.FieldType == typeof(float) || f.FieldType == typeof(int) || f.FieldType == typeof(double))
                     {
                         try
                         {
-                            object val = f.GetValue(mob.MobScript);
-                            GUI.Label(new Rect(x + 10, y, 280, 20), $"{f.Name}: {val}");
-                            y += 20;
+                            object val = f.GetValue(script);
+                            // Pokaż tylko jeśli > 0 (żeby odsiać śmieci)
+                            if (Convert.ToSingle(val) > 0.001f)
+                            {
+                                GUI.Label(new Rect(5, currY, 400, 20), $"{f.Name} = {val}");
+                                currY += 20;
+                            }
                         }
                         catch { }
                     }
                 }
             }
+
+            GUI.EndScrollView();
         }
 
         private void DrawLabelWithBackground(Vector2 centerBottomPos, string text, Color color)
