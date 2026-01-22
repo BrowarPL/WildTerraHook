@@ -19,8 +19,8 @@ namespace WildTerraHook
         {
             public static Color MobAggressive = Color.red;
             public static Color MobPassive = Color.green;
-            public static Color MobFleeing = new Color(1f, 0.64f, 0f);
-            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f);
+            public static Color MobFleeing = new Color(1f, 0.64f, 0f); // Orange
+            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f); // Brown
             public static Color ResMining = Color.gray;
             public static Color ResGather = Color.white;
         }
@@ -75,12 +75,13 @@ namespace WildTerraHook
         public static string Esp_List_Lumber = "";
         public static string Esp_List_Godsend = "";
 
-        // --- MENU SETTINGS (NOWOŚĆ) ---
-        public static float Menu_Scale = 1.0f;     // Skala (1.0 = normalna, 1.5 = 150%)
+        // --- MENU SETTINGS ---
+        public static float Menu_Scale = 1.0f;
         public static float Menu_X = 20f;
         public static float Menu_Y = 20f;
-        public static float Menu_W = 550f;
-        public static float Menu_H = 550f;
+        public static float Menu_W = 450f; // Domyślna szerokość
+        public static float Menu_H = 0f;   // 0 oznacza auto-height
+        public static int Menu_Tab = 0;    // Zapamiętana zakładka
 
         static ConfigManager()
         {
@@ -136,20 +137,24 @@ namespace WildTerraHook
                 {
                     sw.WriteLine($"Language={Language}");
 
-                    // Menu Settings
+                    // Menu
                     sw.WriteLine($"Menu_Scale={Menu_Scale.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Menu_Tab={Menu_Tab}");
                     sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
 
+                    // Loot
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Loot_Debug={Loot_Debug}");
                     sw.WriteLine($"ActiveProfiles={string.Join(",", ActiveProfiles)}");
 
+                    // Fish
                     sw.WriteLine($"Fish_Enabled={Fish_Enabled}");
                     sw.WriteLine($"Fish_AutoPress={Fish_AutoPress}");
                     sw.WriteLine($"Fish_ReactionTime={Fish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Fish_ShowESP={Fish_ShowESP}");
 
+                    // Misc
                     sw.WriteLine($"Misc_EternalDay={Misc_EternalDay}");
                     sw.WriteLine($"Misc_NoFog={Misc_NoFog}");
                     sw.WriteLine($"Misc_Fullbright={Misc_Fullbright}");
@@ -163,6 +168,7 @@ namespace WildTerraHook
                     sw.WriteLine($"Misc_Fov={Misc_Fov.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Misc_RenderDistance={Misc_RenderDistance.ToString(CultureInfo.InvariantCulture)}");
 
+                    // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
@@ -218,8 +224,8 @@ namespace WildTerraHook
 
                     if (key == "Language") Language = val;
 
-                    // Menu
                     else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
+                    else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
                     else if (key == "Menu_Rect")
                     {
                         string[] r = val.Split(',');
