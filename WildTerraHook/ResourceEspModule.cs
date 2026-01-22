@@ -13,7 +13,9 @@ namespace WildTerraHook
         public bool ShowBoxes = true;
         public bool ShowXRay = true;
         public bool ShowCastBars = true;
-        public bool DebugCastVars = false; // "Deep Scan" Debugger
+
+        // AUTO-DETECT SNIFFER
+        public bool AutoDetectCast = false; // Nowy tryb automatycznego szukania
 
         // Kategorie
         private bool _showResources = false;
@@ -44,14 +46,14 @@ namespace WildTerraHook
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
 
-        // X-RAY & MAT
+        // X-RAY & REFLECTION
         private Material _xrayMaterial;
         private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
 
-        // --- CAST BAR LOGIC ---
-        // Tu wpiszemy poprawne dane jak je znajdziemy debugerem
-        private string _foundComponentName = "";
-        private string _foundFieldName = "";
+        // --- SNIFFER DATA ---
+        private GameObject _snifferTarget;
+        private List<SniffedField> _sniffedFields = new List<SniffedField>();
+        private float _snifferTimer = 0f;
 
         // GUI
         private GUIStyle _styleLabel;
@@ -62,6 +64,16 @@ namespace WildTerraHook
         private Texture2D _castBackgroundTexture;
         private Vector2 _scrollPos;
         private Vector2 _debugScroll;
+
+        private class SniffedField
+        {
+            public string ComponentName;
+            public string FieldName;
+            public FieldInfo Field;
+            public object TargetObj;
+            public float LastValue;
+            public bool IsActive; // Czy zmienia się?
+        }
 
         private struct CachedObject
         {
@@ -131,6 +143,70 @@ namespace WildTerraHook
                 _xrayMaterial.SetInt("_ZWrite", 0);
                 _xrayMaterial.SetInt("_Cull", 0);
                 _xrayMaterial.renderQueue = 5000;
+            }
+        }
+
+        // --- SNIFFER LOGIC ---
+        private void RunSniffer(GameObject target)
+        {
+            if (target == null) return;
+
+            // 1. Inicjalizacja (raz na moba)
+            if (_snifferTarget != target)
+            {
+                _snifferTarget = target;
+                _sniffedFields.Clear();
+
+                // Pobierz wszystkie skrypty
+                MonoBehaviour[] scripts = target.GetComponents<MonoBehaviour>();
+                foreach (var s in scripts)
+                {
+                    if (s == null) continue;
+                    Type t = s.GetType();
+                    if (t.Namespace != null && (t.Namespace.StartsWith("UnityEngine") || t.Namespace.StartsWith("System"))) continue;
+
+                    var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var f in fields)
+                    {
+                        if (f.FieldType == typeof(float) || f.FieldType == typeof(int) || f.FieldType == typeof(double))
+                        {
+                            try
+                            {
+                                float val = Convert.ToSingle(f.GetValue(s));
+                                _sniffedFields.Add(new SniffedField
+                                {
+                                    ComponentName = t.Name,
+                                    FieldName = f.Name,
+                                    Field = f,
+                                    TargetObj = s,
+                                    LastValue = val,
+                                    IsActive = false
+                                });
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+
+            // 2. Aktualizacja co klatkę
+            foreach (var item in _sniffedFields)
+            {
+                try
+                {
+                    float currentVal = Convert.ToSingle(item.Field.GetValue(item.TargetObj));
+                    if (Math.Abs(currentVal - item.LastValue) > 0.0001f) // Zmienia się!
+                    {
+                        item.IsActive = true;
+                        item.LastValue = currentVal;
+                    }
+                    else
+                    {
+                        // Opcjonalnie: Wyłączaj jeśli przestało się zmieniać na długo, ale na razie trzymajmy
+                        // item.IsActive = false; 
+                    }
+                }
+                catch { }
             }
         }
 
@@ -427,7 +503,7 @@ namespace WildTerraHook
                 newVal = GUILayout.Toggle(ShowCastBars, Localization.Get("ESP_CAST_BARS"));
                 if (newVal != ShowCastBars) { ShowCastBars = newVal; SyncToConfig(); }
 
-                DebugCastVars = GUILayout.Toggle(DebugCastVars, "Debug Cast Vars");
+                AutoDetectCast = GUILayout.Toggle(AutoDetectCast, "AUTO-DETECT CAST");
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(10);
@@ -552,7 +628,7 @@ namespace WildTerraHook
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
 
-                if (DebugCastVars && obj.IsMob && dist < minMobDist) { minMobDist = dist; closestMob = obj; }
+                if (AutoDetectCast && obj.IsMob && dist < minMobDist) { minMobDist = dist; closestMob = obj; }
 
                 Vector3 screenHead = cam.WorldToScreenPoint(currentPos + Vector3.up * obj.Height);
                 Vector3 screenFeet = cam.WorldToScreenPoint(currentPos);
@@ -596,117 +672,40 @@ namespace WildTerraHook
                     string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
                     Vector2 textPos = new Vector2(screenHead.x, headY - 15);
                     DrawLabelWithBackground(textPos, text, obj.Color);
-
-                    // Pasek castowania
-                    if (obj.IsMob && ShowCastBars)
-                    {
-                        // Jeśli znamy zmienne, rysuj prawdziwy pasek
-                        if (!string.IsNullOrEmpty(_foundFieldName))
-                        {
-                            DrawRealCastBar(obj, textPos);
-                        }
-                        // Fallback: Jeśli mob ma Animatora, sprawdź czy gra animację castowania
-                        else
-                        {
-                            DrawAnimatorCastBar(obj, textPos);
-                        }
-                    }
                 }
             }
 
-            if (DebugCastVars && closestMob.GameObject != null) DrawDeepDebugInfo(closestMob);
-        }
-
-        private void DrawRealCastBar(CachedObject obj, Vector2 textPos)
-        {
-            // Tu w przyszłości wstawimy kod do czytania znalezionego pola
-        }
-
-        private void DrawAnimatorCastBar(CachedObject obj, Vector2 textPos)
-        {
-            // Fallback: Wykrywanie animacji
-            try
+            if (AutoDetectCast && closestMob.GameObject != null)
             {
-                Animator anim = obj.GameObject.GetComponent<Animator>();
-                if (anim == null) return;
-
-                AnimatorStateInfo state = anim.GetCurrentAnimatorStateInfo(0);
-
-                // Sprawdź tag lub nazwę stanu (przykładowe słowa kluczowe)
-                // W trybie debugera zobaczysz nazwy stanów, to je tu dopiszemy
-                bool isCasting = state.IsTag("Cast") || state.IsTag("Skill") || state.IsTag("Attack");
-
-                if (isCasting)
-                {
-                    float progress = state.normalizedTime % 1.0f;
-                    float barW = 60f; float barH = 6f;
-                    Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
-
-                    GUI.DrawTexture(barRect, _castBackgroundTexture);
-                    GUI.DrawTexture(new Rect(barRect.x, barRect.y, barW * progress, barH), _castBarTexture);
-                }
+                RunSniffer(closestMob.GameObject);
+                DrawSnifferResults();
             }
-            catch { }
         }
 
-        // --- DEEP DEBUGGER ---
-        private void DrawDeepDebugInfo(CachedObject mob)
+        private void DrawSnifferResults()
         {
             float x = Screen.width - 450;
             float y = 100;
             float w = 440;
             float h = 600;
 
-            GUI.Box(new Rect(x, y, w, h), $"DEBUG: {mob.Label}");
+            GUI.Box(new Rect(x, y, w, h), $"SNIFFER: {_snifferTarget?.name}");
             _debugScroll = GUI.BeginScrollView(new Rect(x, y + 20, w, h - 20), _debugScroll, new Rect(0, 0, w - 20, 2000));
 
             float currY = 0;
+            bool anyFound = false;
 
-            // 1. Sprawdź Animator
-            try
+            foreach (var item in _sniffedFields)
             {
-                Animator anim = mob.GameObject.GetComponent<Animator>();
-                if (anim != null)
+                if (item.IsActive)
                 {
-                    AnimatorStateInfo s = anim.GetCurrentAnimatorStateInfo(0);
-                    GUI.Label(new Rect(5, currY, 400, 20), $"[Animator] State Hash: {s.shortNameHash}, NormTime: {s.normalizedTime:F2}");
+                    anyFound = true;
+                    GUI.Label(new Rect(5, currY, 400, 20), $"[{item.ComponentName}] {item.FieldName} = {item.LastValue:F3}");
                     currY += 20;
                 }
             }
-            catch { }
 
-            // 2. Skaner Komponentów
-            MonoBehaviour[] scripts = mob.GameObject.GetComponents<MonoBehaviour>();
-            foreach (var script in scripts)
-            {
-                if (script == null) continue;
-                Type t = script.GetType();
-
-                // Ignoruj standardowe Unity
-                if (t.Namespace != null && (t.Namespace.StartsWith("UnityEngine") || t.Namespace.StartsWith("System"))) continue;
-
-                GUI.Label(new Rect(5, currY, 400, 20), $"<b>--- {t.Name} ---</b>");
-                currY += 20;
-
-                var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var f in fields)
-                {
-                    if (f.FieldType == typeof(float) || f.FieldType == typeof(int) || f.FieldType == typeof(double))
-                    {
-                        try
-                        {
-                            object val = f.GetValue(script);
-                            // Pokaż tylko jeśli > 0 (żeby odsiać śmieci)
-                            if (Convert.ToSingle(val) > 0.001f)
-                            {
-                                GUI.Label(new Rect(5, currY, 400, 20), $"{f.Name} = {val}");
-                                currY += 20;
-                            }
-                        }
-                        catch { }
-                    }
-                }
-            }
+            if (!anyFound) GUI.Label(new Rect(5, 0, 400, 20), "Nasłuchuję zmian wartości...");
 
             GUI.EndScrollView();
         }
