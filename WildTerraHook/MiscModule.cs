@@ -6,36 +6,12 @@ namespace WildTerraHook
 {
     public class MiscModule
     {
-        // --- USTAWIENIA ---
-        public bool EternalDayEnabled = false;
-        public bool BrightPlayerEnabled = false;
-        public bool FullbrightEnabled = false;
-        public bool NoFogEnabled = false;
-        public bool ZoomHackEnabled = false;
-
-        // --- RENDER DISTANCE ---
-        public float RenderDistance = 500f; // ZMIANA: Domyślnie 500
-        private float _originalRenderDist = 500f;
-
-        // --- LATARKA ---
-        public float LightIntensity = 2.0f;
-        public float LightRange = 1000f;
         private GameObject _lightObject;
-
-        // --- KAMERA ---
-        public float CameraFov = 60f;
-        public float MaxZoomLimit = 100f;
-        public float CameraAngle = 45f;
-        public float ZoomSpeed = 60f;
-
         private float _defaultFov = 60f;
         private bool _defaultsInitialized = false;
-
-        // --- FULLBRIGHT CACHE ---
+        private float _originalRenderDist = 500f;
         private ShadowQuality _originalShadows;
         private bool _fullbrightActive = false;
-
-        // --- KAMERA CACHE ---
         private WTRPGCamera _rpgCamera;
         private global::CameraMMO _mmoCamera;
         private float _cacheTimer = 0f;
@@ -44,42 +20,30 @@ namespace WildTerraHook
         {
             if (global::Player.localPlayer == null) return;
 
-            // Inicjalizacja
             if (!_defaultsInitialized && Camera.main != null)
             {
                 _defaultFov = Camera.main.fieldOfView;
                 _originalRenderDist = Camera.main.farClipPlane;
-
-                // Jeśli użytkownik nie ruszał suwaka (jest 500), nadpisz go oryginałem z gry,
-                // chyba że oryginał jest mniejszy niż 500, wtedy wymuś 500.
-                if (Math.Abs(RenderDistance - 500f) < 1f)
-                {
-                    // Opcjonalnie: RenderDistance = _originalRenderDist; 
-                    // Ale chciałeś wymusić startowe 500, więc zostawiamy jak jest.
-                }
-
                 _defaultsInitialized = true;
             }
 
-            // Obsługa Render Distance (Far Clip Plane)
             if (Camera.main != null)
             {
-                // Ustawiamy tylko jeśli różnica jest zauważalna
-                if (Math.Abs(Camera.main.farClipPlane - RenderDistance) > 1f)
+                if (Math.Abs(Camera.main.farClipPlane - ConfigManager.Misc_RenderDistance) > 1f)
                 {
-                    Camera.main.farClipPlane = RenderDistance;
+                    Camera.main.farClipPlane = ConfigManager.Misc_RenderDistance;
                 }
             }
 
-            if (EternalDayEnabled && global::EnviroSky.instance != null)
+            if (ConfigManager.Misc_EternalDay && global::EnviroSky.instance != null)
                 global::EnviroSky.instance.SetTime(global::EnviroSky.instance.GameTime.Years, global::EnviroSky.instance.GameTime.Days, 12, 0, 0);
 
-            if (NoFogEnabled) ApplyNoFog();
+            if (ConfigManager.Misc_NoFog) ApplyNoFog();
 
             HandleFullbright();
             HandleBrightPlayer();
             HandleFov();
-            if (ZoomHackEnabled) HandleZoomHack();
+            if (ConfigManager.Misc_ZoomHack) HandleZoomHack();
         }
 
         public void OnGUI() { }
@@ -95,7 +59,7 @@ namespace WildTerraHook
 
         private void HandleFullbright()
         {
-            if (FullbrightEnabled)
+            if (ConfigManager.Misc_Fullbright)
             {
                 if (!_fullbrightActive)
                 {
@@ -120,8 +84,8 @@ namespace WildTerraHook
         {
             if (Camera.main != null)
             {
-                if (Math.Abs(Camera.main.fieldOfView - CameraFov) > 0.1f)
-                    Camera.main.fieldOfView = CameraFov;
+                if (Math.Abs(Camera.main.fieldOfView - ConfigManager.Misc_Fov) > 0.1f)
+                    Camera.main.fieldOfView = ConfigManager.Misc_Fov;
             }
         }
 
@@ -135,17 +99,17 @@ namespace WildTerraHook
 
             if (_rpgCamera != null)
             {
-                _rpgCamera.MaxDistance = MaxZoomLimit;
-                _rpgCamera.RotationYMin = CameraAngle;
-                _rpgCamera.RotationYMax = CameraAngle;
-                _rpgCamera.ZoomSensitivity = ZoomSpeed;
+                _rpgCamera.MaxDistance = ConfigManager.Misc_ZoomLimit;
+                _rpgCamera.RotationYMin = ConfigManager.Misc_CamAngle;
+                _rpgCamera.RotationYMax = ConfigManager.Misc_CamAngle;
+                _rpgCamera.ZoomSensitivity = ConfigManager.Misc_ZoomSpeed;
                 _rpgCamera.ReturnZoomFromNPC();
             }
             else if (_mmoCamera != null)
             {
-                _mmoCamera.maxDistance = MaxZoomLimit;
-                _mmoCamera.xMinAngle = -CameraAngle;
-                _mmoCamera.xMaxAngle = CameraAngle;
+                _mmoCamera.maxDistance = ConfigManager.Misc_ZoomLimit;
+                _mmoCamera.xMinAngle = -ConfigManager.Misc_CamAngle;
+                _mmoCamera.xMaxAngle = ConfigManager.Misc_CamAngle;
                 _mmoCamera.zoomSpeedMouse = 5.0f;
             }
         }
@@ -162,7 +126,7 @@ namespace WildTerraHook
 
         private void HandleBrightPlayer()
         {
-            if (BrightPlayerEnabled)
+            if (ConfigManager.Misc_BrightPlayer)
             {
                 if (_lightObject == null)
                 {
@@ -177,8 +141,8 @@ namespace WildTerraHook
                 var lightComp = _lightObject.GetComponent<Light>();
                 if (lightComp != null)
                 {
-                    lightComp.intensity = LightIntensity;
-                    lightComp.range = LightRange;
+                    lightComp.intensity = ConfigManager.Misc_LightIntensity;
+                    lightComp.range = ConfigManager.Misc_LightRange;
                 }
                 if (!_lightObject.activeSelf) _lightObject.SetActive(true);
             }
@@ -204,69 +168,87 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
 
-            // --- RENDER DISTANCE ---
+            // RENDER DISTANCE
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"Render Dist: {RenderDistance:F0}", GUILayout.Width(120));
-            // Suwak od 100 do 5000
-            RenderDistance = GUILayout.HorizontalSlider(RenderDistance, 100f, 5000f);
+            GUILayout.Label($"Render Dist: {ConfigManager.Misc_RenderDistance:F0}", GUILayout.Width(120));
+            float newDist = GUILayout.HorizontalSlider(ConfigManager.Misc_RenderDistance, 100f, 5000f);
+            if (Math.Abs(newDist - ConfigManager.Misc_RenderDistance) > 1f) { ConfigManager.Misc_RenderDistance = newDist; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
             GUILayout.Space(5);
 
-            EternalDayEnabled = GUILayout.Toggle(EternalDayEnabled, Localization.Get("MISC_ETERNAL_DAY"));
-            NoFogEnabled = GUILayout.Toggle(NoFogEnabled, Localization.Get("MISC_NO_FOG"));
-            FullbrightEnabled = GUILayout.Toggle(FullbrightEnabled, Localization.Get("MISC_FULLBRIGHT"));
+            bool newVal;
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_EternalDay, Localization.Get("MISC_ETERNAL_DAY"));
+            if (newVal != ConfigManager.Misc_EternalDay) { ConfigManager.Misc_EternalDay = newVal; ConfigManager.Save(); }
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_NoFog, Localization.Get("MISC_NO_FOG"));
+            if (newVal != ConfigManager.Misc_NoFog) { ConfigManager.Misc_NoFog = newVal; ConfigManager.Save(); }
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_Fullbright, Localization.Get("MISC_FULLBRIGHT"));
+            if (newVal != ConfigManager.Misc_Fullbright) { ConfigManager.Misc_Fullbright = newVal; ConfigManager.Save(); }
 
             GUILayout.Space(5);
 
-            BrightPlayerEnabled = GUILayout.Toggle(BrightPlayerEnabled, Localization.Get("MISC_BRIGHT_PLAYER"));
-            if (BrightPlayerEnabled)
+            newVal = GUILayout.Toggle(ConfigManager.Misc_BrightPlayer, Localization.Get("MISC_BRIGHT_PLAYER"));
+            if (newVal != ConfigManager.Misc_BrightPlayer) { ConfigManager.Misc_BrightPlayer = newVal; ConfigManager.Save(); }
+
+            if (ConfigManager.Misc_BrightPlayer)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_LIGHT_INT")}: {LightIntensity:F1}", GUILayout.Width(120));
-                LightIntensity = GUILayout.HorizontalSlider(LightIntensity, 1f, 5f);
+                GUILayout.Label($"{Localization.Get("MISC_LIGHT_INT")}: {ConfigManager.Misc_LightIntensity:F1}", GUILayout.Width(120));
+                float newInt = GUILayout.HorizontalSlider(ConfigManager.Misc_LightIntensity, 1f, 5f);
+                if (Math.Abs(newInt - ConfigManager.Misc_LightIntensity) > 0.1f) { ConfigManager.Misc_LightIntensity = newInt; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_LIGHT_RNG")}: {LightRange:F0}", GUILayout.Width(120));
-                LightRange = GUILayout.HorizontalSlider(LightRange, 50f, 2000f);
+                GUILayout.Label($"{Localization.Get("MISC_LIGHT_RNG")}: {ConfigManager.Misc_LightRange:F0}", GUILayout.Width(120));
+                float newRng = GUILayout.HorizontalSlider(ConfigManager.Misc_LightRange, 50f, 2000f);
+                if (Math.Abs(newRng - ConfigManager.Misc_LightRange) > 1f) { ConfigManager.Misc_LightRange = newRng; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
             }
 
             GUILayout.Space(5);
 
-            ZoomHackEnabled = GUILayout.Toggle(ZoomHackEnabled, Localization.Get("MISC_ZOOM_TITLE"));
-            if (ZoomHackEnabled)
+            newVal = GUILayout.Toggle(ConfigManager.Misc_ZoomHack, Localization.Get("MISC_ZOOM_TITLE"));
+            if (newVal != ConfigManager.Misc_ZoomHack) { ConfigManager.Misc_ZoomHack = newVal; ConfigManager.Save(); }
+
+            if (ConfigManager.Misc_ZoomHack)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_ZOOM_LIMIT")}: {MaxZoomLimit:F0}", GUILayout.Width(120));
-                MaxZoomLimit = GUILayout.HorizontalSlider(MaxZoomLimit, 20f, 200f);
+                GUILayout.Label($"{Localization.Get("MISC_ZOOM_LIMIT")}: {ConfigManager.Misc_ZoomLimit:F0}", GUILayout.Width(120));
+                float newLim = GUILayout.HorizontalSlider(ConfigManager.Misc_ZoomLimit, 20f, 200f);
+                if (Math.Abs(newLim - ConfigManager.Misc_ZoomLimit) > 1f) { ConfigManager.Misc_ZoomLimit = newLim; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_CAM_ANGLE")}: {CameraAngle:F0}", GUILayout.Width(120));
-                CameraAngle = GUILayout.HorizontalSlider(CameraAngle, 10f, 89f);
+                GUILayout.Label($"{Localization.Get("MISC_CAM_ANGLE")}: {ConfigManager.Misc_CamAngle:F0}", GUILayout.Width(120));
+                float newAng = GUILayout.HorizontalSlider(ConfigManager.Misc_CamAngle, 10f, 89f);
+                if (Math.Abs(newAng - ConfigManager.Misc_CamAngle) > 1f) { ConfigManager.Misc_CamAngle = newAng; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_ZOOM_SENS")}: {ZoomSpeed:F0}", GUILayout.Width(120));
-                ZoomSpeed = GUILayout.HorizontalSlider(ZoomSpeed, 10f, 200f);
+                GUILayout.Label($"{Localization.Get("MISC_ZOOM_SENS")}: {ConfigManager.Misc_ZoomSpeed:F0}", GUILayout.Width(120));
+                float newSpd = GUILayout.HorizontalSlider(ConfigManager.Misc_ZoomSpeed, 10f, 200f);
+                if (Math.Abs(newSpd - ConfigManager.Misc_ZoomSpeed) > 1f) { ConfigManager.Misc_ZoomSpeed = newSpd; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
             }
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"{Localization.Get("MISC_FOV")}: {CameraFov:F0}", GUILayout.Width(120));
-            CameraFov = GUILayout.HorizontalSlider(CameraFov, 30f, 120f);
+            GUILayout.Label($"{Localization.Get("MISC_FOV")}: {ConfigManager.Misc_Fov:F0}", GUILayout.Width(120));
+            float newFov = GUILayout.HorizontalSlider(ConfigManager.Misc_Fov, 30f, 120f);
+            if (Math.Abs(newFov - ConfigManager.Misc_Fov) > 1f) { ConfigManager.Misc_Fov = newFov; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
 
             if (GUILayout.Button(Localization.Get("MISC_RESET")))
             {
-                CameraFov = _defaultFov;
-                RenderDistance = 500f; // Reset na 500
-                MaxZoomLimit = 100f;
-                CameraAngle = 45f;
-                ZoomSpeed = 60f;
-                LightIntensity = 2.0f;
-                LightRange = 1000f;
+                ConfigManager.Misc_Fov = _defaultFov;
+                ConfigManager.Misc_RenderDistance = _originalRenderDist;
+                ConfigManager.Misc_ZoomLimit = 100f;
+                ConfigManager.Misc_CamAngle = 45f;
+                ConfigManager.Misc_ZoomSpeed = 60f;
+                ConfigManager.Misc_LightIntensity = 2.0f;
+                ConfigManager.Misc_LightRange = 1000f;
+                ConfigManager.Save();
             }
 
             GUILayout.EndVertical();

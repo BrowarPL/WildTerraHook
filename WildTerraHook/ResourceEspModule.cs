@@ -9,12 +9,11 @@ namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA LOKALNE ---
-        // Te zmienne są tylko dla UI lub debugowania chwilowego, nie muszą być w Configu
+        // --- USTAWIENIA ---
         public bool DebugSkillSniffer = false;
-        private bool _showColorMenu = false; // NAPRAWIONO BŁĄD CS0103
+        private bool _showColorMenu = false;
 
-        // Toggle Lists (Szczegółowe filtry surowców)
+        // Toggle Lists
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -22,23 +21,24 @@ namespace WildTerraHook
 
         private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
 
-        // Cache Obiektów
+        // Cache
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
 
-        // X-RAY & MATERIAŁY
+        // X-RAY & MAT
         private Material _xrayMaterial;
         private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
 
-        // CAST BAR FIELDS (Reflection)
+        // CAST BAR REFLECTION
         private FieldInfo _fCurrentSkill;
+        private FieldInfo _fSkillsList; // SyncListSkill
         private bool _reflectionInit = false;
 
         // DEBUGGER FIELDS
         private List<string> _foundCollections = new List<string>();
 
-        // GUI Styles
+        // GUI
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
@@ -111,7 +111,7 @@ namespace WildTerraHook
             if (shader != null)
             {
                 _xrayMaterial = new Material(shader);
-                _xrayMaterial.SetInt("_ZTest", 8); // Always
+                _xrayMaterial.SetInt("_ZTest", 8);
                 _xrayMaterial.SetInt("_ZWrite", 0);
                 _xrayMaterial.SetInt("_Cull", 0);
                 _xrayMaterial.renderQueue = 5000;
@@ -126,10 +126,9 @@ namespace WildTerraHook
                 Type t = mobObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // Pole wykrywające castowanie (0 = cast, -1 = idle)
                 _fCurrentSkill = t.GetField("currentSkill", flags) ?? t.GetField("CurrentSkill", flags);
+                _fSkillsList = t.GetField("skills", flags); // SyncListSkill
 
-                // SKILL SNIFFER DEBUG
                 if (DebugSkillSniffer)
                 {
                     _foundCollections.Clear();
@@ -142,7 +141,6 @@ namespace WildTerraHook
                         }
                     }
                 }
-
                 _reflectionInit = true;
             }
             catch { }
@@ -174,7 +172,6 @@ namespace WildTerraHook
 
             try
             {
-                // RESOURCES
                 if (ConfigManager.Esp_ShowResources)
                 {
                     List<string> activeMining = GetActiveKeys(_miningToggles);
@@ -187,7 +184,6 @@ namespace WildTerraHook
                     foreach (var obj in objects)
                     {
                         if (obj == null) continue;
-                        // Używamy ConfigManager.Esp_Distance zamiast usuniętego _maxDistance
                         if ((obj.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
 
                         string name = obj.name;
@@ -207,7 +203,6 @@ namespace WildTerraHook
                     }
                 }
 
-                // MOBS
                 if (ConfigManager.Esp_ShowMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -223,7 +218,6 @@ namespace WildTerraHook
             }
             catch { }
 
-            // X-RAY Management
             foreach (var item in newCache)
             {
                 if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
@@ -629,12 +623,8 @@ namespace WildTerraHook
             {
                 int currentSkill = Convert.ToInt32(_fCurrentSkill.GetValue(obj.MobScript));
 
-                // POPRAWIONE LOGIKA: -1 to ID skilla, a 0 to brak. 
-                // Skoro użytkownik mówi, że podczas castowania pojawia się -1, to znaczy że -1 = Casting.
-                // A może odwrotnie? Zazwyczaj 0 to brak.
-                // Przyjmuję wersję użytkownika: "Zmienia się z 0 na -1 podczas castowania".
-                // Czyli -1 = CASTING.
-                if (currentSkill == -1)
+                // LOGIKA: -1 = Brak, >=0 = Casting (Skill ID)
+                if (currentSkill >= 0)
                 {
                     float barW = 60f; float barH = 6f;
                     Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
@@ -663,8 +653,7 @@ namespace WildTerraHook
                 GUI.Label(new Rect(5, curY, 280, 20), s);
                 curY += 20;
             }
-
-            if (_foundCollections.Count == 0) GUI.Label(new Rect(5, 0, 200, 20), "Nie znaleziono list...");
+            if (_foundCollections.Count == 0) GUI.Label(new Rect(5, 0, 200, 20), "Brak wyników...");
             GUI.EndScrollView();
         }
 
