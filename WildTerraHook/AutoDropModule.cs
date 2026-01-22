@@ -10,7 +10,7 @@ namespace WildTerraHook
         private float _nextDropTime = 0f;
         private string _searchQuery = "";
         private Vector2 _scrollPos;
-        private Vector2 _activeListScrollPos; // Scroll dla listy aktywnych
+        private Vector2 _activeListScrollPos;
         private Vector2 _savedProfilesScroll;
         private string _newProfileName = "";
 
@@ -30,17 +30,16 @@ namespace WildTerraHook
             if (player == null) return;
             if (player.inventory == null) return;
 
-            // Szukamy metody CmdDropItem (lub podobnej)
+            // Inicjalizacja Refleksji (Szukamy metody CmdDropItem)
             if (!_initReflection)
             {
                 var methods = typeof(global::WTPlayer).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var m in methods)
                 {
-                    // Szukamy metody, która ma w nazwie "Drop" i "Cmd" (Network Command)
+                    // Szukamy metody zawierającej "Drop" i "Cmd" oraz przyjmującej 2 inty
                     if (m.Name.IndexOf("Drop", System.StringComparison.OrdinalIgnoreCase) >= 0 && m.Name.StartsWith("Cmd"))
                     {
                         var pars = m.GetParameters();
-                        // Sprawdzamy czy ma 2 parametry typu int (index, amount)
                         if (pars.Length == 2 && pars[0].ParameterType == typeof(int) && pars[1].ParameterType == typeof(int))
                         {
                             _dropMethod = m;
@@ -57,19 +56,18 @@ namespace WildTerraHook
             List<string> blackList = ConfigManager.GetCombinedActiveDropList();
             if (blackList.Count == 0) return;
 
-            // Iteracja po plecaku
+            // Iteracja po inwentarzu
             for (int i = 0; i < player.inventory.Count; i++)
             {
                 var slot = player.inventory[i];
                 if (slot.amount <= 0) continue;
 
-                // Pobranie nazwy przedmiotu
                 string itemName = "";
                 try { itemName = slot.item.name; } catch { continue; }
 
                 if (string.IsNullOrEmpty(itemName)) continue;
 
-                // Sprawdzenie czy jest na liście (Contains dla elastyczności)
+                // Sprawdzenie Blacklisty
                 bool shouldDrop = false;
                 foreach (string badItem in blackList)
                 {
@@ -84,14 +82,14 @@ namespace WildTerraHook
                 {
                     try
                     {
-                        // Wywołanie dropu przez Reflection
+                        // Wywołanie dropu: method(index, amount)
                         _dropMethod.Invoke(player, new object[] { i, slot.amount });
 
                         if (ConfigManager.Drop_Debug)
-                            Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (Slot: {i}, Ilość: {slot.amount})");
+                            Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (x{slot.amount}) ze slotu {i}");
 
                         _nextDropTime = Time.time + ConfigManager.Drop_Delay;
-                        return; // Wyrzucamy 1 przedmiot na klatkę/delay
+                        return; // Limit: 1 przedmiot na cykl opóźnienia
                     }
                     catch (System.Exception ex)
                     {
@@ -103,20 +101,19 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            // UKŁAD IDENTYCZNY JAK AUTO LOOT
             GUILayout.BeginVertical("box");
             GUILayout.Label("<b>AUTO DROP (Blacklist)</b>");
 
-            // 1. Włącznik i Debug
+            // 1. Włączniki
             GUILayout.BeginHorizontal();
             bool newVal = GUILayout.Toggle(ConfigManager.Drop_Enabled, " WŁĄCZ");
             if (newVal != ConfigManager.Drop_Enabled) { ConfigManager.Drop_Enabled = newVal; ConfigManager.Save(); }
 
-            bool debugVal = GUILayout.Toggle(ConfigManager.Drop_Debug, " Debug Mode");
+            bool debugVal = GUILayout.Toggle(ConfigManager.Drop_Debug, " Debug");
             if (debugVal != ConfigManager.Drop_Debug) { ConfigManager.Drop_Debug = debugVal; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
 
-            // 2. Slider
+            // 2. Slider Opóźnienia
             GUILayout.BeginHorizontal();
             GUILayout.Label($"Opóźnienie: {ConfigManager.Drop_Delay:F2}s");
             float newDelay = GUILayout.HorizontalSlider(ConfigManager.Drop_Delay, 0.1f, 2.0f);
@@ -124,21 +121,20 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
 
             GUILayout.Space(5);
-            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Linia pozioma
             GUILayout.Space(5);
 
-            // 3. Dodawanie (Search)
-            GUILayout.Label("<b>Dodaj Przedmiot do Blacklisty:</b>");
+            // 3. Wyszukiwanie / Dodawanie
+            GUILayout.Label("<b>Dodaj do Blacklisty:</b>");
             _searchQuery = GUILayout.TextField(_searchQuery);
 
-            // Pobieranie bazy przedmiotów (Cache)
+            // Cache listy przedmiotów
             if (Time.time - _lastCacheTime > 5.0f && global::ScriptableItem.dict != null)
             {
                 _allGameItems = global::ScriptableItem.dict.Values.Select(x => x.name).ToList();
                 _lastCacheTime = Time.time;
             }
 
-            // Lista podpowiedzi
             if (!string.IsNullOrEmpty(_searchQuery))
             {
                 GUILayout.BeginVertical("box");
@@ -158,10 +154,10 @@ namespace WildTerraHook
                     }
                 }
 
-                // Opcja ręczna, jeśli nie ma na liście
-                if (!any) GUILayout.Label("Brak wyników w bazie...");
+                if (!any) GUILayout.Label("Brak w bazie...");
 
-                if (GUILayout.Button($"[+] Dodaj ręcznie: \"{_searchQuery}\""))
+                // Zawsze opcja ręcznego dodania
+                if (GUILayout.Button($"[+] Wymuś dodanie: \"{_searchQuery}\""))
                 {
                     AddItemToActiveProfiles(_searchQuery);
                     _searchQuery = "";
@@ -173,20 +169,20 @@ namespace WildTerraHook
             }
 
             GUILayout.Space(5);
-            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
 
-            // 4. Lista Aktywna
-            GUILayout.Label("<b>Aktywna Lista (Do Wyrzucenia):</b>");
+            // 4. Lista Aktywna (Blacklist)
+            GUILayout.Label("<b>Aktywna Lista (Wyrzucane):</b>");
             var combinedList = ConfigManager.GetCombinedActiveDropList();
 
             if (combinedList.Count == 0)
             {
-                GUILayout.Label("<i>Lista jest pusta.</i>");
+                GUILayout.Label("<i>(Lista pusta - nic nie wyrzucam)</i>");
             }
             else
             {
-                GUILayout.BeginVertical("box");
+                GUILayout.BeginVertical(GUI.skin.box);
                 _activeListScrollPos = GUILayout.BeginScrollView(_activeListScrollPos, GUILayout.Height(150));
 
                 foreach (var item in combinedList)
@@ -205,7 +201,7 @@ namespace WildTerraHook
                 GUILayout.EndScrollView();
                 GUILayout.EndVertical();
 
-                if (GUILayout.Button("Wyczyść wszystko"))
+                if (GUILayout.Button("Wyczyść Całą Listę"))
                 {
                     ClearAllDropLists();
                     ConfigManager.Save();
@@ -213,10 +209,10 @@ namespace WildTerraHook
             }
 
             GUILayout.Space(5);
-            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
 
-            // 5. Profile Manager
+            // 5. Profile
             DrawProfileManager();
 
             GUILayout.EndVertical();
@@ -271,7 +267,6 @@ namespace WildTerraHook
                 }
 
                 GUILayout.FlexibleSpace();
-                // Opcja usunięcia profilu (nie usuwamy Default)
                 if (profileKey != "Default")
                 {
                     if (GUILayout.Button("X", GUILayout.Width(25)))

@@ -10,7 +10,7 @@ namespace WildTerraHook
         private MiscModule _miscModule;
         private ColorFishingModule _colorFishModule;
 
-        // [MEMORY BOT] - Zatrzymany
+        // [MEMORY BOT] - Ukryty
         private FishBotModule _memFishModule;
 
         private bool _showMenu = true;
@@ -67,10 +67,6 @@ namespace WildTerraHook
 
             if (_showMenu)
             {
-                // BLOKADA KLIKNIĘĆ W GRZE
-                // Jeśli myszka jest nad oknem, "zjadamy" event, żeby gra go nie widziała
-                BlockInputInMenu();
-
                 Matrix4x4 oldMatrix = GUI.matrix;
                 float scale = ConfigManager.Menu_Scale;
                 if (scale < 0.5f) scale = 0.5f;
@@ -83,42 +79,9 @@ namespace WildTerraHook
             }
         }
 
-        private void BlockInputInMenu()
-        {
-            // Przeliczamy pozycję myszki (w OnGUI Y jest odwrócone względem Input.mousePosition)
-            Vector2 mousePos = Event.current.mousePosition;
-
-            // Sprawdzamy, czy myszka jest wewnątrz prostokąta okna (uwzględniając skalę)
-            // Uproszczone sprawdzenie na oryginalnym Rect, bo GUI.Window sam zarządza focusowaniem,
-            // ale musimy wymusić 'Eat' dla eventów myszy.
-
-            // Uwaga: ConfigManager.Menu_Scale wpływa na renderowanie, ale Rect pozostaje w "logicznych" jednostkach.
-            // Dla pewności sprawdzamy Contains na _windowRect.
-
-            if (_windowRect.Contains(mousePos))
-            {
-                // Jeśli to kliknięcie lub scroll, zablokuj propagację do gry
-                if (Event.current.type == EventType.MouseDown ||
-                    Event.current.type == EventType.MouseUp ||
-                    Event.current.type == EventType.ScrollWheel)
-                {
-                    // To zapobiega 'przepuszczaniu' kliknięć, ale Unity GUI i tak je obsłuży wewnątrz Window
-                    // Ważne: wywołujemy to PRZED narysowaniem okna (co robimy w OnGUI),
-                    // ale GUI.Window jest specyficzne.
-                    // W praktyce w Unity IMGUI: GUI.Window zjada eventy automatycznie JEŚLI jest focusowane.
-                    // Wymuszenie focusa:
-                    GUI.FocusWindow(0);
-                }
-            }
-        }
-
         private void DrawWindow(int windowID)
         {
-            // Zjadanie eventu, aby nie przebijało na świat (dodatkowe zabezpieczenie)
-            if (Event.current.type == EventType.MouseDown)
-            {
-                Event.current.Use();
-            }
+            // Usunięto blokowanie inputu tutaj, bo psuło UI
 
             GUILayout.BeginVertical();
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
