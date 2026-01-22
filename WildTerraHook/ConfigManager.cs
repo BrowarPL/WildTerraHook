@@ -25,7 +25,6 @@ namespace WildTerraHook
             public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f); // Brown
             public static Color ResMining = Color.gray;
             public static Color ResGather = Color.white;
-            public static Color CastBar = new Color(1f, 0.8f, 0f); // Złoty
         }
 
         // --- LOOT ---
@@ -54,7 +53,6 @@ namespace WildTerraHook
         public static float Esp_Distance = 150f;
         public static bool Esp_ShowBoxes = true;
         public static bool Esp_ShowXRay = true;
-        public static bool Esp_ShowCastBars = true; // NOWOŚĆ
 
         public static bool Esp_ShowResources = false;
         public static bool Esp_ShowMobs = false;
@@ -150,7 +148,6 @@ namespace WildTerraHook
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
                     sw.WriteLine($"Esp_ShowXRay={Esp_ShowXRay}");
-                    sw.WriteLine($"Esp_ShowCastBars={Esp_ShowCastBars}"); // NOWOŚĆ
                     sw.WriteLine($"Esp_ShowResources={Esp_ShowResources}");
                     sw.WriteLine($"Esp_ShowMobs={Esp_ShowMobs}");
 
@@ -228,7 +225,6 @@ namespace WildTerraHook
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
                     else if (key == "Esp_ShowXRay") bool.TryParse(val, out Esp_ShowXRay);
-                    else if (key == "Esp_ShowCastBars") bool.TryParse(val, out Esp_ShowCastBars); // NOWOŚĆ
                     else if (key == "Esp_ShowResources") bool.TryParse(val, out Esp_ShowResources);
                     else if (key == "Esp_ShowMobs") bool.TryParse(val, out Esp_ShowMobs);
 

@@ -2,15 +2,12 @@
 using System.Collections.Generic;
 using System.Linq;
 using System;
-using System.Reflection;
-using System.Collections;
 
 namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA ---
-        public bool DebugSkillSniffer = false;
+        // --- USTAWIENIA LOKALNE ---
         private bool _showColorMenu = false;
 
         // Toggle Lists
@@ -30,23 +27,12 @@ namespace WildTerraHook
         private Material _xrayMaterial;
         private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
 
-        // CAST BAR REFLECTION
-        private FieldInfo _fCurrentSkill;
-        private FieldInfo _fSkillsList; // SyncListSkill
-        private bool _reflectionInit = false;
-
-        // DEBUGGER FIELDS
-        private List<string> _foundCollections = new List<string>();
-
         // GUI
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
         private Texture2D _boxTexture;
-        private Texture2D _castBarTexture;
-        private Texture2D _castBackgroundTexture;
         private Vector2 _scrollPos;
-        private Vector2 _debugScroll;
 
         private struct CachedObject
         {
@@ -60,7 +46,6 @@ namespace WildTerraHook
             public float Height;
             public bool ShouldGlow;
             public Renderer[] Renderers;
-            public object MobScript;
         }
 
         public ResourceEspModule()
@@ -118,34 +103,6 @@ namespace WildTerraHook
             }
         }
 
-        private void InitReflection(object mobObj)
-        {
-            if (_reflectionInit || mobObj == null) return;
-            try
-            {
-                Type t = mobObj.GetType();
-                BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-
-                _fCurrentSkill = t.GetField("currentSkill", flags) ?? t.GetField("CurrentSkill", flags);
-                _fSkillsList = t.GetField("skills", flags); // SyncListSkill
-
-                if (DebugSkillSniffer)
-                {
-                    _foundCollections.Clear();
-                    var fields = t.GetFields(flags);
-                    foreach (var f in fields)
-                    {
-                        if (typeof(IEnumerable).IsAssignableFrom(f.FieldType) && f.FieldType != typeof(string))
-                        {
-                            _foundCollections.Add($"{f.Name} ({f.FieldType.Name})");
-                        }
-                    }
-                }
-                _reflectionInit = true;
-            }
-            catch { }
-        }
-
         public void Update()
         {
             if (!ConfigManager.Esp_Enabled)
@@ -197,7 +154,7 @@ namespace WildTerraHook
 
                         if (!matched && ConfigManager.Esp_Cat_Others && !name.Contains("Player") && !name.Contains("Character"))
                         {
-                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false, null);
+                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false);
                             matched = true;
                         }
                     }
@@ -286,7 +243,7 @@ namespace WildTerraHook
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true, null);
+                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true);
                     return true;
                 }
             }
@@ -331,12 +288,11 @@ namespace WildTerraHook
 
             if (show)
             {
-                if (!_reflectionInit || DebugSkillSniffer) InitReflection(mob);
-                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true, mob);
+                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true);
             }
         }
 
-        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow, object script)
+        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow)
         {
             var rends = go.GetComponentsInChildren<Renderer>();
             cache.Add(new CachedObject
@@ -350,8 +306,7 @@ namespace WildTerraHook
                 IsMob = isMob,
                 Height = h,
                 ShouldGlow = glow,
-                Renderers = rends,
-                MobScript = script
+                Renderers = rends
             });
         }
 
@@ -396,8 +351,6 @@ namespace WildTerraHook
         {
             if (_bgTexture == null) { _bgTexture = new Texture2D(1, 1); _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.75f)); _bgTexture.Apply(); }
             if (_boxTexture == null) { _boxTexture = new Texture2D(1, 1); _boxTexture.SetPixel(0, 0, Color.white); _boxTexture.Apply(); }
-            if (_castBarTexture == null) { _castBarTexture = new Texture2D(1, 1); _castBarTexture.SetPixel(0, 0, ConfigManager.Colors.CastBar); _castBarTexture.Apply(); }
-            if (_castBackgroundTexture == null) { _castBackgroundTexture = new Texture2D(1, 1); _castBackgroundTexture.SetPixel(0, 0, Color.black); _castBackgroundTexture.Apply(); }
 
             if (_styleBackground == null) { _styleBackground = new GUIStyle(); _styleBackground.normal.background = _bgTexture; }
             if (_styleLabel == null)
@@ -435,13 +388,6 @@ namespace WildTerraHook
 
                 newVal = GUILayout.Toggle(ConfigManager.Esp_ShowXRay, "X-Ray Glow");
                 if (newVal != ConfigManager.Esp_ShowXRay) { ConfigManager.Esp_ShowXRay = newVal; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowCastBars, Localization.Get("ESP_CAST_BARS"));
-                if (newVal != ConfigManager.Esp_ShowCastBars) { ConfigManager.Esp_ShowCastBars = newVal; ConfigManager.Save(); }
-
-                DebugSkillSniffer = GUILayout.Toggle(DebugSkillSniffer, "Skill Sniffer");
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(10);
@@ -605,56 +551,8 @@ namespace WildTerraHook
                     string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
                     Vector2 textPos = new Vector2(screenHead.x, headY - 15);
                     DrawLabelWithBackground(textPos, text, obj.Color);
-
-                    if (obj.IsMob && ConfigManager.Esp_ShowCastBars && obj.MobScript != null)
-                    {
-                        DrawActiveCastBar(obj, textPos);
-                    }
                 }
             }
-
-            if (DebugSkillSniffer) DrawSnifferResults();
-        }
-
-        private void DrawActiveCastBar(CachedObject obj, Vector2 textPos)
-        {
-            if (_fCurrentSkill == null) return;
-            try
-            {
-                int currentSkill = Convert.ToInt32(_fCurrentSkill.GetValue(obj.MobScript));
-
-                // LOGIKA: -1 = Brak, >=0 = Casting (Skill ID)
-                if (currentSkill >= 0)
-                {
-                    float barW = 60f; float barH = 6f;
-                    Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
-
-                    GUI.DrawTexture(barRect, _castBackgroundTexture);
-                    GUI.DrawTexture(new Rect(barRect.x, barRect.y, barW, barH), _castBarTexture);
-
-                    GUIStyle s = new GUIStyle(GUI.skin.label);
-                    s.fontSize = 10; s.normal.textColor = Color.yellow; s.alignment = TextAnchor.MiddleCenter; s.fontStyle = FontStyle.Bold;
-                    GUI.Label(new Rect(barRect.x, barRect.y - 12, barW, 20), "CASTING!", s);
-                }
-            }
-            catch { }
-        }
-
-        private void DrawSnifferResults()
-        {
-            float x = Screen.width - 300;
-            float y = 100;
-            GUI.Box(new Rect(x, y, 290, 400), "SKILL SNIFFER");
-            _debugScroll = GUI.BeginScrollView(new Rect(x, y + 20, 290, 380), _debugScroll, new Rect(0, 0, 270, _foundCollections.Count * 20));
-
-            float curY = 0;
-            foreach (var s in _foundCollections)
-            {
-                GUI.Label(new Rect(5, curY, 280, 20), s);
-                curY += 20;
-            }
-            if (_foundCollections.Count == 0) GUI.Label(new Rect(5, 0, 200, 20), "Brak wyników...");
-            GUI.EndScrollView();
         }
 
         private void DrawLabelWithBackground(Vector2 centerBottomPos, string text, Color color)
