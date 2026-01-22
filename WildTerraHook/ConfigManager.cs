@@ -32,13 +32,14 @@ namespace WildTerraHook
         public static float Loot_Delay = 0.2f;
         public static bool Loot_Debug = false;
 
-        // --- FISH BOT: COLOR (Stary) ---
+        // --- COLOR FISH BOT (State Machine) ---
         public static bool ColorFish_Enabled = false;
-        public static bool ColorFish_AutoPress = false;
-        public static float ColorFish_ReactionTime = 0.3f;
+        public static bool ColorFish_AutoPress = false;     // W Twoim kodzie to było implicit, ale dodamy dla spójności
+        public static float ColorFish_ReactionTime = 0.3f; // Np. delay po kliknięciu
+        public static float ColorFish_Timeout = 25.0f;     // Timeout dla braku brania
         public static bool ColorFish_ShowESP = true;
 
-        // --- FISH BOT: MEMORY (Nowy - FishBotModule) ---
+        // --- MEMORY FISH BOT (Cave) ---
         public static bool MemFish_Enabled = false;
         public static bool MemFish_AutoPress = false;
         public static float MemFish_ReactionTime = 0.3f;
@@ -102,6 +103,17 @@ namespace WildTerraHook
             Load();
         }
 
+        public static List<string> GetCombinedActiveList()
+        {
+            HashSet<string> combined = new HashSet<string>();
+            foreach (var profName in ActiveProfiles)
+            {
+                if (LootProfiles.ContainsKey(profName))
+                    foreach (var item in LootProfiles[profName]) combined.Add(item);
+            }
+            return combined.ToList();
+        }
+
         public static string SerializeToggleList(Dictionary<string, bool> dict)
         {
             List<string> active = new List<string>();
@@ -140,9 +152,7 @@ namespace WildTerraHook
 
                     // Color Bot
                     sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
-                    sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
-                    sw.WriteLine($"ColorFish_ReactionTime={ColorFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
-                    sw.WriteLine($"ColorFish_ShowESP={ColorFish_ShowESP}");
+                    sw.WriteLine($"ColorFish_Timeout={ColorFish_Timeout.ToString(CultureInfo.InvariantCulture)}");
 
                     // Memory Bot
                     sw.WriteLine($"MemFish_Enabled={MemFish_Enabled}");
@@ -238,9 +248,7 @@ namespace WildTerraHook
                     }
                     // Color Bot
                     else if (key == "ColorFish_Enabled") bool.TryParse(val, out ColorFish_Enabled);
-                    else if (key == "ColorFish_AutoPress") bool.TryParse(val, out ColorFish_AutoPress);
-                    else if (key == "ColorFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ReactionTime);
-                    else if (key == "ColorFish_ShowESP") bool.TryParse(val, out ColorFish_ShowESP);
+                    else if (key == "ColorFish_Timeout") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_Timeout);
                     // Memory Bot
                     else if (key == "MemFish_Enabled") bool.TryParse(val, out MemFish_Enabled);
                     else if (key == "MemFish_AutoPress") bool.TryParse(val, out MemFish_AutoPress);
@@ -322,18 +330,6 @@ namespace WildTerraHook
             }
             catch { }
             return Color.white;
-        }
-
-        // Helper dla Listy aktywnych profili
-        public static List<string> GetCombinedActiveList()
-        {
-            HashSet<string> combined = new HashSet<string>();
-            foreach (var profName in ActiveProfiles)
-            {
-                if (LootProfiles.ContainsKey(profName))
-                    foreach (var item in LootProfiles[profName]) combined.Add(item);
-            }
-            return combined.ToList();
         }
     }
 }

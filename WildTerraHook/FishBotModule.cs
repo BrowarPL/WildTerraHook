@@ -36,23 +36,27 @@ namespace WildTerraHook
                 _fishingUiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
+                // Bezpieczne pobieranie pól z logowaniem błędu w statusie zamiast crasha
                 _fButtons = _fishingUiType.GetField("buttons", flags) ?? _fishingUiType.GetField("slots", flags);
+
+                // Szukamy zmiennej z indeksem. W WT2 może to być 'correctButtonId', 'correctIndex' itp.
                 _fCorrectIndex = _fishingUiType.GetField("correctButtonId", flags)
                               ?? _fishingUiType.GetField("correctIndex", flags)
                               ?? _fishingUiType.GetField("currentSuccessIndex", flags);
 
-                _reflectionInit = true;
+                if (_fButtons == null) _status = "Ref Error: Buttons not found";
+                else if (_fCorrectIndex == null) _status = "Ref Error: CorrectIndex not found";
+                else _reflectionInit = true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _status = "Ref Crash: " + ex.Message;
+            }
         }
 
         private void ProcessFishing(global::WTUIFishingActions ui)
         {
-            if (_fButtons == null || _fCorrectIndex == null)
-            {
-                _status = "Błąd Reflection";
-                return;
-            }
+            if (!_reflectionInit) return;
 
             try
             {
@@ -84,7 +88,7 @@ namespace WildTerraHook
                     }
                 }
             }
-            catch (Exception ex) { _status = "Err: " + ex.Message; }
+            catch (Exception ex) { _status = "Run Error: " + ex.Message; }
         }
 
         public void DrawESP()
@@ -128,7 +132,7 @@ namespace WildTerraHook
             if (_boxTexture == null)
             {
                 _boxTexture = new Texture2D(1, 1);
-                _boxTexture.SetPixel(0, 0, new Color(1, 0, 1, 0.4f)); // Fiolet
+                _boxTexture.SetPixel(0, 0, new Color(1, 0, 1, 0.4f));
                 _boxTexture.Apply();
             }
 
@@ -137,21 +141,34 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            bool newVal = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
-            if (newVal != ConfigManager.MemFish_ShowESP) { ConfigManager.MemFish_ShowESP = newVal; ConfigManager.Save(); }
+            GUILayout.Label("<b>Memory Bot (Jaskinie)</b>");
 
-            newVal = GUILayout.Toggle(ConfigManager.MemFish_AutoPress, "Auto Klikanie");
-            if (newVal != ConfigManager.MemFish_AutoPress) { ConfigManager.MemFish_AutoPress = newVal; ConfigManager.Save(); }
-
-            if (ConfigManager.MemFish_AutoPress)
+            bool newVal = GUILayout.Toggle(ConfigManager.MemFish_Enabled, "Włącz (Memory)");
+            if (newVal != ConfigManager.MemFish_Enabled)
             {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"Reakcja: {ConfigManager.MemFish_ReactionTime:F2}s");
-                float newF = GUILayout.HorizontalSlider(ConfigManager.MemFish_ReactionTime, 0.1f, 1.0f);
-                if (Math.Abs(newF - ConfigManager.MemFish_ReactionTime) > 0.01f) { ConfigManager.MemFish_ReactionTime = newF; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
+                ConfigManager.MemFish_Enabled = newVal;
+                if (newVal) ConfigManager.ColorFish_Enabled = false; // Wykluczenie
+                ConfigManager.Save();
             }
-            GUILayout.Label($"Status: {_status}");
+
+            if (ConfigManager.MemFish_Enabled)
+            {
+                bool esp = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
+                if (esp != ConfigManager.MemFish_ShowESP) { ConfigManager.MemFish_ShowESP = esp; ConfigManager.Save(); }
+
+                bool auto = GUILayout.Toggle(ConfigManager.MemFish_AutoPress, "Auto Klikanie");
+                if (auto != ConfigManager.MemFish_AutoPress) { ConfigManager.MemFish_AutoPress = auto; ConfigManager.Save(); }
+
+                if (ConfigManager.MemFish_AutoPress)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"Reakcja: {ConfigManager.MemFish_ReactionTime:F2}s");
+                    float newF = GUILayout.HorizontalSlider(ConfigManager.MemFish_ReactionTime, 0.1f, 1.0f);
+                    if (Math.Abs(newF - ConfigManager.MemFish_ReactionTime) > 0.01f) { ConfigManager.MemFish_ReactionTime = newF; ConfigManager.Save(); }
+                    GUILayout.EndHorizontal();
+                }
+                GUILayout.Label($"Status: {_status}");
+            }
         }
     }
 }

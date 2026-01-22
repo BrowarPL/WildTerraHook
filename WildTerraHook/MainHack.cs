@@ -4,19 +4,16 @@ namespace WildTerraHook
 {
     public class MainHack : MonoBehaviour
     {
-        // --- MODUŁY ---
         private ResourceEspModule _espModule;
         private AutoLootModule _lootModule;
         private MiscModule _miscModule;
-        private ColorFishingModule _colorFishModule; // Stary
-        private FishBotModule _memFishModule;        // Nowy
+        private ColorFishingModule _colorFishModule;
+        private FishBotModule _memFishModule;
 
-        // --- UI ---
         private bool _showMenu = true;
         private Rect _windowRect;
         private bool _isInitialized = false;
 
-        // --- ZAKŁADKI ---
         private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Misc" };
         private int _currentTab = 0;
 
@@ -95,7 +92,13 @@ namespace WildTerraHook
             switch (_currentTab)
             {
                 case 0: _espModule.DrawMenu(); break;
-                case 1: DrawFishingTab(); break;
+                case 1:
+                    GUILayout.BeginVertical("box");
+                    _colorFishModule.DrawMenu();
+                    GUILayout.Space(10);
+                    _memFishModule.DrawMenu();
+                    GUILayout.EndVertical();
+                    break;
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: DrawMiscTab(); break;
             }
@@ -106,46 +109,6 @@ namespace WildTerraHook
             DrawResizer();
             GUI.DragWindow(new Rect(0, 0, 10000, 20));
             if (GUI.changed || Input.GetMouseButtonUp(0)) SaveWindowConfig();
-        }
-
-        private void DrawFishingTab()
-        {
-            GUILayout.BeginVertical("box");
-            GUILayout.Label("<b>FISH BOTS (Wybierz jeden)</b>");
-
-            // --- LOGIKA WYKLUCZANIA ---
-            bool newColor = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, "Color Bot (Standard)");
-            if (newColor != ConfigManager.ColorFish_Enabled)
-            {
-                ConfigManager.ColorFish_Enabled = newColor;
-                if (newColor) ConfigManager.MemFish_Enabled = false; // Wyłącz drugi
-                ConfigManager.Save();
-            }
-
-            if (ConfigManager.ColorFish_Enabled)
-            {
-                GUILayout.BeginVertical("box");
-                _colorFishModule.DrawMenu();
-                GUILayout.EndVertical();
-            }
-
-            GUILayout.Space(10);
-
-            bool newMem = GUILayout.Toggle(ConfigManager.MemFish_Enabled, "Memory Bot (Jaskinie)");
-            if (newMem != ConfigManager.MemFish_Enabled)
-            {
-                ConfigManager.MemFish_Enabled = newMem;
-                if (newMem) ConfigManager.ColorFish_Enabled = false; // Wyłącz drugi
-                ConfigManager.Save();
-            }
-
-            if (ConfigManager.MemFish_Enabled)
-            {
-                GUILayout.BeginVertical("box");
-                _memFishModule.DrawMenu();
-                GUILayout.EndVertical();
-            }
-            GUILayout.EndVertical();
         }
 
         private void DrawMiscTab()
