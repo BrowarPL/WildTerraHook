@@ -10,13 +10,13 @@ namespace WildTerraHook
     {
         private float _nextDropTime = 0f;
         private string _searchQuery = "";
+
+        // Scroll positions
         private Vector2 _scrollPos;
         private Vector2 _activeListScrollPos;
         private Vector2 _savedProfilesScroll;
-        private string _newProfileName = "";
 
-        // Zmieniono lokalną zmienną na referencję do configu
-        // private string _manualMethodName = "";
+        private string _newProfileName = "";
 
         private List<string> _allGameItems = new List<string>();
         private float _lastCacheTime = 0f;
@@ -34,7 +34,7 @@ namespace WildTerraHook
             var player = global::Player.localPlayer as global::WTPlayer;
             if (player == null || player.inventory == null) return;
 
-            // Inicjalizacja
+            // Inicjalizacja Reflection raz na uruchomienie (lub po zmianie stanu)
             if (!_initReflection)
             {
                 InitDropMethod(player);
@@ -43,7 +43,7 @@ namespace WildTerraHook
 
             if (Time.time < _nextDropTime) return;
 
-            // Debug stanu
+            // Debug stanu metody (tylko w trybie debug)
             if (ConfigManager.Drop_Debug && Time.time > _debugTimer)
             {
                 string mName = _dropMethod != null ? $"{_dropMethod.Name} (1 Param: {_useSingleParam})" : "BRAK";
@@ -72,6 +72,7 @@ namespace WildTerraHook
 
                 if (string.IsNullOrEmpty(itemName)) continue;
 
+                // Sprawdzanie czy przedmiot jest na liście do wyrzucenia
                 bool shouldDrop = false;
                 foreach (string badItem in blackList)
                 {
@@ -86,14 +87,14 @@ namespace WildTerraHook
                 {
                     try
                     {
-                        // WYWOŁANIE METODY
+                        // Wywołanie metody dropowania
                         if (_useSingleParam)
                         {
                             _dropMethod.Invoke(player, new object[] { i });
                         }
                         else
                         {
-                            // Fallback dla starych metod (index, amount)
+                            // Fallback dla starszych wersji gry (index, amount)
                             _dropMethod.Invoke(player, new object[] { i, slot.amount });
                         }
 
@@ -101,7 +102,7 @@ namespace WildTerraHook
                             Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (Slot: {i})");
 
                         _nextDropTime = Time.time + ConfigManager.Drop_Delay;
-                        return;
+                        return; // Wyrzucamy jeden przedmiot na cykl (zgodnie z delay)
                     }
                     catch (Exception ex)
                     {
@@ -119,22 +120,7 @@ namespace WildTerraHook
                 Type type = playerInstance.GetType();
                 var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
 
-                // 1. Manual Override
-                if (!string.IsNullOrEmpty(ConfigManager.Drop_OverrideMethod))
-                {
-                    foreach (var m in methods)
-                    {
-                        if (m.Name.Equals(ConfigManager.Drop_OverrideMethod, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _dropMethod = m;
-                            _useSingleParam = m.GetParameters().Length == 1;
-                            Debug.Log($"[AutoDrop] Manual Override: {m.Name} (1 Param: {_useSingleParam})");
-                            return;
-                        }
-                    }
-                }
-
-                // 2. Szukanie "CmdDropInventoryItem"
+                // 1. Priorytet: Szukanie znanej metody "CmdDropInventoryItem"
                 foreach (var m in methods)
                 {
                     if (m.Name.Equals("CmdDropInventoryItem", StringComparison.OrdinalIgnoreCase))
@@ -144,13 +130,13 @@ namespace WildTerraHook
                         {
                             _dropMethod = m;
                             _useSingleParam = true;
-                            Debug.Log($"[AutoDrop] SUKCES! Znaleziono: {m.Name}");
+                            if (ConfigManager.Drop_Debug) Debug.Log($"[AutoDrop] Znaleziono metodę główną: {m.Name}");
                             return;
                         }
                     }
                 }
 
-                // 3. Fallback
+                // 2. Fallback: Szukanie dowolnej metody "Cmd...Drop..." jeśli główna nazwa uległa zmianie
                 if (_dropMethod == null)
                 {
                     foreach (var m in methods)
@@ -163,44 +149,23 @@ namespace WildTerraHook
                             {
                                 _dropMethod = m;
                                 _useSingleParam = true;
-                                Debug.Log($"[AutoDrop] Auto-wykryto (1 param): {m.Name}");
+                                if (ConfigManager.Drop_Debug) Debug.Log($"[AutoDrop] Wykryto metodę alternatywną (1 param): {m.Name}");
                                 return;
                             }
                             else if (pars.Length == 2 && pars[0].ParameterType == typeof(int) && pars[1].ParameterType == typeof(int))
                             {
                                 _dropMethod = m;
                                 _useSingleParam = false;
-                                Debug.Log($"[AutoDrop] Auto-wykryto (2 params): {m.Name}");
+                                if (ConfigManager.Drop_Debug) Debug.Log($"[AutoDrop] Wykryto metodę alternatywną (2 params): {m.Name}");
                                 return;
                             }
                         }
                     }
                 }
 
-                if (_dropMethod == null) Debug.LogError("[AutoDrop] Nie znaleziono metody dropowania!");
+                if (_dropMethod == null) Debug.LogError("[AutoDrop] Krytyczny błąd: Nie znaleziono metody dropowania!");
             }
             catch (Exception ex) { Debug.LogError($"[AutoDrop] Init Error: {ex.Message}"); }
-        }
-
-        private void RunDiagnostics()
-        {
-            Debug.Log("--- DIAGNOSTYKA AUTO DROP ---");
-            if (global::Player.localPlayer == null) { Debug.LogError("Brak gracza!"); return; }
-
-            Type t = typeof(global::WTPlayer);
-            var methods = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
-
-            foreach (var m in methods)
-            {
-                if (m.Name.IndexOf("Drop", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    m.Name.IndexOf("Remove", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    m.Name.IndexOf("Trash", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    string pars = string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name).ToArray());
-                    Debug.Log($"METODA: {m.Name} (Parametry: {pars})");
-                }
-            }
-            Debug.Log("--- KONIEC DIAGNOSTYKI ---");
         }
 
         public void DrawMenu()
@@ -216,21 +181,6 @@ namespace WildTerraHook
             if (debugVal != ConfigManager.Drop_Debug) { ConfigManager.Drop_Debug = debugVal; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
 
-            // Pole Override
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(Localization.Get("DROP_OVERRIDE") + ":", GUILayout.Width(100));
-            string newMethod = GUILayout.TextField(ConfigManager.Drop_OverrideMethod);
-            if (newMethod != ConfigManager.Drop_OverrideMethod) { ConfigManager.Drop_OverrideMethod = newMethod; ConfigManager.Save(); _initReflection = false; }
-            GUILayout.EndHorizontal();
-
-            if (ConfigManager.Drop_Debug)
-            {
-                if (GUILayout.Button(Localization.Get("DROP_DIAGNOSTICS")))
-                {
-                    RunDiagnostics();
-                }
-            }
-
             GUILayout.BeginHorizontal();
             GUILayout.Label($"{Localization.Get("DROP_DELAY")}: {ConfigManager.Drop_Delay:F2}s");
             float newDelay = GUILayout.HorizontalSlider(ConfigManager.Drop_Delay, 0.1f, 2.0f);
@@ -241,9 +191,11 @@ namespace WildTerraHook
             GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
 
+            // --- SEKCJA DODAWANIA PRZEDMIOTÓW ---
             GUILayout.Label($"<b>{Localization.Get("DROP_ADD_HEADER")}:</b>");
             _searchQuery = GUILayout.TextField(_searchQuery);
 
+            // Odświeżanie cache przedmiotów co 5 sekund
             if (Time.time - _lastCacheTime > 5.0f && global::ScriptableItem.dict != null)
             {
                 _allGameItems = global::ScriptableItem.dict.Values.Select(x => x.name).ToList();
@@ -282,6 +234,7 @@ namespace WildTerraHook
             GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
             GUILayout.Space(5);
 
+            // --- SEKCJA AKTYWNEJ LISTY ---
             GUILayout.Label($"<b>{Localization.Get("DROP_ACTIVE_LIST")}:</b>");
             var combinedList = ConfigManager.GetCombinedActiveDropList();
 
