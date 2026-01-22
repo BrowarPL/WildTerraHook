@@ -8,28 +8,11 @@ namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA ---
-        public bool EspEnabled = false;
-        public bool ShowBoxes = true;
-        public bool ShowXRay = true;
-
-        // Kategorie
-        private bool _showResources = false;
-        private bool _showMining = false;
-        private bool _showGathering = false;
-        private bool _showLumber = false;
-        private bool _showGodsend = false;
-        private bool _showOthers = false;
-
-        private bool _showMobs = false;
-        private bool _showAggressive = false;
-        private bool _showRetaliating = false;
-        private bool _showPassive = false;
-
+        // --- USTAWIENIA LOKALNE (Reszta w ConfigManager) ---
+        public bool DebugCastVars = false; // Przełącznik debugowania nazw zmiennych
         private bool _showColorMenu = false;
-        private float _maxDistance = 150f;
 
-        // Toggle Lists
+        // Toggle Lists (Szczegółowe)
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -50,13 +33,14 @@ namespace WildTerraHook
         private FieldInfo _fCastEndTime;
         private FieldInfo _fCastTotalTime;
         private bool _castReflectionInit = false;
+        private FieldInfo[] _debugAllFields; // Do debugowania
 
         // GUI
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
         private Texture2D _boxTexture;
-        private Texture2D _castBarTexture; // Tekstura paska castowania
+        private Texture2D _castBarTexture;
         private Texture2D _castBackgroundTexture;
         private Vector2 _scrollPos;
 
@@ -72,9 +56,7 @@ namespace WildTerraHook
             public float Height;
             public bool ShouldGlow;
             public Renderer[] Renderers;
-
-            // Cast Info
-            public object MobScript; // Referencja do skryptu moba
+            public object MobScript;
         }
 
         public ResourceEspModule()
@@ -138,9 +120,24 @@ namespace WildTerraHook
             try
             {
                 Type t = mobObj.GetType();
-                // Szukamy popularnych nazw pól dla castowania
-                _fCastEndTime = t.GetField("castEndTime") ?? t.GetField("castFinishTime") ?? t.GetField("castingEndTime");
-                _fCastTotalTime = t.GetField("castTime") ?? t.GetField("castDuration") ?? t.GetField("totalCastTime");
+                BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+                // Próba znalezienia pól czasu
+                _fCastEndTime = t.GetField("castEndTime", flags) ?? t.GetField("castingEndTime", flags)
+                             ?? t.GetField("skillFinishTime", flags) ?? t.GetField("actionEndTime", flags)
+                             ?? t.GetField("m_castEndTime", flags);
+
+                _fCastTotalTime = t.GetField("castTime", flags) ?? t.GetField("castDuration", flags)
+                               ?? t.GetField("totalCastTime", flags) ?? t.GetField("actionDuration", flags)
+                               ?? t.GetField("m_castTime", flags);
+
+                // Pobranie wszystkich pól liczbowych do debugowania
+                if (DebugCastVars)
+                {
+                    _debugAllFields = t.GetFields(flags)
+                        .Where(f => f.FieldType == typeof(float) || f.FieldType == typeof(double) || f.FieldType == typeof(int))
+                        .ToArray();
+                }
 
                 _castReflectionInit = true;
             }
@@ -162,8 +159,6 @@ namespace WildTerraHook
             }
         }
 
-        // --- SKANOWANIE ---
-
         private void ScanObjects()
         {
             Vector3 playerPos = Vector3.zero;
@@ -175,7 +170,7 @@ namespace WildTerraHook
 
             try
             {
-                // RESOURCES
+                // --- RESOURCES ---
                 if (ConfigManager.Esp_ShowResources)
                 {
                     List<string> activeMining = GetActiveKeys(_miningToggles);
@@ -207,7 +202,7 @@ namespace WildTerraHook
                     }
                 }
 
-                // MOBS
+                // --- MOBS ---
                 if (ConfigManager.Esp_ShowMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -223,7 +218,7 @@ namespace WildTerraHook
             }
             catch { }
 
-            // X-RAY
+            // X-RAY Logic
             foreach (var item in newCache)
             {
                 if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
@@ -335,10 +330,10 @@ namespace WildTerraHook
                 if (ConfigManager.Esp_Mob_Retal) { textColor = ConfigManager.Colors.MobFleeing; show = true; }
             }
 
-            // Inicjalizacja refleksji castowania raz na pierwszego moba
             if (show)
             {
-                if (!_castReflectionInit) InitCastReflection(mob);
+                // Jeśli debug włączony, odświeżamy refleksję żeby pobrać wszystkie pola
+                if (!_castReflectionInit || DebugCastVars) InitCastReflection(mob);
                 AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true, mob);
             }
         }
@@ -362,7 +357,6 @@ namespace WildTerraHook
             });
         }
 
-        // --- X-RAY IMPL ---
         private void ApplyXRay(Renderer[] renderers, Color color)
         {
             if (renderers == null || _xrayMaterial == null) return;
@@ -392,6 +386,7 @@ namespace WildTerraHook
             }
         }
 
+        // --- PRZYWRÓCONA METODA ---
         private bool IsIgnored(string name)
         {
             if (name.Length < 3) return true;
@@ -446,12 +441,15 @@ namespace WildTerraHook
                 if (newVal != ConfigManager.Esp_ShowXRay) { ConfigManager.Esp_ShowXRay = newVal; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
+                GUILayout.BeginHorizontal();
                 newVal = GUILayout.Toggle(ConfigManager.Esp_ShowCastBars, Localization.Get("ESP_CAST_BARS"));
                 if (newVal != ConfigManager.Esp_ShowCastBars) { ConfigManager.Esp_ShowCastBars = newVal; ConfigManager.Save(); }
 
+                DebugCastVars = GUILayout.Toggle(DebugCastVars, "Debug Cast Vars");
+                GUILayout.EndHorizontal();
+
                 GUILayout.Space(10);
 
-                // --- RESOURCES ---
                 newVal = GUILayout.Toggle(ConfigManager.Esp_ShowResources, $"<b>{Localization.Get("ESP_RES_TITLE")}</b>");
                 if (newVal != ConfigManager.Esp_ShowResources) { ConfigManager.Esp_ShowResources = newVal; ConfigManager.Save(); }
 
@@ -485,7 +483,6 @@ namespace WildTerraHook
 
                 GUILayout.Space(10);
 
-                // --- MOBS ---
                 newVal = GUILayout.Toggle(ConfigManager.Esp_ShowMobs, $"<b>{Localization.Get("ESP_MOB_TITLE")}</b>");
                 if (newVal != ConfigManager.Esp_ShowMobs) { ConfigManager.Esp_ShowMobs = newVal; ConfigManager.Save(); }
 
@@ -564,11 +561,16 @@ namespace WildTerraHook
             float screenW = Screen.width;
             float screenH = Screen.height;
 
+            CachedObject closestMob = new CachedObject();
+            float minMobDist = float.MaxValue;
+
             foreach (var obj in _cachedObjects)
             {
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
+
+                if (DebugCastVars && obj.IsMob && dist < minMobDist) { minMobDist = dist; closestMob = obj; }
 
                 Vector3 screenHead = cam.WorldToScreenPoint(currentPos + Vector3.up * obj.Height);
                 Vector3 screenFeet = cam.WorldToScreenPoint(currentPos);
@@ -613,29 +615,62 @@ namespace WildTerraHook
                     Vector2 textPos = new Vector2(screenHead.x, headY - 15);
                     DrawLabelWithBackground(textPos, text, obj.Color);
 
-                    // --- CAST BAR ---
-                    if (obj.IsMob && ConfigManager.Esp_ShowCastBars && obj.MobScript != null && _castReflectionInit)
+                    if (obj.IsMob && ConfigManager.Esp_ShowCastBars && obj.MobScript != null)
+                    {
+                        DrawCastBar(obj, textPos);
+                    }
+                }
+            }
+
+            if (DebugCastVars && closestMob.MobScript != null) DrawDebugInfo(closestMob);
+        }
+
+        private void DrawCastBar(CachedObject obj, Vector2 textPos)
+        {
+            if (_fCastEndTime == null) return;
+            try
+            {
+                float endTime = Convert.ToSingle(_fCastEndTime.GetValue(obj.MobScript));
+                if (endTime > Time.time)
+                {
+                    float totalTime = 1.0f;
+                    if (_fCastTotalTime != null) totalTime = Convert.ToSingle(_fCastTotalTime.GetValue(obj.MobScript));
+                    if (totalTime <= 0) totalTime = 1.0f;
+
+                    float remaining = endTime - Time.time;
+                    float progress = 1.0f - (remaining / totalTime);
+                    if (progress < 0) progress = 0; if (progress > 1) progress = 1;
+
+                    float barW = 60f; float barH = 6f;
+                    Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
+
+                    GUI.DrawTexture(barRect, _castBackgroundTexture);
+                    GUI.DrawTexture(new Rect(barRect.x, barRect.y, barW * progress, barH), _castBarTexture);
+                }
+            }
+            catch { }
+        }
+
+        private void DrawDebugInfo(CachedObject mob)
+        {
+            float y = 200;
+            float x = Screen.width - 350;
+
+            GUI.Box(new Rect(x, y, 300, 600), "DEBUG: " + mob.Label);
+            y += 30;
+
+            if (_debugAllFields != null)
+            {
+                foreach (var f in _debugAllFields)
+                {
+                    string n = f.Name.ToLower();
+                    if (n.Contains("time") || n.Contains("cast") || n.Contains("end") || n.Contains("dur"))
                     {
                         try
                         {
-                            // Pobieranie czasu castowania
-                            float endTime = _fCastEndTime != null ? Convert.ToSingle(_fCastEndTime.GetValue(obj.MobScript)) : 0f;
-                            float totalTime = _fCastTotalTime != null ? Convert.ToSingle(_fCastTotalTime.GetValue(obj.MobScript)) : 0f;
-
-                            if (endTime > Time.time && totalTime > 0)
-                            {
-                                float remaining = endTime - Time.time;
-                                float progress = 1.0f - (remaining / totalTime);
-                                if (progress < 0) progress = 0; if (progress > 1) progress = 1;
-
-                                float barW = 60f; float barH = 6f;
-                                Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
-
-                                // Tło paska
-                                GUI.DrawTexture(barRect, _castBackgroundTexture);
-                                // Pasek postępu
-                                GUI.DrawTexture(new Rect(barRect.x, barRect.y, barW * progress, barH), _castBarTexture);
-                            }
+                            object val = f.GetValue(mob.MobScript);
+                            GUI.Label(new Rect(x + 10, y, 280, 20), $"{f.Name}: {val}");
+                            y += 20;
                         }
                         catch { }
                     }
