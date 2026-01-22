@@ -22,8 +22,12 @@ namespace WildTerraHook
             Localization.Init();
             ConfigManager.Load();
 
+            // Wczytanie z Configu
             _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
-            if (_windowRect.height < 50) _windowRect.height = 0;
+
+            // Minimalne bezpieczne wymiary startowe
+            if (_windowRect.width < 300) _windowRect.width = 450;
+            if (_windowRect.height < 50) _windowRect.height = 0; // 0 = auto-height
 
             _currentTab = ConfigManager.Menu_Tab;
             _isInitialized = true;
@@ -68,7 +72,10 @@ namespace WildTerraHook
                 if (scale < 0.5f) scale = 0.5f;
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
-                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(300));
+
+                // Rysowanie okna
+                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(350));
+
                 GUI.matrix = oldMatrix;
             }
         }
@@ -79,24 +86,26 @@ namespace WildTerraHook
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
-            // --- WĄSKIE ZAKŁADKI (1/3 szerokości) ---
+            // --- SZEROKIE ZAKŁADKI (90% szerokości okna) ---
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            // 0.35 to 35% szerokości okna
-            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(25), GUILayout.Width(_windowRect.width * 0.35f));
+            // Obliczamy szerokość na podstawie aktualnej szerokości okna
+            float toolbarWidth = _windowRect.width * 0.92f;
+            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(28), GUILayout.Width(toolbarWidth));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            // ----------------------------------------
+            // -----------------------------------------------
 
             if (newTab != _currentTab)
             {
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
-                _windowRect.height = 0;
+                _windowRect.height = 0; // Reset wysokości przy zmianie zakładki
             }
 
             GUILayout.Space(10);
 
+            // Zawartość zakładek
             switch (_currentTab)
             {
                 case 0: _espModule.DrawMenu(); break;
@@ -116,6 +125,8 @@ namespace WildTerraHook
 
             DrawResizer();
             GUI.DragWindow(new Rect(0, 0, 10000, 20));
+
+            // Zapisz konfigurację okna przy puszczeniu myszki (żeby nie spamować dysku)
             if (GUI.changed || Input.GetMouseButtonUp(0)) SaveWindowConfig();
         }
 
@@ -143,7 +154,8 @@ namespace WildTerraHook
             {
                 _windowRect.width += e.delta.x;
                 _windowRect.height += e.delta.y;
-                if (_windowRect.width < 300) _windowRect.width = 300;
+                // Limity minimalne
+                if (_windowRect.width < 350) _windowRect.width = 350;
                 e.Use();
             }
         }

@@ -90,7 +90,7 @@ namespace WildTerraHook
                 // Ostatnia akcja na liście = aktualna
                 object currentBite = actionsList[actionsList.Count - 1];
 
-                // SKORO TO ENUM: Zamieniamy bezpośrednio na stringa, żeby poznać nazwę akcji
+                // Odczytujemy nazwę enuma (np. "Down", "Side", "Up")
                 string actionName = currentBite.ToString();
 
                 // Pobierz przyciski
@@ -100,8 +100,21 @@ namespace WildTerraHook
 
                 Button targetBtn = null;
 
-                // Proste dopasowanie po nazwie (DragOut, Pull, Strike)
-                if (actionName.IndexOf("Drag", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnDrag;
+                // LOGIKA MAPOWANIA (Down/Side/Up -> Przyciski)
+                if (actionName.IndexOf("Down", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    targetBtn = btnDrag; // Down -> DragOut
+                }
+                else if (actionName.IndexOf("Side", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    targetBtn = btnStrike; // Side -> Strike
+                }
+                else if (actionName.IndexOf("Up", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    targetBtn = btnPull; // Up -> Pull
+                }
+                // Fallback dla starych nazw
+                else if (actionName.IndexOf("Drag", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnDrag;
                 else if (actionName.IndexOf("Pull", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnPull;
                 else if (actionName.IndexOf("Strike", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = btnStrike;
 
@@ -144,7 +157,12 @@ namespace WildTerraHook
                 string actionName = currentBite.ToString();
 
                 Button targetBtn = null;
-                if (actionName.IndexOf("Drag", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnDragImg, ui);
+                if (actionName.IndexOf("Down", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnDragImg, ui);
+                else if (actionName.IndexOf("Side", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui);
+                else if (actionName.IndexOf("Up", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnPullImg, ui);
+
+                // Fallback
+                else if (actionName.IndexOf("Drag", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnDragImg, ui);
                 else if (actionName.IndexOf("Pull", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnPullImg, ui);
                 else if (actionName.IndexOf("Strike", StringComparison.OrdinalIgnoreCase) >= 0) targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui);
 
