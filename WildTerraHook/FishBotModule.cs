@@ -22,6 +22,9 @@ namespace WildTerraHook
         // Pola Danych (logika gry)
         private FieldInfo _fFishActions; // List<FishBite>
 
+        // Pola Klasy FishBite (Naprawa błędu CS1061)
+        private FieldInfo _fBiteUse;     // Pole określające typ akcji wewnątrz FishBite
+
         public void Update()
         {
             if (!ConfigManager.MemFish_Enabled) return;
@@ -29,7 +32,6 @@ namespace WildTerraHook
 
             var fishingUI = UnityEngine.Object.FindObjectOfType<global::WTUIFishingActions>();
 
-            // Jeśli UI nie istnieje lub jest wyłączone, resetujemy stan
             if (fishingUI == null || !fishingUI.gameObject.activeSelf)
             {
                 _status = "Czekam na UI...";
@@ -44,21 +46,42 @@ namespace WildTerraHook
         {
             try
             {
-                Type type = uiObj.GetType();
+                Type uiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // 1. Pobieramy przyciski po ich konkretnych nazwach w kodzie gry
-                _fBtnDrag = type.GetField("dragOutActionButton", flags);
-                _fBtnPull = type.GetField("pullActionButton", flags);
-                _fBtnStrike = type.GetField("strikeActionButton", flags);
+                // 1. Pobieramy przyciski z UI
+                _fBtnDrag = uiType.GetField("dragOutActionButton", flags);
+                _fBtnPull = uiType.GetField("pullActionButton", flags);
+                _fBtnStrike = uiType.GetField("strikeActionButton", flags);
 
-                // 2. Pobieramy listę akcji (to są dane z serwera, co trzeba kliknąć)
-                _fFishActions = type.GetField("fishActions", flags);
+                // 2. Pobieramy listę akcji
+                _fFishActions = uiType.GetField("fishActions", flags);
+
+                // 3. Analiza klasy FishBite (Naprawa błędu kompilacji)
+                // Pobieramy typ klasy FishBite
+                Type biteType = typeof(global::FishBite);
+
+                // Szukamy pola, które jest typu FishingUse (enum). Zazwyczaj nazywa się 'use' lub 'action'.
+                // Skanujemy wszystkie pola, aby znaleźć to właściwe.
+                foreach (var field in biteType.GetFields(flags))
+                {
+                    if (field.FieldType == typeof(global::FishingUse))
+                    {
+                        _fBiteUse = field;
+                        break;
+                    }
+                }
+
+                // Fallback po nazwie, jeśli automatyczne wykrywanie typu zawiedzie
+                if (_fBiteUse == null)
+                    _fBiteUse = biteType.GetField("use", flags) ?? biteType.GetField("action", flags);
 
                 if (_fBtnDrag == null || _fBtnPull == null || _fBtnStrike == null)
-                    _status = "Błąd: Nie znaleziono przycisków";
+                    _status = "Błąd: Brak przycisków";
                 else if (_fFishActions == null)
-                    _status = "Błąd: Nie znaleziono listy akcji";
+                    _status = "Błąd: Brak listy akcji";
+                else if (_fBiteUse == null)
+                    _status = "Błąd: Nie rozpoznano struktury FishBite";
                 else
                     _reflectionInit = true;
             }
@@ -74,8 +97,8 @@ namespace WildTerraHook
 
             try
             {
-                // Pobierz listę aktywnych 'ugryzień' (akcji do wykonania)
-                var actionsList = _fFishActions.GetValue(ui) as List<global::FishBite>;
+                // Pobierz listę aktywnych 'ugryzień'
+                var actionsList = _fFishActions.GetValue(ui) as System.Collections.IList;
 
                 if (actionsList == null || actionsList.Count == 0)
                 {
@@ -84,7 +107,10 @@ namespace WildTerraHook
                 }
 
                 // Ostatnia akcja na liście to ta aktualna
-                global::FishBite currentBite = actionsList[actionsList.Count - 1];
+                object currentBite = actionsList[actionsList.Count - 1];
+
+                // Pobierz typ wymaganej akcji (używając Reflection, aby uniknąć błędu kompilacji)
+                global::FishingUse requiredAction = (global::FishingUse)_fBiteUse.GetValue(currentBite);
 
                 // Pobierz przyciski z UI
                 Button btnDrag = _fBtnDrag.GetValue(ui) as Button;
@@ -93,8 +119,7 @@ namespace WildTerraHook
 
                 Button targetBtn = null;
 
-                // Wybierz przycisk na podstawie typu akcji z pamięci
-                switch (currentBite.action)
+                switch (requiredAction)
                 {
                     case global::FishingUse.DragOut:
                         targetBtn = btnDrag;
@@ -109,15 +134,13 @@ namespace WildTerraHook
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
                 {
-                    _status = $"Cel: {targetBtn.name} ({currentBite.action})";
+                    _status = $"Cel: {targetBtn.name} ({requiredAction})";
 
-                    // AUTO PRESS
                     if (ConfigManager.MemFish_AutoPress && Time.time > _actionTimer)
                     {
                         if (targetBtn.interactable)
                         {
                             targetBtn.onClick.Invoke();
-                            // Losowy czas reakcji dla bezpieczeństwa
                             float delay = ConfigManager.MemFish_ReactionTime + UnityEngine.Random.Range(0.05f, 0.15f);
                             _actionTimer = Time.time + delay;
                         }
@@ -141,14 +164,14 @@ namespace WildTerraHook
 
             try
             {
-                // Powtórzenie logiki wyboru przycisku dla ESP
-                var actionsList = _fFishActions.GetValue(ui) as List<global::FishBite>;
+                var actionsList = _fFishActions.GetValue(ui) as System.Collections.IList;
                 if (actionsList == null || actionsList.Count == 0) return;
 
-                global::FishBite currentBite = actionsList[actionsList.Count - 1];
+                object currentBite = actionsList[actionsList.Count - 1];
+                global::FishingUse requiredAction = (global::FishingUse)_fBiteUse.GetValue(currentBite);
 
                 Button targetBtn = null;
-                switch (currentBite.action)
+                switch (requiredAction)
                 {
                     case global::FishingUse.DragOut: targetBtn = _fBtnDrag.GetValue(ui) as Button; break;
                     case global::FishingUse.Pull: targetBtn = _fBtnPull.GetValue(ui) as Button; break;
@@ -166,14 +189,9 @@ namespace WildTerraHook
         private void DrawBoxOnButton(Button btn)
         {
             if (btn == null) return;
-            // Pobieramy RectTransform, żeby znać pozycję na ekranie
-            RectTransform rt = btn.GetComponent<RectTransform>();
-            if (rt == null) return;
-
             Vector3[] corners = new Vector3[4];
-            rt.GetWorldCorners(corners);
+            btn.GetComponent<RectTransform>().GetWorldCorners(corners);
 
-            // Konwersja WorldCorners na współrzędne GUI (Y odwrócone)
             float x = corners[0].x;
             float y = Screen.height - corners[1].y;
             float w = corners[2].x - corners[0].x;
@@ -182,13 +200,12 @@ namespace WildTerraHook
             if (_boxTexture == null)
             {
                 _boxTexture = new Texture2D(1, 1);
-                _boxTexture.SetPixel(0, 0, new Color(1f, 0f, 1f, 0.5f)); // Fioletowy (Magenta) dla Memory Bota
+                _boxTexture.SetPixel(0, 0, new Color(1f, 0f, 1f, 0.5f)); // Fioletowy (Magenta)
                 _boxTexture.Apply();
             }
 
             GUI.DrawTexture(new Rect(x, y, w, h), _boxTexture);
 
-            // Opcjonalny napis nad ramką
             GUIStyle style = new GUIStyle(GUI.skin.label);
             style.normal.textColor = Color.magenta;
             style.fontStyle = FontStyle.Bold;
@@ -204,7 +221,6 @@ namespace WildTerraHook
             if (newVal != ConfigManager.MemFish_Enabled)
             {
                 ConfigManager.MemFish_Enabled = newVal;
-                // Wyłączamy drugi bot, żeby się nie gryzły
                 if (newVal) ConfigManager.ColorFish_Enabled = false;
                 ConfigManager.Save();
             }
