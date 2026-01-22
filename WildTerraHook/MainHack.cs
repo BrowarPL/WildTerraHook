@@ -6,17 +6,19 @@ namespace WildTerraHook
     {
         private ResourceEspModule _espModule;
         private AutoLootModule _lootModule;
+        private AutoDropModule _dropModule; // NOWY MODUŁ
         private MiscModule _miscModule;
         private ColorFishingModule _colorFishModule;
 
-        // [MEMORY BOT] - Zatrzymany do czasu znalezienia zmiennych
+        // [MEMORY BOT] - Zatrzymany
         private FishBotModule _memFishModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
         private bool _isInitialized = false;
 
-        private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Misc" };
+        // Dodano "Auto Drop" do nazw zakładek
+        private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Auto Drop", "Misc" };
         private int _currentTab = 0;
 
         public void Start()
@@ -33,10 +35,9 @@ namespace WildTerraHook
 
             _espModule = new ResourceEspModule();
             _lootModule = new AutoLootModule();
+            _dropModule = new AutoDropModule(); // Inicjalizacja
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
-
-            // [MEMORY BOT] Inicjalizacja (można zostawić, nie obciąża)
             _memFishModule = new FishBotModule();
         }
 
@@ -53,11 +54,9 @@ namespace WildTerraHook
 
             _espModule.Update();
             _lootModule.Update();
+            _dropModule.Update(); // Update Drop
             _miscModule.Update();
             _colorFishModule.Update();
-
-            // [MEMORY BOT] Wyłączony Update
-            // _memFishModule.Update();
         }
 
         public void OnGUI()
@@ -67,9 +66,6 @@ namespace WildTerraHook
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
 
-            // [MEMORY BOT] Wyłączony ESP
-            // _memFishModule.DrawESP();
-
             if (_showMenu)
             {
                 Matrix4x4 oldMatrix = GUI.matrix;
@@ -78,7 +74,7 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(350));
+                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(450));
 
                 GUI.matrix = oldMatrix;
             }
@@ -90,10 +86,10 @@ namespace WildTerraHook
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
-            // Tabs
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.9f));
+            // Zwiększyłem limit szerokości, bo doszła nowa zakładka
+            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.95f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -111,7 +107,8 @@ namespace WildTerraHook
                 case 0: _espModule.DrawMenu(); break;
                 case 1: DrawFishingTab(); break;
                 case 2: _lootModule.DrawMenu(); break;
-                case 3: DrawMiscTab(); break;
+                case 3: _dropModule.DrawMenu(); break; // Rysowanie menu Drop
+                case 4: DrawMiscTab(); break;
             }
 
             GUILayout.Space(10);
@@ -125,14 +122,10 @@ namespace WildTerraHook
         private void DrawFishingTab()
         {
             GUILayout.BeginVertical("box");
-
-            // --- COLOR BOT CHECKBOX ---
-            // Tylko ten bot jest teraz widoczny dla użytkownika
             bool colorEn = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, " <b>Color Bot</b> (Standard)");
             if (colorEn != ConfigManager.ColorFish_Enabled)
             {
                 ConfigManager.ColorFish_Enabled = colorEn;
-                // if (colorEn) ConfigManager.MemFish_Enabled = false; // Memory wyłączony na stałe w kodzie
                 ConfigManager.Save();
             }
 
@@ -142,26 +135,6 @@ namespace WildTerraHook
                 _colorFishModule.DrawMenu();
                 GUILayout.EndVertical();
             }
-
-            // [MEMORY BOT] Sekcja ukryta
-            /*
-            GUILayout.Space(5);
-            bool memEn = GUILayout.Toggle(ConfigManager.MemFish_Enabled, " <b>Memory Bot</b> (Cave / Hidden)");
-            if (memEn != ConfigManager.MemFish_Enabled)
-            {
-                ConfigManager.MemFish_Enabled = memEn;
-                if (memEn) ConfigManager.ColorFish_Enabled = false;
-                ConfigManager.Save();
-            }
-
-            if (ConfigManager.MemFish_Enabled)
-            {
-                GUILayout.BeginVertical(GUI.skin.box);
-                _memFishModule.DrawMenu();
-                GUILayout.EndVertical();
-            }
-            */
-
             GUILayout.EndVertical();
         }
 
