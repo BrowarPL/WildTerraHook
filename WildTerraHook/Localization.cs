@@ -72,6 +72,8 @@ namespace WildTerraHook
                 if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
                 var parts = line.Split(new[] { '=' }, 2);
                 string key = parts[0].Trim();
+                // Dodajemy tylko brakujące klucze, ale MENU_TITLE zostanie nadpisane tylko jeśli plik nie istnieje lub usuniemy go ręcznie.
+                // W przypadku developmentu możesz usunąć pliki txt z AppData/WildTerraHook.
                 if (!_currentDict.ContainsKey(key) && parts.Length == 2)
                 {
                     _currentDict[key] = parts[1].Trim();
@@ -92,7 +94,7 @@ namespace WildTerraHook
         private static string GetDefaultEn()
         {
             return @"
-MENU_TITLE=Wild Terra 2 Hack
+MENU_TITLE=Wild Terra 2 Hack by BrowaR
 MENU_TOGGLE_INFO=Press INSERT to Toggle Menu | DELETE to Hide All
 
 MENU_TAB_ESP=ESP
@@ -124,6 +126,7 @@ ESP_MAIN_BTN=[ ENABLE / DISABLE ESP ]
 ESP_RES_TITLE=RESOURCES
 ESP_MOB_TITLE=MOBS
 ESP_DIST=Distance
+ESP_FPS=Display FPS
 ESP_EDIT_COLORS=Edit ESP Colors
 ESP_HIDE_COLORS=Hide Colors
 ESP_SAVE_COLORS=Save Colors
@@ -228,7 +231,7 @@ CONSOLE_ERROR=Error
         private static string GetDefaultPl()
         {
             return @"
-MENU_TITLE=Wild Terra 2 Hack (PL)
+MENU_TITLE=Wild Terra 2 Hack (PL) by BrowaR
 MENU_TOGGLE_INFO=Wciśnij INSERT aby ukryć Menu | DELETE aby ukryć Wszystko
 
 MENU_TAB_ESP=ESP
@@ -260,6 +263,7 @@ ESP_MAIN_BTN=[ WŁĄCZ / WYŁĄCZ ESP ]
 ESP_RES_TITLE=SUROWCE (RESOURCES)
 ESP_MOB_TITLE=MOBY (MOBS)
 ESP_DIST=Dystans Rysowania
+ESP_FPS=Odświeżanie (FPS)
 ESP_EDIT_COLORS=Edytuj Kolory ESP
 ESP_HIDE_COLORS=Ukryj Edytor Kolorów
 ESP_SAVE_COLORS=Zapisz Konfigurację
