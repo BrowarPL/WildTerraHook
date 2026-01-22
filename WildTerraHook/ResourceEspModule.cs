@@ -3,37 +3,18 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 using System.Reflection;
+using System.Collections;
 
 namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // --- USTAWIENIA ---
-        public bool EspEnabled = false;
-        public bool ShowBoxes = true;
-        public bool ShowXRay = true;
-        public bool ShowCastBars = true;
+        // --- USTAWIENIA LOKALNE ---
+        // Te zmienne są tylko dla UI lub debugowania chwilowego, nie muszą być w Configu
+        public bool DebugSkillSniffer = false;
+        private bool _showColorMenu = false; // NAPRAWIONO BŁĄD CS0103
 
-        // AUTO-DETECT SNIFFER
-        public bool AutoDetectCast = false; // Nowy tryb automatycznego szukania
-
-        // Kategorie
-        private bool _showResources = false;
-        private bool _showMining = false;
-        private bool _showGathering = false;
-        private bool _showLumber = false;
-        private bool _showGodsend = false;
-        private bool _showOthers = false;
-
-        private bool _showMobs = false;
-        private bool _showAggressive = false;
-        private bool _showRetaliating = false;
-        private bool _showPassive = false;
-
-        private bool _showColorMenu = false;
-        private float _maxDistance = 150f;
-
-        // Toggle Lists
+        // Toggle Lists (Szczegółowe filtry surowców)
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -41,21 +22,23 @@ namespace WildTerraHook
 
         private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
 
-        // Cache
+        // Cache Obiektów
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
 
-        // X-RAY & REFLECTION
+        // X-RAY & MATERIAŁY
         private Material _xrayMaterial;
         private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
 
-        // --- SNIFFER DATA ---
-        private GameObject _snifferTarget;
-        private List<SniffedField> _sniffedFields = new List<SniffedField>();
-        private float _snifferTimer = 0f;
+        // CAST BAR FIELDS (Reflection)
+        private FieldInfo _fCurrentSkill;
+        private bool _reflectionInit = false;
 
-        // GUI
+        // DEBUGGER FIELDS
+        private List<string> _foundCollections = new List<string>();
+
+        // GUI Styles
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
@@ -64,16 +47,6 @@ namespace WildTerraHook
         private Texture2D _castBackgroundTexture;
         private Vector2 _scrollPos;
         private Vector2 _debugScroll;
-
-        private class SniffedField
-        {
-            public string ComponentName;
-            public string FieldName;
-            public FieldInfo Field;
-            public object TargetObj;
-            public float LastValue;
-            public bool IsActive; // Czy zmienia się?
-        }
 
         private struct CachedObject
         {
@@ -87,6 +60,7 @@ namespace WildTerraHook
             public float Height;
             public bool ShouldGlow;
             public Renderer[] Renderers;
+            public object MobScript;
         }
 
         public ResourceEspModule()
@@ -117,7 +91,6 @@ namespace WildTerraHook
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Gather, _gatheringToggles);
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Lumber, _lumberToggles);
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Godsend, _godsendToggles);
-            ShowCastBars = ConfigManager.Esp_ShowCastBars;
         }
 
         private void SyncToConfig()
@@ -126,7 +99,6 @@ namespace WildTerraHook
             ConfigManager.Esp_List_Gather = ConfigManager.SerializeToggleList(_gatheringToggles);
             ConfigManager.Esp_List_Lumber = ConfigManager.SerializeToggleList(_lumberToggles);
             ConfigManager.Esp_List_Godsend = ConfigManager.SerializeToggleList(_godsendToggles);
-            ConfigManager.Esp_ShowCastBars = ShowCastBars;
             ConfigManager.Save();
         }
 
@@ -139,75 +111,41 @@ namespace WildTerraHook
             if (shader != null)
             {
                 _xrayMaterial = new Material(shader);
-                _xrayMaterial.SetInt("_ZTest", 8);
+                _xrayMaterial.SetInt("_ZTest", 8); // Always
                 _xrayMaterial.SetInt("_ZWrite", 0);
                 _xrayMaterial.SetInt("_Cull", 0);
                 _xrayMaterial.renderQueue = 5000;
             }
         }
 
-        // --- SNIFFER LOGIC ---
-        private void RunSniffer(GameObject target)
+        private void InitReflection(object mobObj)
         {
-            if (target == null) return;
-
-            // 1. Inicjalizacja (raz na moba)
-            if (_snifferTarget != target)
+            if (_reflectionInit || mobObj == null) return;
+            try
             {
-                _snifferTarget = target;
-                _sniffedFields.Clear();
+                Type t = mobObj.GetType();
+                BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // Pobierz wszystkie skrypty
-                MonoBehaviour[] scripts = target.GetComponents<MonoBehaviour>();
-                foreach (var s in scripts)
+                // Pole wykrywające castowanie (0 = cast, -1 = idle)
+                _fCurrentSkill = t.GetField("currentSkill", flags) ?? t.GetField("CurrentSkill", flags);
+
+                // SKILL SNIFFER DEBUG
+                if (DebugSkillSniffer)
                 {
-                    if (s == null) continue;
-                    Type t = s.GetType();
-                    if (t.Namespace != null && (t.Namespace.StartsWith("UnityEngine") || t.Namespace.StartsWith("System"))) continue;
-
-                    var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    _foundCollections.Clear();
+                    var fields = t.GetFields(flags);
                     foreach (var f in fields)
                     {
-                        if (f.FieldType == typeof(float) || f.FieldType == typeof(int) || f.FieldType == typeof(double))
+                        if (typeof(IEnumerable).IsAssignableFrom(f.FieldType) && f.FieldType != typeof(string))
                         {
-                            try
-                            {
-                                float val = Convert.ToSingle(f.GetValue(s));
-                                _sniffedFields.Add(new SniffedField
-                                {
-                                    ComponentName = t.Name,
-                                    FieldName = f.Name,
-                                    Field = f,
-                                    TargetObj = s,
-                                    LastValue = val,
-                                    IsActive = false
-                                });
-                            }
-                            catch { }
+                            _foundCollections.Add($"{f.Name} ({f.FieldType.Name})");
                         }
                     }
                 }
-            }
 
-            // 2. Aktualizacja co klatkę
-            foreach (var item in _sniffedFields)
-            {
-                try
-                {
-                    float currentVal = Convert.ToSingle(item.Field.GetValue(item.TargetObj));
-                    if (Math.Abs(currentVal - item.LastValue) > 0.0001f) // Zmienia się!
-                    {
-                        item.IsActive = true;
-                        item.LastValue = currentVal;
-                    }
-                    else
-                    {
-                        // Opcjonalnie: Wyłączaj jeśli przestało się zmieniać na długo, ale na razie trzymajmy
-                        // item.IsActive = false; 
-                    }
-                }
-                catch { }
+                _reflectionInit = true;
             }
+            catch { }
         }
 
         public void Update()
@@ -236,6 +174,7 @@ namespace WildTerraHook
 
             try
             {
+                // RESOURCES
                 if (ConfigManager.Esp_ShowResources)
                 {
                     List<string> activeMining = GetActiveKeys(_miningToggles);
@@ -248,6 +187,7 @@ namespace WildTerraHook
                     foreach (var obj in objects)
                     {
                         if (obj == null) continue;
+                        // Używamy ConfigManager.Esp_Distance zamiast usuniętego _maxDistance
                         if ((obj.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
 
                         string name = obj.name;
@@ -261,12 +201,13 @@ namespace WildTerraHook
 
                         if (!matched && ConfigManager.Esp_Cat_Others && !name.Contains("Player") && !name.Contains("Character"))
                         {
-                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false);
+                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false, null);
                             matched = true;
                         }
                     }
                 }
 
+                // MOBS
                 if (ConfigManager.Esp_ShowMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -282,6 +223,7 @@ namespace WildTerraHook
             }
             catch { }
 
+            // X-RAY Management
             foreach (var item in newCache)
             {
                 if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
@@ -350,7 +292,7 @@ namespace WildTerraHook
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true);
+                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true, null);
                     return true;
                 }
             }
@@ -395,11 +337,12 @@ namespace WildTerraHook
 
             if (show)
             {
-                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true);
+                if (!_reflectionInit || DebugSkillSniffer) InitReflection(mob);
+                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true, mob);
             }
         }
 
-        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow)
+        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow, object script)
         {
             var rends = go.GetComponentsInChildren<Renderer>();
             cache.Add(new CachedObject
@@ -413,7 +356,8 @@ namespace WildTerraHook
                 IsMob = isMob,
                 Height = h,
                 ShouldGlow = glow,
-                Renderers = rends
+                Renderers = rends,
+                MobScript = script
             });
         }
 
@@ -500,10 +444,10 @@ namespace WildTerraHook
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                newVal = GUILayout.Toggle(ShowCastBars, Localization.Get("ESP_CAST_BARS"));
-                if (newVal != ShowCastBars) { ShowCastBars = newVal; SyncToConfig(); }
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowCastBars, Localization.Get("ESP_CAST_BARS"));
+                if (newVal != ConfigManager.Esp_ShowCastBars) { ConfigManager.Esp_ShowCastBars = newVal; ConfigManager.Save(); }
 
-                AutoDetectCast = GUILayout.Toggle(AutoDetectCast, "AUTO-DETECT CAST");
+                DebugSkillSniffer = GUILayout.Toggle(DebugSkillSniffer, "Skill Sniffer");
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(10);
@@ -619,16 +563,11 @@ namespace WildTerraHook
             float screenW = Screen.width;
             float screenH = Screen.height;
 
-            CachedObject closestMob = new CachedObject();
-            float minMobDist = float.MaxValue;
-
             foreach (var obj in _cachedObjects)
             {
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
-
-                if (AutoDetectCast && obj.IsMob && dist < minMobDist) { minMobDist = dist; closestMob = obj; }
 
                 Vector3 screenHead = cam.WorldToScreenPoint(currentPos + Vector3.up * obj.Height);
                 Vector3 screenFeet = cam.WorldToScreenPoint(currentPos);
@@ -672,41 +611,60 @@ namespace WildTerraHook
                     string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
                     Vector2 textPos = new Vector2(screenHead.x, headY - 15);
                     DrawLabelWithBackground(textPos, text, obj.Color);
+
+                    if (obj.IsMob && ConfigManager.Esp_ShowCastBars && obj.MobScript != null)
+                    {
+                        DrawActiveCastBar(obj, textPos);
+                    }
                 }
             }
 
-            if (AutoDetectCast && closestMob.GameObject != null)
+            if (DebugSkillSniffer) DrawSnifferResults();
+        }
+
+        private void DrawActiveCastBar(CachedObject obj, Vector2 textPos)
+        {
+            if (_fCurrentSkill == null) return;
+            try
             {
-                RunSniffer(closestMob.GameObject);
-                DrawSnifferResults();
+                int currentSkill = Convert.ToInt32(_fCurrentSkill.GetValue(obj.MobScript));
+
+                // POPRAWIONE LOGIKA: -1 to ID skilla, a 0 to brak. 
+                // Skoro użytkownik mówi, że podczas castowania pojawia się -1, to znaczy że -1 = Casting.
+                // A może odwrotnie? Zazwyczaj 0 to brak.
+                // Przyjmuję wersję użytkownika: "Zmienia się z 0 na -1 podczas castowania".
+                // Czyli -1 = CASTING.
+                if (currentSkill == -1)
+                {
+                    float barW = 60f; float barH = 6f;
+                    Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
+
+                    GUI.DrawTexture(barRect, _castBackgroundTexture);
+                    GUI.DrawTexture(new Rect(barRect.x, barRect.y, barW, barH), _castBarTexture);
+
+                    GUIStyle s = new GUIStyle(GUI.skin.label);
+                    s.fontSize = 10; s.normal.textColor = Color.yellow; s.alignment = TextAnchor.MiddleCenter; s.fontStyle = FontStyle.Bold;
+                    GUI.Label(new Rect(barRect.x, barRect.y - 12, barW, 20), "CASTING!", s);
+                }
             }
+            catch { }
         }
 
         private void DrawSnifferResults()
         {
-            float x = Screen.width - 450;
+            float x = Screen.width - 300;
             float y = 100;
-            float w = 440;
-            float h = 600;
+            GUI.Box(new Rect(x, y, 290, 400), "SKILL SNIFFER");
+            _debugScroll = GUI.BeginScrollView(new Rect(x, y + 20, 290, 380), _debugScroll, new Rect(0, 0, 270, _foundCollections.Count * 20));
 
-            GUI.Box(new Rect(x, y, w, h), $"SNIFFER: {_snifferTarget?.name}");
-            _debugScroll = GUI.BeginScrollView(new Rect(x, y + 20, w, h - 20), _debugScroll, new Rect(0, 0, w - 20, 2000));
-
-            float currY = 0;
-            bool anyFound = false;
-
-            foreach (var item in _sniffedFields)
+            float curY = 0;
+            foreach (var s in _foundCollections)
             {
-                if (item.IsActive)
-                {
-                    anyFound = true;
-                    GUI.Label(new Rect(5, currY, 400, 20), $"[{item.ComponentName}] {item.FieldName} = {item.LastValue:F3}");
-                    currY += 20;
-                }
+                GUI.Label(new Rect(5, curY, 280, 20), s);
+                curY += 20;
             }
 
-            if (!anyFound) GUI.Label(new Rect(5, 0, 400, 20), "Nasłuchuję zmian wartości...");
-
+            if (_foundCollections.Count == 0) GUI.Label(new Rect(5, 0, 200, 20), "Nie znaleziono list...");
             GUI.EndScrollView();
         }
 
