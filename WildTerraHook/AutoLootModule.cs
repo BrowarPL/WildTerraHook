@@ -37,7 +37,7 @@ namespace WildTerraHook
 
             if (!IsPanelActive(containerUI))
             {
-                if (_status.Contains("Loot") || _status.Contains("Widzę")) _status = "Czekam na okno...";
+                if (_status.Contains("Loot") || _status.Contains("Widzę")) _status = Localization.Get("LOOT_WAITING");
                 if (_debugDetectedItems.Count > 0) _debugDetectedItems.Clear();
                 return;
             }
@@ -58,7 +58,7 @@ namespace WildTerraHook
                 if (panel == null || !panel.gameObject.activeSelf) return;
 
                 Transform content = RecursiveFindChild(panel, "Content");
-                if (content == null) { _status = "Błąd Content"; return; }
+                if (content == null) { _status = $"{Localization.Get("LOOT_ERROR")} Content"; return; }
 
                 var dataSlots = GetDataSlots(ui);
                 if (dataSlots == null) return;
@@ -101,7 +101,7 @@ namespace WildTerraHook
 
                 if (lootedSomething) _lootTimer = Time.time + ConfigManager.Loot_Delay;
             }
-            catch (Exception ex) { _status = "Error: " + ex.Message; }
+            catch (Exception ex) { _status = $"{Localization.Get("LOOT_ERROR")}: {ex.Message}"; }
         }
 
         public void DrawMenu()
@@ -113,10 +113,10 @@ namespace WildTerraHook
             bool newVal = GUILayout.Toggle(ConfigManager.Loot_Enabled, Localization.Get("LOOT_ENABLE"), GUILayout.Width(150));
             if (newVal != ConfigManager.Loot_Enabled) { ConfigManager.Loot_Enabled = newVal; ConfigManager.Save(); }
 
-            newVal = GUILayout.Toggle(ConfigManager.Loot_Debug, "Debug", GUILayout.Width(70));
+            newVal = GUILayout.Toggle(ConfigManager.Loot_Debug, Localization.Get("LOOT_DEBUG"), GUILayout.Width(100));
             if (newVal != ConfigManager.Loot_Debug) { ConfigManager.Loot_Debug = newVal; ConfigManager.Save(); }
 
-            GUILayout.Label($"{Localization.Get("LOOT_DELAY")}: {ConfigManager.Loot_Delay:F2}s", GUILayout.Width(80));
+            GUILayout.Label($"{Localization.Get("LOOT_DELAY")}: {ConfigManager.Loot_Delay:F2}s", GUILayout.Width(120));
             float newDelay = GUILayout.HorizontalSlider(ConfigManager.Loot_Delay, 0.05f, 1.0f);
             if (Math.Abs(newDelay - ConfigManager.Loot_Delay) > 0.01f) { ConfigManager.Loot_Delay = newDelay; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
@@ -136,7 +136,7 @@ namespace WildTerraHook
 
         private void DrawDebugSection()
         {
-            GUILayout.Label("<b>--- WYKRYTE ---</b>");
+            GUILayout.Label($"<b>{Localization.Get("LOOT_DETECTED")}</b>");
             _scrollDebug = GUILayout.BeginScrollView(_scrollDebug, "box", GUILayout.Height(80));
             if (_debugDetectedItems.Count > 0) foreach (var s in _debugDetectedItems) GUILayout.Label(s);
             else GUILayout.Label("...");
@@ -204,7 +204,7 @@ namespace WildTerraHook
         private void DrawEditingProfileContent()
         {
             GUILayout.BeginVertical("box", GUILayout.Width(190));
-            GUILayout.Label($"<b>EDYCJA: {_editingProfile}</b>");
+            GUILayout.Label($"<b>{Localization.Get("LOOT_EDITING")}: {_editingProfile}</b>");
 
             List<string> editingList = null;
             if (ConfigManager.LootProfiles.ContainsKey(_editingProfile))
@@ -367,17 +367,17 @@ namespace WildTerraHook
         private void RefreshAllItems()
         {
             _allItemsCache.Clear();
-            _status = "Skanowanie...";
+            _status = Localization.Get("LOOT_SCANNING");
             try
             {
                 var scriptables = Resources.FindObjectsOfTypeAll<global::WTScriptableItem>();
                 foreach (var s in scriptables) if (s != null && !string.IsNullOrEmpty(s.name) && !_allItemsCache.Contains(s.name)) _allItemsCache.Add(s.name);
                 _allItemsCache.Sort();
-                _status = $"Gotowe ({_allItemsCache.Count})";
+                _status = $"{Localization.Get("LOOT_READY")} ({_allItemsCache.Count})";
             }
             catch (Exception ex)
             {
-                _status = "Błąd listy";
+                _status = Localization.Get("LOOT_ERROR");
                 Debug.LogError(ex.Message);
             }
         }

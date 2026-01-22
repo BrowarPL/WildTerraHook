@@ -16,7 +16,6 @@ namespace WildTerraHook
         private Rect _windowRect;
         private bool _isInitialized = false;
 
-        private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Auto Drop", "Misc", "CONSOLE" };
         private int _currentTab = 0;
 
         public void Start()
@@ -26,9 +25,8 @@ namespace WildTerraHook
 
             _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
 
-            // Domyślne wymiary, jeśli to pierwsze uruchomienie (lub błędny config)
             if (_windowRect.width < 450) _windowRect.width = 500;
-            if (_windowRect.height < 300) _windowRect.height = 400; // Wyższe startowe okno dla konsoli
+            if (_windowRect.height < 300) _windowRect.height = 400;
 
             _currentTab = ConfigManager.Menu_Tab;
 
@@ -66,6 +64,7 @@ namespace WildTerraHook
             _dropModule.Update();
             _miscModule.Update();
             _colorFishModule.Update();
+            // _memFishModule.Update(); // UKRYTE: Memory Bot wyłączony do czasu znalezienia zmiennych
         }
 
         public void OnGUI()
@@ -74,6 +73,7 @@ namespace WildTerraHook
 
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
+            // _memFishModule.DrawESP(); // UKRYTE
 
             if (_showMenu)
             {
@@ -83,7 +83,6 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                // Aktualizujemy globalne wymiary dla modułów (do skalowania list)
                 ConfigManager.Menu_W = _windowRect.width;
                 ConfigManager.Menu_H = _windowRect.height;
 
@@ -99,9 +98,18 @@ namespace WildTerraHook
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
+            string[] tabNames = {
+                Localization.Get("MENU_TAB_ESP"),
+                Localization.Get("MENU_TAB_FISH"),
+                Localization.Get("MENU_TAB_LOOT"),
+                Localization.Get("MENU_TAB_DROP"),
+                Localization.Get("MENU_TAB_MISC"),
+                Localization.Get("MENU_TAB_CONSOLE")
+            };
+
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.95f));
+            int newTab = GUILayout.Toolbar(_currentTab, tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.95f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -109,14 +117,9 @@ namespace WildTerraHook
             {
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
-                // USUNIĘTO: _windowRect.height = 0; -> Zapobiega to zmianie rozmiaru okna przy przełączaniu zakładek
             }
 
             GUILayout.Space(10);
-
-            // Rysowanie zawartości
-            // Używamy ScrollView dla całego kontentu, jeśli wyjdzie poza okno, 
-            // ale moduły mają własne scrolle, więc tutaj po prostu expand.
 
             switch (_currentTab)
             {
@@ -139,7 +142,7 @@ namespace WildTerraHook
         private void DrawFishingTab()
         {
             GUILayout.BeginVertical("box");
-            bool colorEn = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, " <b>Color Bot</b> (Standard)");
+            bool colorEn = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, " <b>" + Localization.Get("FISH_COLOR_BOT_TOGGLE") + "</b>");
             if (colorEn != ConfigManager.ColorFish_Enabled)
             {
                 ConfigManager.ColorFish_Enabled = colorEn;
@@ -152,6 +155,15 @@ namespace WildTerraHook
                 _colorFishModule.DrawMenu();
                 GUILayout.EndVertical();
             }
+            else
+            {
+                // UKRYTE: Memory Bot wyłączony z menu.
+                GUILayout.Label("<i>Memory Bot disabled (Work in Progress)</i>", CenteredLabel());
+                /* GUILayout.BeginVertical(GUI.skin.box);
+                _memFishModule.DrawMenu();
+                GUILayout.EndVertical();
+                */
+            }
             GUILayout.EndVertical();
         }
 
@@ -159,9 +171,9 @@ namespace WildTerraHook
         {
             _miscModule.DrawMenu();
             GUILayout.Space(10);
-            GUILayout.Label("<b>UI SETTINGS</b>", GUI.skin.box);
+            GUILayout.Label("<b>" + Localization.Get("MISC_UI_HEADER") + "</b>", GUI.skin.box);
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"Scale: {ConfigManager.Menu_Scale:F1}x", GUILayout.Width(80));
+            GUILayout.Label($"{Localization.Get("MISC_UI_SCALE")}: {ConfigManager.Menu_Scale:F1}x", GUILayout.Width(80));
             float newScale = GUILayout.HorizontalSlider(ConfigManager.Menu_Scale, 0.8f, 2.0f);
             if (Mathf.Abs(newScale - ConfigManager.Menu_Scale) > 0.05f) ConfigManager.Menu_Scale = newScale;
             GUILayout.EndHorizontal();

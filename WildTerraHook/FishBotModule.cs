@@ -37,7 +37,7 @@ namespace WildTerraHook
 
             if (fishingUI == null || !fishingUI.gameObject.activeSelf)
             {
-                _status = "Oczekiwanie na okno...";
+                _status = Localization.Get("MEMFISH_STATUS_WAIT_WIN");
                 _reflectionInit = false;
                 return;
             }
@@ -53,7 +53,6 @@ namespace WildTerraHook
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
                 Type uiType = ui.GetType();
 
-                // 1. UI Images (Pewniaki w WTUIFishingActions)
                 _fBtnDragImg = uiType.GetField("dragOutActionButtonImage", flags);
                 _fBtnPullImg = uiType.GetField("pullActionButtonImage", flags);
                 _fBtnStrikeImg = uiType.GetField("strikeActionButtonImage", flags);
@@ -61,18 +60,13 @@ namespace WildTerraHook
 
                 if (_fBtnDragImg == null || _fCurrentBites == null)
                 {
-                    _status = "KRYTYCZNE: Nie pasuje struktura UI (brak obrazków/fishActions).";
+                    _status = Localization.Get("MEMFISH_STATUS_CRIT");
                     return;
                 }
-
-                // 2. SZUKANIE LISTY REGUŁ (List<FishAction>)
-                // Lista ta wiąże zachowanie ryby (Bite) z wymaganą reakcją (Use).
-                // Może być w WTUIFishingActions, WTUIFishingOverview lub WTWorldFishing.
 
                 List<object> scanTargets = new List<object>();
                 scanTargets.Add(ui);
 
-                // FIX: Używamy poprawnych nazw klas z Assembly-CSharp
                 var overview = UnityEngine.Object.FindObjectOfType<global::WTUIFishingOverview>();
                 if (overview != null) scanTargets.Add(overview);
 
@@ -94,13 +88,12 @@ namespace WildTerraHook
                 if (found)
                 {
                     _reflectionInit = true;
-                    _status = "Gotowy (Reguły załadowane)";
+                    _status = Localization.Get("MEMFISH_STATUS_READY");
                 }
                 else
                 {
-                    // Wypisz co sprawdzaliśmy, żeby łatwiej było debugować
                     string targetsStr = string.Join(", ", scanTargets.Select(x => x.GetType().Name).ToArray());
-                    _status = $"BŁĄD: Nie znaleziono listy reguł w: {targetsStr}";
+                    _status = $"{Localization.Get("MEMFISH_STATUS_ERROR")}: {targetsStr}";
                 }
             }
             catch (Exception ex)
@@ -118,27 +111,23 @@ namespace WildTerraHook
             {
                 Type fType = field.FieldType;
 
-                // Szukamy List<> lub Tablicy []
                 Type itemType = null;
                 if (fType.IsGenericType && fType.GetGenericTypeDefinition() == typeof(List<>))
                     itemType = fType.GetGenericArguments()[0];
                 else if (fType.IsArray)
                     itemType = fType.GetElementType();
 
-                // Sprawdzamy wnętrze elementu listy
                 if (itemType != null && !itemType.IsPrimitive && itemType != typeof(string))
                 {
                     FieldInfo biteF = null;
                     FieldInfo useF = null;
 
-                    // Skanujemy pola w klasie elementu (np. w klasie FishAction)
                     foreach (var subF in itemType.GetFields(flags))
                     {
                         if (subF.FieldType == typeof(global::FishBite)) biteF = subF;
                         if (subF.FieldType == typeof(global::FishingUse)) useF = subF;
                     }
 
-                    // Jeśli klasa zawiera OBA kluczowe typy, to jest to nasza lista reguł!
                     if (biteF != null && useF != null)
                     {
                         _fRulesList = field;
@@ -164,37 +153,31 @@ namespace WildTerraHook
 
             try
             {
-                // A. Pobierz aktualne zachowanie ryby
                 var bitesList = _fCurrentBites.GetValue(ui) as IList;
                 if (bitesList == null || bitesList.Count == 0)
                 {
-                    _status = "Czekam na rybę...";
+                    _status = Localization.Get("MEMFISH_STATUS_WAIT_FISH");
                     return;
                 }
 
-                // Ostatni element to aktualna akcja (enum FishBite)
                 object currentBiteObj = bitesList[bitesList.Count - 1];
                 int currentBiteInt = Convert.ToInt32(currentBiteObj);
 
-                // B. Pobierz listę reguł
                 var rulesList = _fRulesList.GetValue(_rulesSourceObj) as IList;
                 if (rulesList == null)
                 {
-                    _status = "Lista reguł jest pusta/null!";
+                    _status = Localization.Get("MEMFISH_STATUS_EMPTY_RULES");
                     return;
                 }
 
-                // C. Dopasuj regułę (Bite -> Use)
                 global::FishingUse requiredReaction = global::FishingUse.None;
                 bool matchFound = false;
 
                 foreach (var rule in rulesList)
                 {
-                    // Sprawdź Input (Bite)
                     object rBiteVal = _fRuleBite.GetValue(rule);
                     if (Convert.ToInt32(rBiteVal) == currentBiteInt)
                     {
-                        // Znaleziono! Pobierz Output (Use)
                         requiredReaction = (global::FishingUse)_fRuleUse.GetValue(rule);
                         matchFound = true;
                         break;
@@ -203,11 +186,10 @@ namespace WildTerraHook
 
                 if (!matchFound)
                 {
-                    _status = $"Brak reguły dla {currentBiteObj}";
+                    _status = $"{Localization.Get("MEMFISH_STATUS_NO_RULE")} {currentBiteObj}";
                     return;
                 }
 
-                // D. Kliknij przycisk
                 Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);
                 Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);
                 Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui);
@@ -236,7 +218,7 @@ namespace WildTerraHook
                 }
                 else
                 {
-                    _status = $"Cel: {requiredReaction} (Nieaktywny)";
+                    _status = $"{Localization.Get("FISH_TARGET")}: {requiredReaction} ({Localization.Get("MEMFISH_STATUS_INACTIVE")})";
                 }
             }
             catch (Exception ex) { _status = "Run Error: " + ex.Message; }
@@ -317,21 +299,21 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            bool esp = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
+            bool esp = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, Localization.Get("MEMFISH_SHOW_ESP"));
             if (esp != ConfigManager.MemFish_ShowESP) { ConfigManager.MemFish_ShowESP = esp; ConfigManager.Save(); }
 
-            bool auto = GUILayout.Toggle(ConfigManager.MemFish_AutoPress, "Auto Klikanie");
+            bool auto = GUILayout.Toggle(ConfigManager.MemFish_AutoPress, Localization.Get("MEMFISH_AUTO"));
             if (auto != ConfigManager.MemFish_AutoPress) { ConfigManager.MemFish_AutoPress = auto; ConfigManager.Save(); }
 
             if (ConfigManager.MemFish_AutoPress)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"Reakcja: {ConfigManager.MemFish_ReactionTime:F2}s");
+                GUILayout.Label($"{Localization.Get("MEMFISH_REACTION")}: {ConfigManager.MemFish_ReactionTime:F2}s");
                 float newF = GUILayout.HorizontalSlider(ConfigManager.MemFish_ReactionTime, 0.1f, 1.0f);
                 if (Math.Abs(newF - ConfigManager.MemFish_ReactionTime) > 0.01f) { ConfigManager.MemFish_ReactionTime = newF; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
             }
-            GUILayout.Label($"Status: {_status}");
+            GUILayout.Label($"{Localization.Get("LOOT_STATUS")}: {_status}");
         }
     }
 }

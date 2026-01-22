@@ -383,10 +383,10 @@ namespace WildTerraHook
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, "Box ESP");
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, Localization.Get("ESP_BOX"));
                 if (newVal != ConfigManager.Esp_ShowBoxes) { ConfigManager.Esp_ShowBoxes = newVal; ConfigManager.Save(); }
 
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowXRay, "X-Ray Glow");
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowXRay, Localization.Get("ESP_XRAY"));
                 if (newVal != ConfigManager.Esp_ShowXRay) { ConfigManager.Esp_ShowXRay = newVal; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 

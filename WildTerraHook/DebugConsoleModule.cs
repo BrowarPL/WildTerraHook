@@ -50,21 +50,20 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            // Używamy ExpandHeight, aby konsola wypełniła całą dostępną przestrzeń okna
             GUILayout.BeginVertical("box", GUILayout.ExpandHeight(true));
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>DEBUG CONSOLE</b>");
+            GUILayout.Label($"<b>{Localization.Get("CONSOLE_TITLE")}</b>");
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("SAVE LOG", GUILayout.Width(100))) SaveLogsToFile();
-            if (GUILayout.Button("Clear", GUILayout.Width(60))) _logs.Clear();
+            if (GUILayout.Button(Localization.Get("CONSOLE_SAVE"), GUILayout.Width(100))) SaveLogsToFile();
+            if (GUILayout.Button(Localization.Get("CONSOLE_CLEAR"), GUILayout.Width(60))) _logs.Clear();
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            _autoScroll = GUILayout.Toggle(_autoScroll, "Auto-Scroll");
-            _showLogs = GUILayout.Toggle(_showLogs, "Info");
-            _showWarnings = GUILayout.Toggle(_showWarnings, "Warn");
-            _showErrors = GUILayout.Toggle(_showErrors, "Error");
+            _autoScroll = GUILayout.Toggle(_autoScroll, Localization.Get("CONSOLE_AUTOSCROLL"));
+            _showLogs = GUILayout.Toggle(_showLogs, Localization.Get("CONSOLE_INFO"));
+            _showWarnings = GUILayout.Toggle(_showWarnings, Localization.Get("CONSOLE_WARN"));
+            _showErrors = GUILayout.Toggle(_showErrors, Localization.Get("CONSOLE_ERROR"));
             GUILayout.EndHorizontal();
 
             GUILayout.Space(5);

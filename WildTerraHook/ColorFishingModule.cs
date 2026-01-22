@@ -47,7 +47,12 @@ namespace WildTerraHook
         private MethodInfo _setTargetMethod;
         private FieldInfo _uiPanelField;
 
-        private string _debugMsg = "ZARZUĆ RĘCZNIE...";
+        private string _debugMsg = "";
+
+        public ColorFishingModule()
+        {
+            _debugMsg = Localization.Get("FISH_DEBUG_WAIT");
+        }
 
         public void OnDisable()
         {
@@ -87,11 +92,11 @@ namespace WildTerraHook
                     _hasCalibration = true;
 
                     EnterFishingState();
-                    Debug.Log($"[BOT] Skalibrowano! Cel: {_savedCastPoint}");
+                    Debug.Log($"[BOT] {Localization.Get("FISH_DEBUG_CALIB")} {_savedCastPoint}");
                 }
                 else
                 {
-                    _debugMsg = "ZARZUĆ RĘCZNIE ABY ROZPOCZĄĆ!";
+                    _debugMsg = Localization.Get("FISH_DEBUG_MANUAL");
                     return;
                 }
             }
@@ -102,7 +107,7 @@ namespace WildTerraHook
                 {
                     if (wtPlayer.target.health > 0)
                     {
-                        Debug.Log("[BOT] ATAK! Przerywam.");
+                        Debug.Log("[BOT] ATAK!");
                         _currentState = BotState.COMBAT_PREPARE;
                         _stateTimer = Time.time + 0.1f;
                         return;
@@ -125,9 +130,10 @@ namespace WildTerraHook
                 }
             }
 
-            _debugMsg = $"STAN: {_currentState} | Timer: {Mathf.Max(0, _stateTimer - Time.time):F1}s\n" +
-                        $"Atak ID: {_combatSkillIndex} | Wędka ID: {_fishingSkillIndex}\n" +
-                        $"Cel: {(wtPlayer.target != null ? wtPlayer.target.name : "Brak")}";
+            string targetName = (wtPlayer.target != null) ? wtPlayer.target.name : Localization.Get("FISH_NONE");
+            _debugMsg = $"{Localization.Get("FISH_STATE")}: {_currentState} | {Localization.Get("FISH_TIMER")}: {Mathf.Max(0, _stateTimer - Time.time):F1}s\n" +
+                        $"{Localization.Get("FISH_ATT_ID")}: {_combatSkillIndex} | {Localization.Get("FISH_ROD_ID")}: {_fishingSkillIndex}\n" +
+                        $"{Localization.Get("FISH_TARGET")}: {targetName}";
 
             switch (_currentState)
             {
@@ -140,7 +146,6 @@ namespace WildTerraHook
             }
         }
 
-        // --- BRAKUJĄCA METODA DLA MAINHACK.CS ---
         public void DrawESP()
         {
             if (!ConfigManager.ColorFish_Enabled || !ConfigManager.ColorFish_ShowESP) return;
@@ -148,14 +153,11 @@ namespace WildTerraHook
             var fishingUI = global::WTUIFishingActions.instance;
             if (fishingUI == null) return;
 
-            // Sprawdzamy, czy panel jest aktywny (używając logiki z IsUIReal)
             if (!IsUIReal()) return;
 
             try
             {
                 Color32 success = GetField<Color32>(fishingUI, "successButtonColor");
-
-                // Sprawdzamy 3 główne przyciski
                 CheckAndDrawESP(fishingUI, "dragOutActionButtonImage", success);
                 CheckAndDrawESP(fishingUI, "pullActionButtonImage", success);
                 CheckAndDrawESP(fishingUI, "strikeActionButtonImage", success);
@@ -169,10 +171,8 @@ namespace WildTerraHook
             if (img != null && img.gameObject.activeInHierarchy)
             {
                 Color32 c = img.color;
-                // Jeśli kolor pasuje do sukcesu (zielony), rysuj ramkę
                 if (c.r == target.r && c.g == target.g && c.b == target.b)
                 {
-                    // Rysujemy na RectTransformie rodzica (bo Image jest na dziecku zazwyczaj) lub samym Image
                     DrawBoxOnRect(img.rectTransform);
                 }
             }
@@ -198,7 +198,6 @@ namespace WildTerraHook
 
             GUI.DrawTexture(new Rect(x, y, w, h), _boxTexture);
         }
-        // ----------------------------------------
 
         private void ScanMethods(global::WTPlayer player)
         {
@@ -400,26 +399,25 @@ namespace WildTerraHook
             return (f != null) ? (T)f.GetValue(obj) : default(T);
         }
 
-        // Metoda do menu (obsługiwana przez MainHack, ale tutaj zostawiona dla porządku GUI)
         public void DrawMenu()
         {
-            GUILayout.Label("<b>Color Bot (Inteligentny)</b>");
+            GUILayout.Label($"<b>{Localization.Get("FISH_TITLE")}</b>");
 
             bool newVal = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, Localization.Get("FISH_ENABLE"));
             if (newVal != ConfigManager.ColorFish_Enabled)
             {
                 ConfigManager.ColorFish_Enabled = newVal;
-                if (newVal) ConfigManager.MemFish_Enabled = false; // Wykluczenie
+                if (newVal) ConfigManager.MemFish_Enabled = false;
                 if (!newVal) OnDisable();
                 ConfigManager.Save();
             }
 
             if (ConfigManager.ColorFish_Enabled)
             {
-                bool esp = GUILayout.Toggle(ConfigManager.ColorFish_ShowESP, "Pokaż ESP (Zielony)");
+                bool esp = GUILayout.Toggle(ConfigManager.ColorFish_ShowESP, Localization.Get("FISH_SHOW_ESP"));
                 if (esp != ConfigManager.ColorFish_ShowESP) { ConfigManager.ColorFish_ShowESP = esp; ConfigManager.Save(); }
 
-                GUILayout.Label($"Timeout: {ConfigManager.ColorFish_Timeout:F0}s");
+                GUILayout.Label($"{Localization.Get("FISH_TIMEOUT")}: {ConfigManager.ColorFish_Timeout:F0}s");
                 float newT = GUILayout.HorizontalSlider(ConfigManager.ColorFish_Timeout, 10f, 60f);
                 if (Math.Abs(newT - ConfigManager.ColorFish_Timeout) > 1f) { ConfigManager.ColorFish_Timeout = newT; ConfigManager.Save(); }
                 GUILayout.Label($"<b>{_debugMsg}</b>");

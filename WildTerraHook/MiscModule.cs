@@ -170,7 +170,7 @@ namespace WildTerraHook
 
             // RENDER DISTANCE
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"Render Dist: {ConfigManager.Misc_RenderDistance:F0}", GUILayout.Width(120));
+            GUILayout.Label($"{Localization.Get("MISC_RENDER_DIST")}: {ConfigManager.Misc_RenderDistance:F0}", GUILayout.Width(150));
             float newDist = GUILayout.HorizontalSlider(ConfigManager.Misc_RenderDistance, 100f, 5000f);
             if (Math.Abs(newDist - ConfigManager.Misc_RenderDistance) > 1f) { ConfigManager.Misc_RenderDistance = newDist; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
