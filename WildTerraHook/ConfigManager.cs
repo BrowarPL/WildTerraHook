@@ -39,7 +39,7 @@ namespace WildTerraHook
         public static bool Drop_Enabled = false;
         public static float Drop_Delay = 0.5f;
         public static bool Drop_Debug = false;
-        public static string Drop_OverrideMethod = ""; // ZAPISYWANIE OVERRIDE
+        public static string Drop_OverrideMethod = ""; // DODANO: Zapisywanie metody override
 
         // --- BOTS ---
         public static bool ColorFish_Enabled = false;
@@ -70,7 +70,7 @@ namespace WildTerraHook
         // --- ESP ---
         public static bool Esp_Enabled = false;
         public static float Esp_Distance = 150f;
-        public static float Esp_RefreshRate = 60f; // ZAPISYWANIE FPS
+        public static float Esp_RefreshRate = 60f; // DODANO: Zapisywanie FPS
         public static bool Esp_ShowBoxes = true;
         public static bool Esp_ShowXRay = true;
         public static bool Esp_ShowResources = false;
@@ -89,7 +89,7 @@ namespace WildTerraHook
         public static string Esp_List_Lumber = "";
         public static string Esp_List_Godsend = "";
 
-        // --- CONSOLE ---
+        // --- CONSOLE --- (DODANO)
         public static bool Console_AutoScroll = true;
         public static bool Console_ShowInfo = true;
         public static bool Console_ShowWarnings = true;
@@ -155,7 +155,7 @@ namespace WildTerraHook
                     sw.WriteLine($"Drop_Enabled={Drop_Enabled}");
                     sw.WriteLine($"Drop_Delay={Drop_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Drop_Debug={Drop_Debug}");
-                    sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
+                    sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}"); // SAVE
                     sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
 
                     // Bots
@@ -187,7 +187,7 @@ namespace WildTerraHook
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
-                    sw.WriteLine($"Esp_RefreshRate={Esp_RefreshRate.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Esp_RefreshRate={Esp_RefreshRate.ToString(CultureInfo.InvariantCulture)}"); // SAVE
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
                     sw.WriteLine($"Esp_ShowXRay={Esp_ShowXRay}");
                     sw.WriteLine($"Esp_ShowResources={Esp_ShowResources}");
@@ -263,7 +263,6 @@ namespace WildTerraHook
                             float.TryParse(r[3], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_H);
                         }
                     }
-                    // Loot & Drop
                     else if (key == "Loot_Enabled") bool.TryParse(val, out Loot_Enabled);
                     else if (key == "Loot_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Loot_Delay);
                     else if (key == "Loot_Debug") bool.TryParse(val, out Loot_Debug);
@@ -275,14 +274,12 @@ namespace WildTerraHook
                     else if (key == "Drop_Enabled") bool.TryParse(val, out Drop_Enabled);
                     else if (key == "Drop_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Drop_Delay);
                     else if (key == "Drop_Debug") bool.TryParse(val, out Drop_Debug);
-                    else if (key == "Drop_OverrideMethod") Drop_OverrideMethod = val;
+                    else if (key == "Drop_OverrideMethod") Drop_OverrideMethod = val; // LOAD
                     else if (key == "ActiveDropProfiles")
                     {
                         ActiveDropProfiles.Clear();
                         foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveDropProfiles.Add(p);
                     }
-
-                    // Bots
                     else if (key == "ColorFish_Enabled") bool.TryParse(val, out ColorFish_Enabled);
                     else if (key == "ColorFish_AutoPress") bool.TryParse(val, out ColorFish_AutoPress);
                     else if (key == "ColorFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ReactionTime);
@@ -292,8 +289,6 @@ namespace WildTerraHook
                     else if (key == "MemFish_AutoPress") bool.TryParse(val, out MemFish_AutoPress);
                     else if (key == "MemFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out MemFish_ReactionTime);
                     else if (key == "MemFish_ShowESP") bool.TryParse(val, out MemFish_ShowESP);
-
-                    // Misc
                     else if (key == "Misc_EternalDay") bool.TryParse(val, out Misc_EternalDay);
                     else if (key == "Misc_NoFog") bool.TryParse(val, out Misc_NoFog);
                     else if (key == "Misc_Fullbright") bool.TryParse(val, out Misc_Fullbright);
@@ -306,11 +301,9 @@ namespace WildTerraHook
                     else if (key == "Misc_ZoomSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_ZoomSpeed);
                     else if (key == "Misc_Fov") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_Fov);
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
-
-                    // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
-                    else if (key == "Esp_RefreshRate") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_RefreshRate);
+                    else if (key == "Esp_RefreshRate") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_RefreshRate); // LOAD
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
                     else if (key == "Esp_ShowXRay") bool.TryParse(val, out Esp_ShowXRay);
                     else if (key == "Esp_ShowResources") bool.TryParse(val, out Esp_ShowResources);
@@ -327,14 +320,12 @@ namespace WildTerraHook
                     else if (key == "Esp_List_Gather") Esp_List_Gather = val;
                     else if (key == "Esp_List_Lumber") Esp_List_Lumber = val;
                     else if (key == "Esp_List_Godsend") Esp_List_Godsend = val;
-
                     else if (key == "MobAggressive") Colors.MobAggressive = StringToColor(val);
                     else if (key == "MobPassive") Colors.MobPassive = StringToColor(val);
                     else if (key == "MobFleeing") Colors.MobFleeing = StringToColor(val);
                     else if (key == "ResLumber") Colors.ResLumber = StringToColor(val);
                     else if (key == "ResMining") Colors.ResMining = StringToColor(val);
                     else if (key == "ResGather") Colors.ResGather = StringToColor(val);
-
                     // Console
                     else if (key == "Console_AutoScroll") bool.TryParse(val, out Console_AutoScroll);
                     else if (key == "Console_ShowInfo") bool.TryParse(val, out Console_ShowInfo);

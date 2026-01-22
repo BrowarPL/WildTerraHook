@@ -87,8 +87,6 @@ namespace WildTerraHook
                 if (log.Type == LogType.Warning && !ConfigManager.Console_ShowWarnings) continue;
                 if ((log.Type == LogType.Error || log.Type == LogType.Exception) && !ConfigManager.Console_ShowErrors) continue;
 
-                // FIX: Usunięto nieużywaną zmienną 'string color = ...'
-
                 style.normal.textColor = GetColor(log.Type);
                 GUILayout.Label(log.Message, style);
 
