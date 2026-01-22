@@ -25,28 +25,27 @@ namespace WildTerraHook
             public static Color ResGather = Color.white;
         }
 
-        // --- AUTO LOOT (Whitelist) ---
+        // --- AUTO LOOT ---
         public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>>();
         public static HashSet<string> ActiveProfiles = new HashSet<string>();
         public static bool Loot_Enabled = false;
         public static float Loot_Delay = 0.2f;
         public static bool Loot_Debug = false;
 
-        // --- AUTO DROP (Blacklist - NOWOŚĆ) ---
+        // --- AUTO DROP ---
         public static Dictionary<string, List<string>> DropProfiles = new Dictionary<string, List<string>>();
         public static HashSet<string> ActiveDropProfiles = new HashSet<string>();
         public static bool Drop_Enabled = false;
-        public static float Drop_Delay = 0.5f; // Nieco wolniej dla bezpieczeństwa
+        public static float Drop_Delay = 0.5f;
         public static bool Drop_Debug = false;
 
-        // --- COLOR FISH BOT ---
+        // --- BOTS ---
         public static bool ColorFish_Enabled = false;
         public static bool ColorFish_AutoPress = false;
         public static float ColorFish_ReactionTime = 0.3f;
         public static float ColorFish_Timeout = 25.0f;
         public static bool ColorFish_ShowESP = true;
 
-        // --- MEMORY FISH BOT ---
         public static bool MemFish_Enabled = false;
         public static bool MemFish_AutoPress = false;
         public static float MemFish_ReactionTime = 0.3f;
@@ -73,13 +72,11 @@ namespace WildTerraHook
         public static bool Esp_ShowXRay = true;
         public static bool Esp_ShowResources = false;
         public static bool Esp_ShowMobs = false;
-
         public static bool Esp_Cat_Mining = false;
         public static bool Esp_Cat_Gather = false;
         public static bool Esp_Cat_Lumber = false;
         public static bool Esp_Cat_Godsend = false;
         public static bool Esp_Cat_Others = false;
-
         public static bool Esp_Mob_Aggro = false;
         public static bool Esp_Mob_Retal = false;
         public static bool Esp_Mob_Passive = false;
@@ -102,12 +99,34 @@ namespace WildTerraHook
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
             _filePath = Path.Combine(_folderPath, "config.txt");
 
-            // Domyślne profile
             if (LootProfiles.Count == 0) { LootProfiles["Default"] = new List<string>(); ActiveProfiles.Add("Default"); }
             if (DropProfiles.Count == 0) { DropProfiles["Default"] = new List<string>(); ActiveDropProfiles.Add("Default"); }
 
             Load();
         }
+
+        // --- METODY NAPRAWIONE (CS0117) ---
+        public static string SerializeToggleList(Dictionary<string, bool> dict)
+        {
+            List<string> active = new List<string>();
+            foreach (var kvp in dict) if (kvp.Value) active.Add(kvp.Key);
+            return string.Join(",", active);
+        }
+
+        public static void DeserializeToggleList(string data, Dictionary<string, bool> dict)
+        {
+            if (string.IsNullOrEmpty(data)) return;
+            var keys = new List<string>(dict.Keys);
+            foreach (var k in keys) dict[k] = false;
+
+            string[] parts = data.Split(',');
+            foreach (var p in parts)
+            {
+                string trimmed = p.Trim();
+                if (dict.ContainsKey(trimmed)) dict[trimmed] = true;
+            }
+        }
+        // ----------------------------------
 
         public static void Save()
         {
@@ -121,13 +140,11 @@ namespace WildTerraHook
                     sw.WriteLine($"Menu_Tab={Menu_Tab}");
                     sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
 
-                    // Loot
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Loot_Debug={Loot_Debug}");
                     sw.WriteLine($"ActiveProfiles={string.Join(",", ActiveProfiles)}");
 
-                    // Drop (NOWOŚĆ)
                     sw.WriteLine($"Drop_Enabled={Drop_Enabled}");
                     sw.WriteLine($"Drop_Delay={Drop_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Drop_Debug={Drop_Debug}");
@@ -186,14 +203,11 @@ namespace WildTerraHook
                     sw.WriteLine($"ResMining={ColorToString(Colors.ResMining)}");
                     sw.WriteLine($"ResGather={ColorToString(Colors.ResGather)}");
 
-                    // Zapis profili Loot
                     foreach (var kvp in LootProfiles)
                     {
                         string items = string.Join(";", kvp.Value.Where(x => !string.IsNullOrEmpty(x)));
                         sw.WriteLine($"Profile:{kvp.Key}={items}");
                     }
-
-                    // Zapis profili Drop
                     foreach (var kvp in DropProfiles)
                     {
                         string items = string.Join(";", kvp.Value.Where(x => !string.IsNullOrEmpty(x)));
@@ -234,7 +248,7 @@ namespace WildTerraHook
                             float.TryParse(r[3], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_H);
                         }
                     }
-                    // Loot
+                    // Loot & Drop
                     else if (key == "Loot_Enabled") bool.TryParse(val, out Loot_Enabled);
                     else if (key == "Loot_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Loot_Delay);
                     else if (key == "Loot_Debug") bool.TryParse(val, out Loot_Debug);
@@ -243,7 +257,6 @@ namespace WildTerraHook
                         ActiveProfiles.Clear();
                         foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveProfiles.Add(p);
                     }
-                    // Drop (NOWOŚĆ)
                     else if (key == "Drop_Enabled") bool.TryParse(val, out Drop_Enabled);
                     else if (key == "Drop_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Drop_Delay);
                     else if (key == "Drop_Debug") bool.TryParse(val, out Drop_Debug);
@@ -264,7 +277,7 @@ namespace WildTerraHook
                     else if (key == "MemFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out MemFish_ReactionTime);
                     else if (key == "MemFish_ShowESP") bool.TryParse(val, out MemFish_ShowESP);
 
-                    // Misc
+                    // Misc & ESP variables... (Standard loading)
                     else if (key == "Misc_EternalDay") bool.TryParse(val, out Misc_EternalDay);
                     else if (key == "Misc_NoFog") bool.TryParse(val, out Misc_NoFog);
                     else if (key == "Misc_Fullbright") bool.TryParse(val, out Misc_Fullbright);
@@ -278,7 +291,6 @@ namespace WildTerraHook
                     else if (key == "Misc_Fov") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_Fov);
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
 
-                    // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
@@ -305,7 +317,6 @@ namespace WildTerraHook
                     else if (key == "ResMining") Colors.ResMining = StringToColor(val);
                     else if (key == "ResGather") Colors.ResGather = StringToColor(val);
 
-                    // Profiles Loot
                     else if (key.StartsWith("Profile:"))
                     {
                         if (!profilesLoaded) { LootProfiles.Clear(); profilesLoaded = true; }
@@ -314,11 +325,10 @@ namespace WildTerraHook
                         if (!string.IsNullOrEmpty(val)) items.AddRange(val.Split(';'));
                         LootProfiles[profileName] = items;
                     }
-                    // Profiles Drop
                     else if (key.StartsWith("DropProfile:"))
                     {
                         if (!dropProfilesLoaded) { DropProfiles.Clear(); dropProfilesLoaded = true; }
-                        string profileName = key.Substring(12); // "DropProfile:".Length
+                        string profileName = key.Substring(12);
                         List<string> items = new List<string>();
                         if (!string.IsNullOrEmpty(val)) items.AddRange(val.Split(';'));
                         DropProfiles[profileName] = items;

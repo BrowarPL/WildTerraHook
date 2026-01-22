@@ -12,7 +12,6 @@ namespace WildTerraHook
         private Vector2 _savedProfilesScroll;
         private string _newProfileName = "";
 
-        // Lista wszystkich przedmiotów do podpowiedzi w wyszukiwarce
         private List<string> _allGameItems = new List<string>();
         private float _lastCacheTime = 0f;
 
@@ -21,32 +20,32 @@ namespace WildTerraHook
             if (!ConfigManager.Drop_Enabled) return;
             if (Time.time < _nextDropTime) return;
 
-            if (global::Player.localPlayer == null) return;
-            var player = global::WTPlayer.localPlayer;
+            // Rzutujemy na WTPlayer, aby mieć dostęp do CmdDropItem
+            var player = global::Player.localPlayer as global::WTPlayer;
+            if (player == null) return;
 
-            // Sprawdzamy ekwipunek
             if (player.inventory == null) return;
 
-            // Pobieramy aktywną blacklistę
             List<string> blackList = ConfigManager.GetCombinedActiveDropList();
             if (blackList.Count == 0) return;
 
-            // Iterujemy przez sloty ekwipunku
-            // Robimy to od końca lub bezpiecznie, ale tutaj wystarczy znaleźć jeden item na cykl
             for (int i = 0; i < player.inventory.Count; i++)
             {
-                var item = player.inventory[i];
-                if (item == null || string.IsNullOrEmpty(item.name)) continue;
+                // ItemSlot jest strukturą (struct), więc nie może być null
+                // Sprawdzamy zawartość slotu
+                var slot = player.inventory[i];
 
-                // Sprawdź czy przedmiot jest na czarnej liście (po nazwie)
-                // Używamy Contains, aby łatwiej dopasowywać, lub Equals dla precyzji.
-                // Tutaj zakładam Equals (exact match) lub Contains, zależnie od preferencji.
-                // Dla bezpieczeństwa: exact match lub "zawiera" z Configu.
+                // FIX: Sprawdź czy przedmiot w slocie istnieje
+                if (slot.item == null || slot.amount <= 0) continue;
+
+                // FIX: Pobierz nazwę z wewnętrznego obiektu item
+                string itemName = slot.item.name;
+                if (string.IsNullOrEmpty(itemName)) continue;
 
                 bool shouldDrop = false;
                 foreach (string badItem in blackList)
                 {
-                    if (item.name.IndexOf(badItem, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (itemName.IndexOf(badItem, System.StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         shouldDrop = true;
                         break;
@@ -55,18 +54,14 @@ namespace WildTerraHook
 
                 if (shouldDrop)
                 {
-                    // WYRZUCAMY!
-                    // Metoda do wyrzucania: Zazwyczaj player.CmdDropItem(index, amount) 
-                    // lub player.CmdRemoveItem(index, amount).
-                    // Sprawdzając WTPlayer: zazwyczaj jest to CmdDropItem.
                     try
                     {
-                        player.CmdDropItem(i, item.amount);
+                        // FIX: Używamy rzutowanego gracza (WTPlayer)
+                        player.CmdDropItem(i, slot.amount);
 
                         if (ConfigManager.Drop_Debug)
-                            Debug.Log($"[AutoDrop] Wyrzucono: {item.name} (x{item.amount}) ze slotu {i}");
+                            Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (x{slot.amount}) ze slotu {i}");
 
-                        // Resetujemy timer i przerywamy pętlę (jeden drop na cykl dla bezpieczeństwa)
                         _nextDropTime = Time.time + ConfigManager.Drop_Delay;
                         return;
                     }
@@ -83,11 +78,9 @@ namespace WildTerraHook
             GUILayout.BeginVertical("box");
             GUILayout.Label("<b>AUTO DROP (Blacklist)</b>");
 
-            // Toggle On/Off
             bool newVal = GUILayout.Toggle(ConfigManager.Drop_Enabled, " Włącz Auto Drop");
             if (newVal != ConfigManager.Drop_Enabled) { ConfigManager.Drop_Enabled = newVal; ConfigManager.Save(); }
 
-            // Delay slider
             GUILayout.BeginHorizontal();
             GUILayout.Label($"Opóźnienie: {ConfigManager.Drop_Delay:F2}s");
             float newDelay = GUILayout.HorizontalSlider(ConfigManager.Drop_Delay, 0.1f, 2.0f);
@@ -96,12 +89,9 @@ namespace WildTerraHook
 
             GUILayout.Space(10);
 
-            // --- SEKCJA DODAWANIA PRZEDMIOTÓW ---
             GUILayout.Label("<b>Dodaj do Blacklisty:</b>");
             _searchQuery = GUILayout.TextField(_searchQuery);
 
-            // Lista podpowiedzi (filtrowanie przedmiotów w grze)
-            // Cache'ujemy listę raz na jakiś czas, żeby nie muliło
             if (Time.time - _lastCacheTime > 5.0f && global::ScriptableItem.dict != null)
             {
                 _allGameItems = global::ScriptableItem.dict.Values.Select(x => x.name).ToList();
@@ -111,23 +101,19 @@ namespace WildTerraHook
             if (!string.IsNullOrEmpty(_searchQuery))
             {
                 _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(100));
-
-                // Filtrujemy
                 var matches = _allGameItems.Where(x => x.IndexOf(_searchQuery, System.StringComparison.OrdinalIgnoreCase) >= 0).Take(20);
-
                 foreach (var item in matches)
                 {
                     if (GUILayout.Button(item))
                     {
                         AddItemToActiveProfiles(item);
-                        _searchQuery = ""; // Wyczyść po dodaniu
+                        _searchQuery = "";
                         ConfigManager.Save();
                     }
                 }
                 GUILayout.EndScrollView();
             }
 
-            // Przycisk "Dodaj to co wpisałem" (jeśli nie znaleziono na liście, ale user chce wpisać ręcznie)
             if (!string.IsNullOrEmpty(_searchQuery))
             {
                 if (GUILayout.Button($"Dodaj ręcznie: '{_searchQuery}'"))
@@ -139,8 +125,6 @@ namespace WildTerraHook
             }
 
             GUILayout.Space(10);
-
-            // --- LISTA AKTYWNYCH BLOKAD ---
             GUILayout.Label("<b>Aktywna Blacklista:</b>");
             var combinedList = ConfigManager.GetCombinedActiveDropList();
 
@@ -150,11 +134,6 @@ namespace WildTerraHook
             }
             else
             {
-                // Wyświetlamy listę z opcją usuwania
-                // Uwaga: Usuwanie z "Combined" jest trudne, bo nie wiemy z którego profilu usunąć.
-                // Dlatego usuwamy ze wszystkich aktywnych profili.
-
-                // Używamy małego scrolla jeśli lista długa
                 GUILayout.BeginVertical(GUI.skin.box);
                 foreach (var item in combinedList)
                 {
@@ -171,16 +150,12 @@ namespace WildTerraHook
             }
 
             GUILayout.Space(10);
-
-            // --- ZARZĄDZANIE PROFILAMI ---
             DrawProfileManager();
-
             GUILayout.EndVertical();
         }
 
         private void AddItemToActiveProfiles(string item)
         {
-            // Dodajemy do wszystkich aktywnych profili (zazwyczaj jest jeden 'Default')
             foreach (var profName in ConfigManager.ActiveDropProfiles)
             {
                 if (!ConfigManager.DropProfiles.ContainsKey(profName))
@@ -205,8 +180,6 @@ namespace WildTerraHook
         private void DrawProfileManager()
         {
             GUILayout.Label("<b>Profile Drop:</b>");
-
-            // Lista profili (checkboxy)
             _savedProfilesScroll = GUILayout.BeginScrollView(_savedProfilesScroll, GUILayout.Height(80));
             foreach (var profileKey in ConfigManager.DropProfiles.Keys.ToList())
             {
@@ -216,14 +189,11 @@ namespace WildTerraHook
                 {
                     if (newActive) ConfigManager.ActiveDropProfiles.Add(profileKey);
                     else ConfigManager.ActiveDropProfiles.Remove(profileKey);
-
-                    // Zawsze musi być przynajmniej jeden aktywny? Niekoniecznie, ale lepiej tak.
                     ConfigManager.Save();
                 }
             }
             GUILayout.EndScrollView();
 
-            // Tworzenie nowego
             GUILayout.BeginHorizontal();
             _newProfileName = GUILayout.TextField(_newProfileName, GUILayout.Width(100));
             if (GUILayout.Button("Nowy Profil"))
@@ -231,7 +201,7 @@ namespace WildTerraHook
                 if (!string.IsNullOrEmpty(_newProfileName) && !ConfigManager.DropProfiles.ContainsKey(_newProfileName))
                 {
                     ConfigManager.DropProfiles.Add(_newProfileName, new List<string>());
-                    ConfigManager.ActiveDropProfiles.Add(_newProfileName); // Auto-aktywacja
+                    ConfigManager.ActiveDropProfiles.Add(_newProfileName);
                     _newProfileName = "";
                     ConfigManager.Save();
                 }
