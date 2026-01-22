@@ -17,10 +17,6 @@ namespace WildTerraHook
 
         private List<LogEntry> _logs = new List<LogEntry>();
         private Vector2 _scrollPos;
-        private bool _autoScroll = true;
-        private bool _showErrors = true;
-        private bool _showLogs = true;
-        private bool _showWarnings = true;
 
         private const int MAX_LOGS = 500;
 
@@ -45,7 +41,7 @@ namespace WildTerraHook
                 Type = type
             });
 
-            if (_autoScroll) _scrollPos = new Vector2(0, float.MaxValue);
+            if (ConfigManager.Console_AutoScroll) _scrollPos = new Vector2(0, float.MaxValue);
         }
 
         public void DrawMenu()
@@ -60,10 +56,19 @@ namespace WildTerraHook
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            _autoScroll = GUILayout.Toggle(_autoScroll, Localization.Get("CONSOLE_AUTOSCROLL"));
-            _showLogs = GUILayout.Toggle(_showLogs, Localization.Get("CONSOLE_INFO"));
-            _showWarnings = GUILayout.Toggle(_showWarnings, Localization.Get("CONSOLE_WARN"));
-            _showErrors = GUILayout.Toggle(_showErrors, Localization.Get("CONSOLE_ERROR"));
+
+            bool newAuto = GUILayout.Toggle(ConfigManager.Console_AutoScroll, Localization.Get("CONSOLE_AUTOSCROLL"));
+            if (newAuto != ConfigManager.Console_AutoScroll) { ConfigManager.Console_AutoScroll = newAuto; ConfigManager.Save(); }
+
+            bool newInfo = GUILayout.Toggle(ConfigManager.Console_ShowInfo, Localization.Get("CONSOLE_INFO"));
+            if (newInfo != ConfigManager.Console_ShowInfo) { ConfigManager.Console_ShowInfo = newInfo; ConfigManager.Save(); }
+
+            bool newWarn = GUILayout.Toggle(ConfigManager.Console_ShowWarnings, Localization.Get("CONSOLE_WARN"));
+            if (newWarn != ConfigManager.Console_ShowWarnings) { ConfigManager.Console_ShowWarnings = newWarn; ConfigManager.Save(); }
+
+            bool newErr = GUILayout.Toggle(ConfigManager.Console_ShowErrors, Localization.Get("CONSOLE_ERROR"));
+            if (newErr != ConfigManager.Console_ShowErrors) { ConfigManager.Console_ShowErrors = newErr; ConfigManager.Save(); }
+
             GUILayout.EndHorizontal();
 
             GUILayout.Space(5);
@@ -78,13 +83,11 @@ namespace WildTerraHook
             {
                 var log = _logs[i];
 
-                if (log.Type == LogType.Log && !_showLogs) continue;
-                if (log.Type == LogType.Warning && !_showWarnings) continue;
-                if ((log.Type == LogType.Error || log.Type == LogType.Exception) && !_showErrors) continue;
+                if (log.Type == LogType.Log && !ConfigManager.Console_ShowInfo) continue;
+                if (log.Type == LogType.Warning && !ConfigManager.Console_ShowWarnings) continue;
+                if ((log.Type == LogType.Error || log.Type == LogType.Exception) && !ConfigManager.Console_ShowErrors) continue;
 
-                string color = "white";
-                if (log.Type == LogType.Warning) color = "yellow";
-                else if (log.Type == LogType.Error || log.Type == LogType.Exception) color = "red";
+                // FIX: Usunięto nieużywaną zmienną 'string color = ...'
 
                 style.normal.textColor = GetColor(log.Type);
                 GUILayout.Label(log.Message, style);

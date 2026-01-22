@@ -14,7 +14,9 @@ namespace WildTerraHook
         private Vector2 _activeListScrollPos;
         private Vector2 _savedProfilesScroll;
         private string _newProfileName = "";
-        private string _manualMethodName = "";
+
+        // Zmieniono lokalną zmienną na referencję do configu
+        // private string _manualMethodName = "";
 
         private List<string> _allGameItems = new List<string>();
         private float _lastCacheTime = 0f;
@@ -118,11 +120,11 @@ namespace WildTerraHook
                 var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
 
                 // 1. Manual Override
-                if (!string.IsNullOrEmpty(_manualMethodName))
+                if (!string.IsNullOrEmpty(ConfigManager.Drop_OverrideMethod))
                 {
                     foreach (var m in methods)
                     {
-                        if (m.Name.Equals(_manualMethodName, StringComparison.OrdinalIgnoreCase))
+                        if (m.Name.Equals(ConfigManager.Drop_OverrideMethod, StringComparison.OrdinalIgnoreCase))
                         {
                             _dropMethod = m;
                             _useSingleParam = m.GetParameters().Length == 1;
@@ -217,8 +219,8 @@ namespace WildTerraHook
             // Pole Override
             GUILayout.BeginHorizontal();
             GUILayout.Label(Localization.Get("DROP_OVERRIDE") + ":", GUILayout.Width(100));
-            string newMethod = GUILayout.TextField(_manualMethodName);
-            if (newMethod != _manualMethodName) { _manualMethodName = newMethod; _initReflection = false; }
+            string newMethod = GUILayout.TextField(ConfigManager.Drop_OverrideMethod);
+            if (newMethod != ConfigManager.Drop_OverrideMethod) { ConfigManager.Drop_OverrideMethod = newMethod; ConfigManager.Save(); _initReflection = false; }
             GUILayout.EndHorizontal();
 
             if (ConfigManager.Drop_Debug)

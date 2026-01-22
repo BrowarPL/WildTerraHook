@@ -1,60 +1,57 @@
-﻿using UnityEngine;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
+using System.Linq;
+using UnityEngine;
 using System.Text;
-using System;
 
 namespace WildTerraHook
 {
     public static class ConfigManager
     {
-        // --- USTAWIENIA OKNA ---
-        public static float Menu_X = 100;
-        public static float Menu_Y = 100;
-        public static float Menu_W = 500;
-        public static float Menu_H = 400;
-        public static int Menu_Tab = 0;
-        public static float Menu_Scale = 1.0f;
-        public static string Language = "pl"; // Domyślnie PL
+        private static string _folderPath;
+        private static string _filePath;
 
-        // --- ESP ---
-        public static bool Esp_Enabled = true;
-        public static float Esp_Distance = 100f;
-        public static float Esp_RefreshRate = 60f; // NOWE POLE
-        public static bool Esp_ShowResources = true;
-        public static bool Esp_ShowMobs = true;
-        public static bool Esp_ShowBoxes = false;
-        public static bool Esp_ShowXRay = false;
+        public static string Language = "en";
 
-        public static bool Esp_Cat_Mining = true;
-        public static bool Esp_Cat_Gather = true;
-        public static bool Esp_Cat_Lumber = true;
-        public static bool Esp_Cat_Godsend = true;
-        public static bool Esp_Cat_Others = false;
-
-        public static bool Esp_Mob_Aggro = true;
-        public static bool Esp_Mob_Retal = true;
-        public static bool Esp_Mob_Passive = true;
-
-        // Listy ESP (serialized)
-        public static string Esp_List_Mining = "";
-        public static string Esp_List_Gather = "";
-        public static string Esp_List_Lumber = "";
-        public static string Esp_List_Godsend = "";
+        // --- COLORS ---
+        public static class Colors
+        {
+            public static Color MobAggressive = Color.red;
+            public static Color MobPassive = Color.green;
+            public static Color MobFleeing = new Color(1f, 0.64f, 0f);
+            public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f);
+            public static Color ResMining = Color.gray;
+            public static Color ResGather = Color.white;
+        }
 
         // --- AUTO LOOT ---
+        public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>>();
+        public static HashSet<string> ActiveProfiles = new HashSet<string>();
         public static bool Loot_Enabled = false;
+        public static float Loot_Delay = 0.2f;
         public static bool Loot_Debug = false;
-        public static float Loot_Delay = 0.3f;
-        public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>> { { "Default", new List<string>() } };
-        public static HashSet<string> ActiveProfiles = new HashSet<string> { "Default" };
 
         // --- AUTO DROP ---
+        public static Dictionary<string, List<string>> DropProfiles = new Dictionary<string, List<string>>();
+        public static HashSet<string> ActiveDropProfiles = new HashSet<string>();
         public static bool Drop_Enabled = false;
-        public static bool Drop_Debug = false;
         public static float Drop_Delay = 0.5f;
-        public static Dictionary<string, List<string>> DropProfiles = new Dictionary<string, List<string>> { { "Default", new List<string>() } };
-        public static HashSet<string> ActiveDropProfiles = new HashSet<string> { "Default" };
+        public static bool Drop_Debug = false;
+        public static string Drop_OverrideMethod = ""; // ZAPISYWANIE OVERRIDE
+
+        // --- BOTS ---
+        public static bool ColorFish_Enabled = false;
+        public static bool ColorFish_AutoPress = false;
+        public static float ColorFish_ReactionTime = 0.3f;
+        public static float ColorFish_Timeout = 25.0f;
+        public static bool ColorFish_ShowESP = true;
+
+        public static bool MemFish_Enabled = false;
+        public static bool MemFish_AutoPress = false;
+        public static float MemFish_ReactionTime = 0.3f;
+        public static bool MemFish_ShowESP = true;
 
         // --- MISC ---
         public static bool Misc_EternalDay = false;
@@ -63,267 +60,354 @@ namespace WildTerraHook
         public static bool Misc_BrightPlayer = false;
         public static float Misc_LightIntensity = 2.0f;
         public static float Misc_LightRange = 1000f;
-
         public static bool Misc_ZoomHack = false;
         public static float Misc_ZoomLimit = 100f;
         public static float Misc_CamAngle = 45f;
         public static float Misc_ZoomSpeed = 60f;
         public static float Misc_Fov = 60f;
-        public static float Misc_RenderDistance = 1000f;
+        public static float Misc_RenderDistance = 500f;
 
-        // --- FISHING ---
-        public static bool ColorFish_Enabled = false;
-        public static bool ColorFish_ShowESP = true;
-        public static float ColorFish_Timeout = 25f;
+        // --- ESP ---
+        public static bool Esp_Enabled = false;
+        public static float Esp_Distance = 150f;
+        public static float Esp_RefreshRate = 60f; // ZAPISYWANIE FPS
+        public static bool Esp_ShowBoxes = true;
+        public static bool Esp_ShowXRay = true;
+        public static bool Esp_ShowResources = false;
+        public static bool Esp_ShowMobs = false;
+        public static bool Esp_Cat_Mining = false;
+        public static bool Esp_Cat_Gather = false;
+        public static bool Esp_Cat_Lumber = false;
+        public static bool Esp_Cat_Godsend = false;
+        public static bool Esp_Cat_Others = false;
+        public static bool Esp_Mob_Aggro = false;
+        public static bool Esp_Mob_Retal = false;
+        public static bool Esp_Mob_Passive = false;
 
-        // --- FISHING MEMORY ---
-        public static bool MemFish_Enabled = false; // Domyślnie wyłączony
-        public static bool MemFish_ShowESP = true;
-        public static bool MemFish_AutoPress = false;
-        public static float MemFish_ReactionTime = 0.25f;
+        public static string Esp_List_Mining = "";
+        public static string Esp_List_Gather = "";
+        public static string Esp_List_Lumber = "";
+        public static string Esp_List_Godsend = "";
 
-        // --- COLORS ---
-        public static class Colors
+        // --- CONSOLE ---
+        public static bool Console_AutoScroll = true;
+        public static bool Console_ShowInfo = true;
+        public static bool Console_ShowWarnings = true;
+        public static bool Console_ShowErrors = true;
+
+        // --- MENU ---
+        public static float Menu_Scale = 1.0f;
+        public static float Menu_X = 20f;
+        public static float Menu_Y = 20f;
+        public static float Menu_W = 450f;
+        public static float Menu_H = 0f;
+        public static int Menu_Tab = 0;
+
+        static ConfigManager()
         {
-            public static Color MobAggressive = Color.red;
-            public static Color MobPassive = Color.green;
-            public static Color MobFleeing = Color.yellow;
-            public static Color ResMining = Color.cyan;
-            public static Color ResGather = Color.magenta;
-            public static Color ResLumber = new Color(0.6f, 0.3f, 0f);
-        }
+            _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
+            _filePath = Path.Combine(_folderPath, "config.txt");
 
-        private static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook", "config.json");
+            if (LootProfiles.Count == 0) { LootProfiles["Default"] = new List<string>(); ActiveProfiles.Add("Default"); }
+            if (DropProfiles.Count == 0) { DropProfiles["Default"] = new List<string>(); ActiveDropProfiles.Add("Default"); }
 
-        public static void Save()
-        {
-            try
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("Menu_X=" + Menu_X);
-                sb.AppendLine("Menu_Y=" + Menu_Y);
-                sb.AppendLine("Menu_W=" + Menu_W);
-                sb.AppendLine("Menu_H=" + Menu_H);
-                sb.AppendLine("Menu_Tab=" + Menu_Tab);
-                sb.AppendLine("Menu_Scale=" + Menu_Scale);
-                sb.AppendLine("Language=" + Language);
-
-                sb.AppendLine("Esp_Enabled=" + Esp_Enabled);
-                sb.AppendLine("Esp_Distance=" + Esp_Distance);
-                sb.AppendLine("Esp_RefreshRate=" + Esp_RefreshRate); // SAVE
-                sb.AppendLine("Esp_ShowResources=" + Esp_ShowResources);
-                sb.AppendLine("Esp_ShowMobs=" + Esp_ShowMobs);
-                sb.AppendLine("Esp_ShowBoxes=" + Esp_ShowBoxes);
-                sb.AppendLine("Esp_ShowXRay=" + Esp_ShowXRay);
-
-                sb.AppendLine("Esp_Cat_Mining=" + Esp_Cat_Mining);
-                sb.AppendLine("Esp_Cat_Gather=" + Esp_Cat_Gather);
-                sb.AppendLine("Esp_Cat_Lumber=" + Esp_Cat_Lumber);
-                sb.AppendLine("Esp_Cat_Godsend=" + Esp_Cat_Godsend);
-                sb.AppendLine("Esp_Cat_Others=" + Esp_Cat_Others);
-
-                sb.AppendLine("Esp_Mob_Aggro=" + Esp_Mob_Aggro);
-                sb.AppendLine("Esp_Mob_Retal=" + Esp_Mob_Retal);
-                sb.AppendLine("Esp_Mob_Passive=" + Esp_Mob_Passive);
-
-                sb.AppendLine("Esp_List_Mining=" + Esp_List_Mining);
-                sb.AppendLine("Esp_List_Gather=" + Esp_List_Gather);
-                sb.AppendLine("Esp_List_Lumber=" + Esp_List_Lumber);
-                sb.AppendLine("Esp_List_Godsend=" + Esp_List_Godsend);
-
-                sb.AppendLine("Loot_Enabled=" + Loot_Enabled);
-                sb.AppendLine("Loot_Debug=" + Loot_Debug);
-                sb.AppendLine("Loot_Delay=" + Loot_Delay);
-                sb.AppendLine("Loot_Active=" + string.Join("|", ActiveProfiles));
-                foreach (var kvp in LootProfiles) sb.AppendLine($"Loot_Profile_{kvp.Key}=" + string.Join("|", kvp.Value));
-
-                sb.AppendLine("Drop_Enabled=" + Drop_Enabled);
-                sb.AppendLine("Drop_Debug=" + Drop_Debug);
-                sb.AppendLine("Drop_Delay=" + Drop_Delay);
-                sb.AppendLine("Drop_Active=" + string.Join("|", ActiveDropProfiles));
-                foreach (var kvp in DropProfiles) sb.AppendLine($"Drop_Profile_{kvp.Key}=" + string.Join("|", kvp.Value));
-
-                sb.AppendLine("Misc_EternalDay=" + Misc_EternalDay);
-                sb.AppendLine("Misc_NoFog=" + Misc_NoFog);
-                sb.AppendLine("Misc_Fullbright=" + Misc_Fullbright);
-                sb.AppendLine("Misc_BrightPlayer=" + Misc_BrightPlayer);
-                sb.AppendLine("Misc_LightIntensity=" + Misc_LightIntensity);
-                sb.AppendLine("Misc_LightRange=" + Misc_LightRange);
-                sb.AppendLine("Misc_ZoomHack=" + Misc_ZoomHack);
-                sb.AppendLine("Misc_ZoomLimit=" + Misc_ZoomLimit);
-                sb.AppendLine("Misc_CamAngle=" + Misc_CamAngle);
-                sb.AppendLine("Misc_ZoomSpeed=" + Misc_ZoomSpeed);
-                sb.AppendLine("Misc_Fov=" + Misc_Fov);
-                sb.AppendLine("Misc_RenderDistance=" + Misc_RenderDistance);
-
-                sb.AppendLine("ColorFish_Enabled=" + ColorFish_Enabled);
-                sb.AppendLine("ColorFish_ShowESP=" + ColorFish_ShowESP);
-                sb.AppendLine("ColorFish_Timeout=" + ColorFish_Timeout);
-
-                sb.AppendLine("MemFish_Enabled=" + MemFish_Enabled);
-                sb.AppendLine("MemFish_ShowESP=" + MemFish_ShowESP);
-                sb.AppendLine("MemFish_AutoPress=" + MemFish_AutoPress);
-                sb.AppendLine("MemFish_ReactionTime=" + MemFish_ReactionTime);
-
-                sb.AppendLine("Col_MobAggro=" + ColorToHex(Colors.MobAggressive));
-                sb.AppendLine("Col_MobPassive=" + ColorToHex(Colors.MobPassive));
-                sb.AppendLine("Col_MobFlee=" + ColorToHex(Colors.MobFleeing));
-                sb.AppendLine("Col_ResMine=" + ColorToHex(Colors.ResMining));
-                sb.AppendLine("Col_ResGather=" + ColorToHex(Colors.ResGather));
-                sb.AppendLine("Col_ResLumb=" + ColorToHex(Colors.ResLumber));
-
-                File.WriteAllText(ConfigPath, sb.ToString());
-            }
-            catch { }
-        }
-
-        public static void Load()
-        {
-            if (!File.Exists(ConfigPath)) return;
-            try
-            {
-                var lines = File.ReadAllLines(ConfigPath);
-                foreach (var line in lines)
-                {
-                    if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
-                    var parts = line.Split(new[] { '=' }, 2);
-                    string k = parts[0].Trim();
-                    string v = parts[1].Trim();
-
-                    if (k == "Menu_X") float.TryParse(v, out Menu_X);
-                    else if (k == "Menu_Y") float.TryParse(v, out Menu_Y);
-                    else if (k == "Menu_W") float.TryParse(v, out Menu_W);
-                    else if (k == "Menu_H") float.TryParse(v, out Menu_H);
-                    else if (k == "Menu_Tab") int.TryParse(v, out Menu_Tab);
-                    else if (k == "Menu_Scale") float.TryParse(v, out Menu_Scale);
-                    else if (k == "Language") Language = v;
-
-                    else if (k == "Esp_Enabled") bool.TryParse(v, out Esp_Enabled);
-                    else if (k == "Esp_Distance") float.TryParse(v, out Esp_Distance);
-                    else if (k == "Esp_RefreshRate") float.TryParse(v, out Esp_RefreshRate); // LOAD
-                    else if (k == "Esp_ShowResources") bool.TryParse(v, out Esp_ShowResources);
-                    else if (k == "Esp_ShowMobs") bool.TryParse(v, out Esp_ShowMobs);
-                    else if (k == "Esp_ShowBoxes") bool.TryParse(v, out Esp_ShowBoxes);
-                    else if (k == "Esp_ShowXRay") bool.TryParse(v, out Esp_ShowXRay);
-
-                    else if (k == "Esp_Cat_Mining") bool.TryParse(v, out Esp_Cat_Mining);
-                    else if (k == "Esp_Cat_Gather") bool.TryParse(v, out Esp_Cat_Gather);
-                    else if (k == "Esp_Cat_Lumber") bool.TryParse(v, out Esp_Cat_Lumber);
-                    else if (k == "Esp_Cat_Godsend") bool.TryParse(v, out Esp_Cat_Godsend);
-                    else if (k == "Esp_Cat_Others") bool.TryParse(v, out Esp_Cat_Others);
-
-                    else if (k == "Esp_Mob_Aggro") bool.TryParse(v, out Esp_Mob_Aggro);
-                    else if (k == "Esp_Mob_Retal") bool.TryParse(v, out Esp_Mob_Retal);
-                    else if (k == "Esp_Mob_Passive") bool.TryParse(v, out Esp_Mob_Passive);
-
-                    else if (k == "Esp_List_Mining") Esp_List_Mining = v;
-                    else if (k == "Esp_List_Gather") Esp_List_Gather = v;
-                    else if (k == "Esp_List_Lumber") Esp_List_Lumber = v;
-                    else if (k == "Esp_List_Godsend") Esp_List_Godsend = v;
-
-                    else if (k == "Loot_Enabled") bool.TryParse(v, out Loot_Enabled);
-                    else if (k == "Loot_Debug") bool.TryParse(v, out Loot_Debug);
-                    else if (k == "Loot_Delay") float.TryParse(v, out Loot_Delay);
-                    else if (k == "Loot_Active") { ActiveProfiles.Clear(); foreach (var p in v.Split('|')) if (!string.IsNullOrEmpty(p)) ActiveProfiles.Add(p); }
-                    else if (k.StartsWith("Loot_Profile_"))
-                    {
-                        string pName = k.Replace("Loot_Profile_", "");
-                        var list = new List<string>();
-                        foreach (var i in v.Split('|')) if (!string.IsNullOrEmpty(i)) list.Add(i);
-                        LootProfiles[pName] = list;
-                    }
-
-                    else if (k == "Drop_Enabled") bool.TryParse(v, out Drop_Enabled);
-                    else if (k == "Drop_Debug") bool.TryParse(v, out Drop_Debug);
-                    else if (k == "Drop_Delay") float.TryParse(v, out Drop_Delay);
-                    else if (k == "Drop_Active") { ActiveDropProfiles.Clear(); foreach (var p in v.Split('|')) if (!string.IsNullOrEmpty(p)) ActiveDropProfiles.Add(p); }
-                    else if (k.StartsWith("Drop_Profile_"))
-                    {
-                        string pName = k.Replace("Drop_Profile_", "");
-                        var list = new List<string>();
-                        foreach (var i in v.Split('|')) if (!string.IsNullOrEmpty(i)) list.Add(i);
-                        DropProfiles[pName] = list;
-                    }
-
-                    else if (k == "Misc_EternalDay") bool.TryParse(v, out Misc_EternalDay);
-                    else if (k == "Misc_NoFog") bool.TryParse(v, out Misc_NoFog);
-                    else if (k == "Misc_Fullbright") bool.TryParse(v, out Misc_Fullbright);
-                    else if (k == "Misc_BrightPlayer") bool.TryParse(v, out Misc_BrightPlayer);
-                    else if (k == "Misc_LightIntensity") float.TryParse(v, out Misc_LightIntensity);
-                    else if (k == "Misc_LightRange") float.TryParse(v, out Misc_LightRange);
-                    else if (k == "Misc_ZoomHack") bool.TryParse(v, out Misc_ZoomHack);
-                    else if (k == "Misc_ZoomLimit") float.TryParse(v, out Misc_ZoomLimit);
-                    else if (k == "Misc_CamAngle") float.TryParse(v, out Misc_CamAngle);
-                    else if (k == "Misc_ZoomSpeed") float.TryParse(v, out Misc_ZoomSpeed);
-                    else if (k == "Misc_Fov") float.TryParse(v, out Misc_Fov);
-                    else if (k == "Misc_RenderDistance") float.TryParse(v, out Misc_RenderDistance);
-
-                    else if (k == "ColorFish_Enabled") bool.TryParse(v, out ColorFish_Enabled);
-                    else if (k == "ColorFish_ShowESP") bool.TryParse(v, out ColorFish_ShowESP);
-                    else if (k == "ColorFish_Timeout") float.TryParse(v, out ColorFish_Timeout);
-
-                    else if (k == "MemFish_Enabled") bool.TryParse(v, out MemFish_Enabled);
-                    else if (k == "MemFish_ShowESP") bool.TryParse(v, out MemFish_ShowESP);
-                    else if (k == "MemFish_AutoPress") bool.TryParse(v, out MemFish_AutoPress);
-                    else if (k == "MemFish_ReactionTime") float.TryParse(v, out MemFish_ReactionTime);
-
-                    else if (k == "Col_MobAggro") Colors.MobAggressive = HexToColor(v);
-                    else if (k == "Col_MobPassive") Colors.MobPassive = HexToColor(v);
-                    else if (k == "Col_MobFlee") Colors.MobFleeing = HexToColor(v);
-                    else if (k == "Col_ResMine") Colors.ResMining = HexToColor(v);
-                    else if (k == "Col_ResGather") Colors.ResGather = HexToColor(v);
-                    else if (k == "Col_ResLumb") Colors.ResLumber = HexToColor(v);
-                }
-            }
-            catch { }
-        }
-
-        public static List<string> GetCombinedActiveList()
-        {
-            List<string> combined = new List<string>();
-            foreach (var profName in ActiveProfiles)
-            {
-                if (LootProfiles.ContainsKey(profName)) combined.AddRange(LootProfiles[profName]);
-            }
-            return combined;
-        }
-
-        public static List<string> GetCombinedActiveDropList()
-        {
-            List<string> combined = new List<string>();
-            foreach (var profName in ActiveDropProfiles)
-            {
-                if (DropProfiles.ContainsKey(profName)) combined.AddRange(DropProfiles[profName]);
-            }
-            return combined;
+            Load();
         }
 
         public static string SerializeToggleList(Dictionary<string, bool> dict)
         {
             List<string> active = new List<string>();
             foreach (var kvp in dict) if (kvp.Value) active.Add(kvp.Key);
-            return string.Join("|", active);
+            return string.Join(",", active);
         }
 
         public static void DeserializeToggleList(string data, Dictionary<string, bool> dict)
         {
             if (string.IsNullOrEmpty(data)) return;
-            var parts = data.Split('|');
             var keys = new List<string>(dict.Keys);
-            foreach (var key in keys) dict[key] = false;
-            foreach (var p in parts) if (dict.ContainsKey(p)) dict[p] = true;
+            foreach (var k in keys) dict[k] = false;
+
+            string[] parts = data.Split(',');
+            foreach (var p in parts)
+            {
+                string trimmed = p.Trim();
+                if (dict.ContainsKey(trimmed)) dict[trimmed] = true;
+            }
         }
 
-        private static string ColorToHex(Color c)
+        public static void Save()
         {
-            return ColorUtility.ToHtmlStringRGBA(c);
+            try
+            {
+                if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
+                using (StreamWriter sw = new StreamWriter(_filePath))
+                {
+                    sw.WriteLine($"Language={Language}");
+                    sw.WriteLine($"Menu_Scale={Menu_Scale.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Menu_Tab={Menu_Tab}");
+                    sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
+
+                    sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
+                    sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Loot_Debug={Loot_Debug}");
+                    sw.WriteLine($"ActiveProfiles={string.Join(",", ActiveProfiles)}");
+
+                    sw.WriteLine($"Drop_Enabled={Drop_Enabled}");
+                    sw.WriteLine($"Drop_Delay={Drop_Delay.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Drop_Debug={Drop_Debug}");
+                    sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
+                    sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
+
+                    // Bots
+                    sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
+                    sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
+                    sw.WriteLine($"ColorFish_ReactionTime={ColorFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"ColorFish_Timeout={ColorFish_Timeout.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"ColorFish_ShowESP={ColorFish_ShowESP}");
+
+                    sw.WriteLine($"MemFish_Enabled={MemFish_Enabled}");
+                    sw.WriteLine($"MemFish_AutoPress={MemFish_AutoPress}");
+                    sw.WriteLine($"MemFish_ReactionTime={MemFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"MemFish_ShowESP={MemFish_ShowESP}");
+
+                    // Misc
+                    sw.WriteLine($"Misc_EternalDay={Misc_EternalDay}");
+                    sw.WriteLine($"Misc_NoFog={Misc_NoFog}");
+                    sw.WriteLine($"Misc_Fullbright={Misc_Fullbright}");
+                    sw.WriteLine($"Misc_BrightPlayer={Misc_BrightPlayer}");
+                    sw.WriteLine($"Misc_LightIntensity={Misc_LightIntensity.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_LightRange={Misc_LightRange.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_ZoomHack={Misc_ZoomHack}");
+                    sw.WriteLine($"Misc_ZoomLimit={Misc_ZoomLimit.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_CamAngle={Misc_CamAngle.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_ZoomSpeed={Misc_ZoomSpeed.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_Fov={Misc_Fov.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_RenderDistance={Misc_RenderDistance.ToString(CultureInfo.InvariantCulture)}");
+
+                    // ESP
+                    sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
+                    sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Esp_RefreshRate={Esp_RefreshRate.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
+                    sw.WriteLine($"Esp_ShowXRay={Esp_ShowXRay}");
+                    sw.WriteLine($"Esp_ShowResources={Esp_ShowResources}");
+                    sw.WriteLine($"Esp_ShowMobs={Esp_ShowMobs}");
+                    sw.WriteLine($"Esp_Cat_Mining={Esp_Cat_Mining}");
+                    sw.WriteLine($"Esp_Cat_Gather={Esp_Cat_Gather}");
+                    sw.WriteLine($"Esp_Cat_Lumber={Esp_Cat_Lumber}");
+                    sw.WriteLine($"Esp_Cat_Godsend={Esp_Cat_Godsend}");
+                    sw.WriteLine($"Esp_Cat_Others={Esp_Cat_Others}");
+                    sw.WriteLine($"Esp_Mob_Aggro={Esp_Mob_Aggro}");
+                    sw.WriteLine($"Esp_Mob_Retal={Esp_Mob_Retal}");
+                    sw.WriteLine($"Esp_Mob_Passive={Esp_Mob_Passive}");
+                    sw.WriteLine($"Esp_List_Mining={Esp_List_Mining}");
+                    sw.WriteLine($"Esp_List_Gather={Esp_List_Gather}");
+                    sw.WriteLine($"Esp_List_Lumber={Esp_List_Lumber}");
+                    sw.WriteLine($"Esp_List_Godsend={Esp_List_Godsend}");
+
+                    sw.WriteLine($"MobAggressive={ColorToString(Colors.MobAggressive)}");
+                    sw.WriteLine($"MobPassive={ColorToString(Colors.MobPassive)}");
+                    sw.WriteLine($"MobFleeing={ColorToString(Colors.MobFleeing)}");
+                    sw.WriteLine($"ResLumber={ColorToString(Colors.ResLumber)}");
+                    sw.WriteLine($"ResMining={ColorToString(Colors.ResMining)}");
+                    sw.WriteLine($"ResGather={ColorToString(Colors.ResGather)}");
+
+                    // Console
+                    sw.WriteLine($"Console_AutoScroll={Console_AutoScroll}");
+                    sw.WriteLine($"Console_ShowInfo={Console_ShowInfo}");
+                    sw.WriteLine($"Console_ShowWarnings={Console_ShowWarnings}");
+                    sw.WriteLine($"Console_ShowErrors={Console_ShowErrors}");
+
+                    foreach (var kvp in LootProfiles)
+                    {
+                        string items = string.Join(";", kvp.Value.Where(x => !string.IsNullOrEmpty(x)));
+                        sw.WriteLine($"Profile:{kvp.Key}={items}");
+                    }
+                    foreach (var kvp in DropProfiles)
+                    {
+                        string items = string.Join(";", kvp.Value.Where(x => !string.IsNullOrEmpty(x)));
+                        sw.WriteLine($"DropProfile:{kvp.Key}={items}");
+                    }
+                }
+            }
+            catch (Exception ex) { Debug.LogError($"[Config] Save Error: {ex.Message}"); }
         }
 
-        private static Color HexToColor(string hex)
+        public static void Load()
         {
-            Color c;
-            if (ColorUtility.TryParseHtmlString("#" + hex, out c)) return c;
+            if (!File.Exists(_filePath)) return;
+            try
+            {
+                string[] lines = File.ReadAllLines(_filePath);
+                bool profilesLoaded = false;
+                bool dropProfilesLoaded = false;
+
+                foreach (string line in lines)
+                {
+                    if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
+                    string[] parts = line.Split(new[] { '=' }, 2);
+                    string key = parts[0].Trim();
+                    string val = parts[1].Trim();
+
+                    if (key == "Language") Language = val;
+                    else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
+                    else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
+                    else if (key == "Menu_Rect")
+                    {
+                        string[] r = val.Split(',');
+                        if (r.Length == 4)
+                        {
+                            float.TryParse(r[0], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_X);
+                            float.TryParse(r[1], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Y);
+                            float.TryParse(r[2], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_W);
+                            float.TryParse(r[3], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_H);
+                        }
+                    }
+                    // Loot & Drop
+                    else if (key == "Loot_Enabled") bool.TryParse(val, out Loot_Enabled);
+                    else if (key == "Loot_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Loot_Delay);
+                    else if (key == "Loot_Debug") bool.TryParse(val, out Loot_Debug);
+                    else if (key == "ActiveProfiles")
+                    {
+                        ActiveProfiles.Clear();
+                        foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveProfiles.Add(p);
+                    }
+                    else if (key == "Drop_Enabled") bool.TryParse(val, out Drop_Enabled);
+                    else if (key == "Drop_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Drop_Delay);
+                    else if (key == "Drop_Debug") bool.TryParse(val, out Drop_Debug);
+                    else if (key == "Drop_OverrideMethod") Drop_OverrideMethod = val;
+                    else if (key == "ActiveDropProfiles")
+                    {
+                        ActiveDropProfiles.Clear();
+                        foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveDropProfiles.Add(p);
+                    }
+
+                    // Bots
+                    else if (key == "ColorFish_Enabled") bool.TryParse(val, out ColorFish_Enabled);
+                    else if (key == "ColorFish_AutoPress") bool.TryParse(val, out ColorFish_AutoPress);
+                    else if (key == "ColorFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ReactionTime);
+                    else if (key == "ColorFish_Timeout") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_Timeout);
+                    else if (key == "ColorFish_ShowESP") bool.TryParse(val, out ColorFish_ShowESP);
+                    else if (key == "MemFish_Enabled") bool.TryParse(val, out MemFish_Enabled);
+                    else if (key == "MemFish_AutoPress") bool.TryParse(val, out MemFish_AutoPress);
+                    else if (key == "MemFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out MemFish_ReactionTime);
+                    else if (key == "MemFish_ShowESP") bool.TryParse(val, out MemFish_ShowESP);
+
+                    // Misc
+                    else if (key == "Misc_EternalDay") bool.TryParse(val, out Misc_EternalDay);
+                    else if (key == "Misc_NoFog") bool.TryParse(val, out Misc_NoFog);
+                    else if (key == "Misc_Fullbright") bool.TryParse(val, out Misc_Fullbright);
+                    else if (key == "Misc_BrightPlayer") bool.TryParse(val, out Misc_BrightPlayer);
+                    else if (key == "Misc_LightIntensity") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_LightIntensity);
+                    else if (key == "Misc_LightRange") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_LightRange);
+                    else if (key == "Misc_ZoomHack") bool.TryParse(val, out Misc_ZoomHack);
+                    else if (key == "Misc_ZoomLimit") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_ZoomLimit);
+                    else if (key == "Misc_CamAngle") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_CamAngle);
+                    else if (key == "Misc_ZoomSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_ZoomSpeed);
+                    else if (key == "Misc_Fov") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_Fov);
+                    else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
+
+                    // ESP
+                    else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
+                    else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
+                    else if (key == "Esp_RefreshRate") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_RefreshRate);
+                    else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
+                    else if (key == "Esp_ShowXRay") bool.TryParse(val, out Esp_ShowXRay);
+                    else if (key == "Esp_ShowResources") bool.TryParse(val, out Esp_ShowResources);
+                    else if (key == "Esp_ShowMobs") bool.TryParse(val, out Esp_ShowMobs);
+                    else if (key == "Esp_Cat_Mining") bool.TryParse(val, out Esp_Cat_Mining);
+                    else if (key == "Esp_Cat_Gather") bool.TryParse(val, out Esp_Cat_Gather);
+                    else if (key == "Esp_Cat_Lumber") bool.TryParse(val, out Esp_Cat_Lumber);
+                    else if (key == "Esp_Cat_Godsend") bool.TryParse(val, out Esp_Cat_Godsend);
+                    else if (key == "Esp_Cat_Others") bool.TryParse(val, out Esp_Cat_Others);
+                    else if (key == "Esp_Mob_Aggro") bool.TryParse(val, out Esp_Mob_Aggro);
+                    else if (key == "Esp_Mob_Retal") bool.TryParse(val, out Esp_Mob_Retal);
+                    else if (key == "Esp_Mob_Passive") bool.TryParse(val, out Esp_Mob_Passive);
+                    else if (key == "Esp_List_Mining") Esp_List_Mining = val;
+                    else if (key == "Esp_List_Gather") Esp_List_Gather = val;
+                    else if (key == "Esp_List_Lumber") Esp_List_Lumber = val;
+                    else if (key == "Esp_List_Godsend") Esp_List_Godsend = val;
+
+                    else if (key == "MobAggressive") Colors.MobAggressive = StringToColor(val);
+                    else if (key == "MobPassive") Colors.MobPassive = StringToColor(val);
+                    else if (key == "MobFleeing") Colors.MobFleeing = StringToColor(val);
+                    else if (key == "ResLumber") Colors.ResLumber = StringToColor(val);
+                    else if (key == "ResMining") Colors.ResMining = StringToColor(val);
+                    else if (key == "ResGather") Colors.ResGather = StringToColor(val);
+
+                    // Console
+                    else if (key == "Console_AutoScroll") bool.TryParse(val, out Console_AutoScroll);
+                    else if (key == "Console_ShowInfo") bool.TryParse(val, out Console_ShowInfo);
+                    else if (key == "Console_ShowWarnings") bool.TryParse(val, out Console_ShowWarnings);
+                    else if (key == "Console_ShowErrors") bool.TryParse(val, out Console_ShowErrors);
+
+                    else if (key.StartsWith("Profile:"))
+                    {
+                        if (!profilesLoaded) { LootProfiles.Clear(); profilesLoaded = true; }
+                        string profileName = key.Substring(8);
+                        List<string> items = new List<string>();
+                        if (!string.IsNullOrEmpty(val)) items.AddRange(val.Split(';'));
+                        LootProfiles[profileName] = items;
+                    }
+                    else if (key.StartsWith("DropProfile:"))
+                    {
+                        if (!dropProfilesLoaded) { DropProfiles.Clear(); dropProfilesLoaded = true; }
+                        string profileName = key.Substring(12);
+                        List<string> items = new List<string>();
+                        if (!string.IsNullOrEmpty(val)) items.AddRange(val.Split(';'));
+                        DropProfiles[profileName] = items;
+                    }
+                }
+
+                if (LootProfiles.Count == 0) { LootProfiles["Default"] = new List<string>(); ActiveProfiles.Add("Default"); }
+                if (DropProfiles.Count == 0) { DropProfiles["Default"] = new List<string>(); ActiveDropProfiles.Add("Default"); }
+            }
+            catch { }
+        }
+
+        private static string ColorToString(Color c)
+        {
+            return $"{c.r.ToString(CultureInfo.InvariantCulture)},{c.g.ToString(CultureInfo.InvariantCulture)},{c.b.ToString(CultureInfo.InvariantCulture)},{c.a.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        private static Color StringToColor(string s)
+        {
+            try
+            {
+                string[] split = s.Split(',');
+                if (split.Length >= 3)
+                {
+                    float r = float.Parse(split[0], CultureInfo.InvariantCulture);
+                    float g = float.Parse(split[1], CultureInfo.InvariantCulture);
+                    float b = float.Parse(split[2], CultureInfo.InvariantCulture);
+                    float a = split.Length > 3 ? float.Parse(split[3], CultureInfo.InvariantCulture) : 1f;
+                    return new Color(r, g, b, a);
+                }
+            }
+            catch { }
             return Color.white;
+        }
+
+        public static List<string> GetCombinedActiveList()
+        {
+            HashSet<string> combined = new HashSet<string>();
+            foreach (var profName in ActiveProfiles)
+            {
+                if (LootProfiles.ContainsKey(profName))
+                    foreach (var item in LootProfiles[profName]) combined.Add(item);
+            }
+            return combined.ToList();
+        }
+
+        public static List<string> GetCombinedActiveDropList()
+        {
+            HashSet<string> combined = new HashSet<string>();
+            foreach (var profName in ActiveDropProfiles)
+            {
+                if (DropProfiles.ContainsKey(profName))
+                    foreach (var item in DropProfiles[profName]) combined.Add(item);
+            }
+            return combined.ToList();
         }
     }
 }

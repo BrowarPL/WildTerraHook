@@ -22,9 +22,9 @@ namespace WildTerraHook
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
-        private float _lastDrawTime = 0f; // Timer rysowania
+        private float _lastDrawTime = 0f; // Timer rysowania FPS
 
-        // Max Health Cache (Highest Seen)
+        // Max Health Cache (Highest Seen) - Naprawa błędnego HP
         private Dictionary<int, int> _maxHealthCache = new Dictionary<int, int>();
 
         // X-RAY & MAT
@@ -130,7 +130,7 @@ namespace WildTerraHook
 
             List<CachedObject> newCache = new List<CachedObject>();
             HashSet<Renderer> currentRenderers = new HashSet<Renderer>();
-            HashSet<int> activeMobIds = new HashSet<int>(); // Do czyszczenia cache HP
+            HashSet<int> activeMobIds = new HashSet<int>();
 
             try
             {
@@ -181,14 +181,13 @@ namespace WildTerraHook
             }
             catch { }
 
-            // Czyszczenie starego cache HP dla mobów, których już nie widzimy
+            // Czyszczenie starego cache HP (czyszczenie pamięci dla mobów, które zniknęły)
             List<int> toRemoveHP = new List<int>();
             foreach (var key in _maxHealthCache.Keys)
             {
                 if (!activeMobIds.Contains(key)) toRemoveHP.Add(key);
             }
             foreach (var k in toRemoveHP) _maxHealthCache.Remove(k);
-
 
             foreach (var item in newCache)
             {
@@ -271,7 +270,7 @@ namespace WildTerraHook
             int hp = mob.health;
             int id = mob.GetInstanceID();
 
-            // HIGHEST SEEN LOGIC
+            // LOGIKA HIGHEST SEEN - naprawia spadające max HP
             if (!_maxHealthCache.ContainsKey(id)) _maxHealthCache[id] = hp;
             else if (hp > _maxHealthCache[id]) _maxHealthCache[id] = hp;
 
