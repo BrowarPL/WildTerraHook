@@ -1,11 +1,11 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
+using System.Collections;
 using System.Reflection;
 using System;
 using System.Linq;
 using System.Text;
-using System.Collections;
 
 namespace WildTerraHook
 {
@@ -21,14 +21,14 @@ namespace WildTerraHook
         private FieldInfo _fBtnPullImg;
         private FieldInfo _fBtnStrikeImg;
 
-        // --- DANE GRY ---
-        private FieldInfo _fCurrentBites; // "fishActions" - lista aktualnych ruchów ryby (List<FishBite>)
+        // --- DANE ---
+        private FieldInfo _fCurrentBites; // To co robi ryba teraz (List<FishBite>)
 
-        // --- REGUŁY (KLUCZ DO JASKINI) ---
-        private FieldInfo _fRulesList;    // Lista reguł na tę sesję (List<FishAction>)
-        private Type _tFishAction;        // Typ klasy FishAction
-        private FieldInfo _fRuleBite;     // Pole w FishAction: "Jaki ruch ryby?" (FishBite)
-        private FieldInfo _fRuleUse;      // Pole w FishAction: "Jaka reakcja?" (FishingUse)
+        // --- REGUŁY (Klucz do Jaskini) ---
+        // Szukamy dowolnej listy, której elementy mają strukturę { FishBite, FishingUse }
+        private FieldInfo _fRulesList;
+        private FieldInfo _fRuleBite;     // Pole wewnątrz elementu listy: FishBite
+        private FieldInfo _fRuleUse;      // Pole wewnątrz elementu listy: FishingUse
 
         public void Update()
         {
@@ -39,7 +39,7 @@ namespace WildTerraHook
 
             if (fishingUI == null || !fishingUI.gameObject.activeSelf)
             {
-                _status = "Oczekiwanie na okno łowienia...";
+                _status = "Oczekiwanie na okno...";
                 return;
             }
 
@@ -54,55 +54,69 @@ namespace WildTerraHook
                 Type uiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // 1. UI Images (Przyciski)
+                // 1. UI Images (Pola istnieją na pewno)
                 _fBtnDragImg = uiType.GetField("dragOutActionButtonImage", flags);
                 _fBtnPullImg = uiType.GetField("pullActionButtonImage", flags);
                 _fBtnStrikeImg = uiType.GetField("strikeActionButtonImage", flags);
 
-                // 2. Aktualne zachowanie ryby (To co widzi gracz)
+                // 2. Aktualna akcja ryby
                 _fCurrentBites = uiType.GetField("fishActions", flags);
 
-                // 3. SZUKANIE LISTY REGUŁ (List<FishAction>)
-                // Szukamy pola, które jest Listą i zawiera obiekty klasy 'FishAction'
+                if (_fCurrentBites == null) { _status = "Błąd: Brak fishActions"; return; }
+
+                // 3. SKANER STRUKTURALNY (Szukamy listy reguł)
+                bool foundRules = false;
+
+                // Przeglądamy wszystkie pola w UI
                 foreach (var field in uiType.GetFields(flags))
                 {
-                    if (field.FieldType.IsGenericType &&
-                        field.FieldType.GetGenericTypeDefinition() == typeof(List<>) &&
-                        field.FieldType.GetGenericArguments()[0].Name == "FishAction")
+                    Type fType = field.FieldType;
+                    Type itemType = null;
+
+                    // Sprawdzamy czy to Lista lub Tablica
+                    if (fType.IsGenericType && fType.GetGenericTypeDefinition() == typeof(List<>))
+                        itemType = fType.GetGenericArguments()[0];
+                    else if (fType.IsArray)
+                        itemType = fType.GetElementType();
+
+                    if (itemType != null)
                     {
-                        _fRulesList = field;
-                        _tFishAction = field.FieldType.GetGenericArguments()[0];
-                        break;
+                        // Analizujemy co siedzi w środku tej listy
+                        FieldInfo biteF = null;
+                        FieldInfo useF = null;
+
+                        foreach (var subF in itemType.GetFields(flags))
+                        {
+                            if (subF.FieldType == typeof(global::FishBite)) biteF = subF;
+                            if (subF.FieldType == typeof(global::FishingUse)) useF = subF;
+                        }
+
+                        // Jeśli element listy zawiera OBA typy (CoRybaRobi i CoKliknąć), to znaleźliśmy Reguły!
+                        if (biteF != null && useF != null)
+                        {
+                            _fRulesList = field;
+                            _fRuleBite = biteF;
+                            _fRuleUse = useF;
+                            foundRules = true;
+                            Debug.Log($"[FishBot] Znaleziono reguły w polu: {field.Name} (Typ: {itemType.Name})");
+                            break;
+                        }
                     }
                 }
 
-                if (_fRulesList == null)
+                if (!foundRules)
                 {
-                    _status = "BŁĄD: Nie znaleziono listy reguł (List<FishAction>)!";
-                    return;
-                }
-
-                // 4. ANALIZA STRUKTURY FishAction
-                // Musimy znaleźć w środku pola typu FishBite (Input) i FishingUse (Output)
-                foreach (var f in _tFishAction.GetFields(flags))
-                {
-                    if (f.FieldType.Name == "FishBite") _fRuleBite = f;
-                    if (f.FieldType.Name == "FishingUse") _fRuleUse = f;
-                }
-
-                if (_fRuleBite == null || _fRuleUse == null)
-                {
-                    _status = "BŁĄD: Klasa FishAction ma inną strukturę.";
+                    _status = "BŁĄD: Nie znaleziono listy reguł w pamięci!";
                 }
                 else
                 {
                     _reflectionInit = true;
-                    Debug.Log("[FishBot] Reflection Success: Znaleziono reguły gry.");
+                    _status = "Gotowy (Reguły załadowane)";
                 }
             }
             catch (Exception ex)
             {
-                _status = "Crash: " + ex.Message;
+                _status = "Ref Crash: " + ex.Message;
             }
         }
 
@@ -119,50 +133,53 @@ namespace WildTerraHook
 
             try
             {
-                // A. Pobierz aktualny stan (co robi ryba?)
+                // A. Pobierz co robi ryba (ostatnia akcja z listy)
                 var bitesList = _fCurrentBites.GetValue(ui) as IList;
                 if (bitesList == null || bitesList.Count == 0)
                 {
                     _status = "Czekam na rybę...";
                     return;
                 }
-                // Ostatni element to aktualna akcja ryby (FishBite)
                 object currentBiteObj = bitesList[bitesList.Count - 1];
-                // Rzutujemy na int, żeby łatwo porównywać (Enumy to inty/byte pod spodem)
+
+                // Konwertujemy Enum na int dla łatwego porównania
                 int currentBiteInt = Convert.ToInt32(currentBiteObj);
 
 
-                // B. Pobierz listę reguł (instrukcja obsługi na tę sesję)
+                // B. Pobierz listę reguł (instrukcja obsługi)
                 var rulesList = _fRulesList.GetValue(ui) as IList;
-                if (rulesList == null) return;
+                if (rulesList == null)
+                {
+                    _status = "Lista reguł jest pusta!";
+                    return;
+                }
 
-
-                // C. Znajdź odpowiednią reakcję w regułach
+                // C. Dopasuj regułę
                 global::FishingUse requiredReaction = global::FishingUse.None;
-                bool ruleFound = false;
+                bool foundMatch = false;
 
                 foreach (var rule in rulesList)
                 {
-                    // Czy ta reguła dotyczy aktualnego zachowania ryby?
                     object ruleBiteObj = _fRuleBite.GetValue(rule);
                     int ruleBiteInt = Convert.ToInt32(ruleBiteObj);
 
+                    // Jeśli ta reguła opisuje aktualny ruch ryby...
                     if (ruleBiteInt == currentBiteInt)
                     {
-                        // Tak! To jest ta sytuacja. Jaka jest wymagana reakcja?
+                        // ...to pobierz przypisaną reakcję
                         requiredReaction = (global::FishingUse)_fRuleUse.GetValue(rule);
-                        ruleFound = true;
+                        foundMatch = true;
                         break;
                     }
                 }
 
-                if (!ruleFound)
+                if (!foundMatch)
                 {
-                    _status = $"Brak reguły dla {currentBiteObj}";
+                    _status = $"Brak instrukcji dla ruchu: {currentBiteObj}";
                     return;
                 }
 
-                // D. Wykonaj akcję
+                // D. Wykonaj
                 Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);
                 Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);
                 Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui);
@@ -177,7 +194,7 @@ namespace WildTerraHook
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
                 {
-                    _status = $"Znalazłem Regułę! {currentBiteObj} -> {requiredReaction}";
+                    _status = $"[MEMORY] Ryba: {currentBiteObj} -> Klik: {requiredReaction}";
 
                     if (ConfigManager.MemFish_AutoPress && Time.time > _actionTimer)
                     {
@@ -191,7 +208,7 @@ namespace WildTerraHook
                 }
                 else
                 {
-                    _status = $"Wymagane: {requiredReaction} (Przycisk nieaktywny)";
+                    _status = $"Cel: {requiredReaction} (Nieaktywny)";
                 }
             }
             catch (Exception ex) { _status = "Run Error: " + ex.Message; }
@@ -207,13 +224,11 @@ namespace WildTerraHook
 
             try
             {
-                // Powtórzenie logiki dla ESP
+                // Powtórzenie logiki wyszukiwania dla ESP
                 var bitesList = _fCurrentBites.GetValue(ui) as IList;
                 if (bitesList == null || bitesList.Count == 0) return;
 
-                object currentBiteObj = bitesList[bitesList.Count - 1];
-                int currentBiteInt = Convert.ToInt32(currentBiteObj);
-
+                int currentBiteInt = Convert.ToInt32(bitesList[bitesList.Count - 1]);
                 var rulesList = _fRulesList.GetValue(ui) as IList;
                 if (rulesList == null) return;
 
@@ -275,6 +290,8 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
+            // Przyciski w menu Memory Bota (logikę wyboru bota zostawiamy w MainHack, tutaj tylko opcje)
+
             bool esp = GUILayout.Toggle(ConfigManager.MemFish_ShowESP, "Pokaż ESP (Fiolet)");
             if (esp != ConfigManager.MemFish_ShowESP) { ConfigManager.MemFish_ShowESP = esp; ConfigManager.Save(); }
 
