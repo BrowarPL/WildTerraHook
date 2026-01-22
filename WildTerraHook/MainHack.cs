@@ -83,7 +83,7 @@ namespace WildTerraHook
             if (_windowRect.Contains(mousePos))
             {
                 // Jeśli użytkownik klika, resetujemy osie wejścia gry, aby postać się nie ruszyła
-                // Używamy GetMouseButton, aby wyłapać zarówno kliknięcie, jak i przytrzymanie
+                // Resetujemy tylko w przypadku kliknięcia, aby nie blokować ruchu klawiaturą, jeśli myszka tylko przelatuje
                 if (Input.GetMouseButton(0) || Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0) ||
                     Input.GetMouseButton(1) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonUp(1))
                 {
@@ -184,10 +184,6 @@ namespace WildTerraHook
             {
                 // UKRYTE: Memory Bot wyłączony z menu.
                 GUILayout.Label("<i>Memory Bot disabled (Work in Progress)</i>", CenteredLabel());
-                /* GUILayout.BeginVertical(GUI.skin.box);
-                _memFishModule.DrawMenu();
-                GUILayout.EndVertical();
-                */
             }
             GUILayout.EndVertical();
         }

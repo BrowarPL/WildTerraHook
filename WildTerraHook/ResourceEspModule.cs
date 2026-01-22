@@ -181,7 +181,7 @@ namespace WildTerraHook
             }
             catch { }
 
-            // Czyszczenie starego cache HP (czyszczenie pamięci dla mobów, które zniknęły)
+            // Czyszczenie starego cache HP
             List<int> toRemoveHP = new List<int>();
             foreach (var key in _maxHealthCache.Keys)
             {
@@ -270,7 +270,7 @@ namespace WildTerraHook
             int hp = mob.health;
             int id = mob.GetInstanceID();
 
-            // LOGIKA HIGHEST SEEN - naprawia spadające max HP
+            // LOGIKA HIGHEST SEEN
             if (!_maxHealthCache.ContainsKey(id)) _maxHealthCache[id] = hp;
             else if (hp > _maxHealthCache[id]) _maxHealthCache[id] = hp;
 
@@ -396,7 +396,7 @@ namespace WildTerraHook
                 if (Math.Abs(newFloat - ConfigManager.Esp_Distance) > 0.1f) { ConfigManager.Esp_Distance = newFloat; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
-                // NOWY SUWAK FPS
+                // SUWAK FPS
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"{Localization.Get("ESP_FPS")}: {ConfigManager.Esp_RefreshRate:F0}", GUILayout.Width(100));
                 newFloat = GUILayout.HorizontalSlider(ConfigManager.Esp_RefreshRate, 30f, 120f);
@@ -517,14 +517,22 @@ namespace WildTerraHook
         {
             if (!ConfigManager.Esp_Enabled) return;
 
-            // --- KONTROLA FPS (ODŚWIEŻANIA) ---
-            // Pomijamy klatki, jeśli czas od ostatniego rysowania jest mniejszy niż wymagany odstęp
-            if (Time.unscaledTime - _lastDrawTime < (1f / ConfigManager.Esp_RefreshRate)) return;
-            _lastDrawTime = Time.unscaledTime;
-
-            CreateStyles();
             Camera cam = Camera.main;
             if (cam == null) return;
+
+            CreateStyles();
+
+            // FIX: Sprawdzamy limit FPS tylko podczas fazy Repaint (odrysowywania).
+            // Layout jest ignorowany przez ten limit, aby nie zepsuć obliczeń GUI.
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (Time.unscaledTime - _lastDrawTime < (1f / ConfigManager.Esp_RefreshRate))
+                {
+                    return; // Pomijamy rysowanie w tej klatce
+                }
+                _lastDrawTime = Time.unscaledTime;
+            }
+
             Vector3 originPos = cam.transform.position;
             if (global::Player.localPlayer != null) originPos = global::Player.localPlayer.transform.position;
             float screenW = Screen.width;
@@ -532,7 +540,6 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
-                // Używamy Transform.position dla maksymalnej płynności (live update)
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
