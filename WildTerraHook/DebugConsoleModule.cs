@@ -36,10 +36,7 @@ namespace WildTerraHook
 
         private void HandleLog(string logString, string stackTrace, LogType type)
         {
-            if (_logs.Count > MAX_LOGS)
-            {
-                _logs.RemoveAt(0);
-            }
+            if (_logs.Count > MAX_LOGS) _logs.RemoveAt(0);
 
             _logs.Add(new LogEntry
             {
@@ -48,31 +45,21 @@ namespace WildTerraHook
                 Type = type
             });
 
-            if (_autoScroll)
-            {
-                _scrollPos = new Vector2(0, float.MaxValue);
-            }
+            if (_autoScroll) _scrollPos = new Vector2(0, float.MaxValue);
         }
 
         public void DrawMenu()
         {
-            GUILayout.BeginVertical("box");
+            // Używamy ExpandHeight, aby konsola wypełniła całą dostępną przestrzeń okna
+            GUILayout.BeginVertical("box", GUILayout.ExpandHeight(true));
 
-            // Pasek narzędzi
             GUILayout.BeginHorizontal();
             GUILayout.Label("<b>DEBUG CONSOLE</b>");
             GUILayout.FlexibleSpace();
-
-            // PRZYCISK ZAPISU
-            if (GUILayout.Button("SAVE LOG", GUILayout.Width(100)))
-            {
-                SaveLogsToFile();
-            }
-
+            if (GUILayout.Button("SAVE LOG", GUILayout.Width(100))) SaveLogsToFile();
             if (GUILayout.Button("Clear", GUILayout.Width(60))) _logs.Clear();
             GUILayout.EndHorizontal();
 
-            // Filtry
             GUILayout.BeginHorizontal();
             _autoScroll = GUILayout.Toggle(_autoScroll, "Auto-Scroll");
             _showLogs = GUILayout.Toggle(_showLogs, "Info");
@@ -82,7 +69,6 @@ namespace WildTerraHook
 
             GUILayout.Space(5);
 
-            // Obszar logów
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUI.skin.box);
 
             GUIStyle style = new GUIStyle(GUI.skin.label);
@@ -121,22 +107,16 @@ namespace WildTerraHook
                 string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook", "log.txt");
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine($"--- LOG SAVED AT {DateTime.Now} ---");
-
                 foreach (var log in _logs)
                 {
                     sb.AppendLine($"{log.Message}");
-                    if (!string.IsNullOrEmpty(log.StackTrace))
-                        sb.AppendLine(log.StackTrace);
+                    if (!string.IsNullOrEmpty(log.StackTrace)) sb.AppendLine(log.StackTrace);
                     sb.AppendLine("------------------------------------------------");
                 }
-
                 File.WriteAllText(path, sb.ToString());
                 Debug.Log($"[Console] Log saved to: {path}");
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[Console] Failed to save log: {ex.Message}");
-            }
+            catch (Exception ex) { Debug.LogError($"[Console] Failed to save: {ex.Message}"); }
         }
 
         private Color GetColor(LogType type)

@@ -9,16 +9,13 @@ namespace WildTerraHook
         private AutoDropModule _dropModule;
         private MiscModule _miscModule;
         private ColorFishingModule _colorFishModule;
-        private FishBotModule _memFishModule; // Ukryty
-
-        // NOWOŚĆ: Konsola
+        private FishBotModule _memFishModule;
         private DebugConsoleModule _consoleModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
         private bool _isInitialized = false;
 
-        // Dodano "CONSOLE" na końcu
         private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Auto Drop", "Misc", "CONSOLE" };
         private int _currentTab = 0;
 
@@ -28,12 +25,13 @@ namespace WildTerraHook
             ConfigManager.Load();
 
             _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
+
+            // Domyślne wymiary, jeśli to pierwsze uruchomienie (lub błędny config)
             if (_windowRect.width < 450) _windowRect.width = 500;
-            if (_windowRect.height < 50) _windowRect.height = 0;
+            if (_windowRect.height < 300) _windowRect.height = 400; // Wyższe startowe okno dla konsoli
 
             _currentTab = ConfigManager.Menu_Tab;
 
-            // Inicjalizacja modułów
             _espModule = new ResourceEspModule();
             _lootModule = new AutoLootModule();
             _dropModule = new AutoDropModule();
@@ -41,16 +39,14 @@ namespace WildTerraHook
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
 
-            // Start konsoli
             _consoleModule = new DebugConsoleModule();
-            Debug.Log("[MainHack] Konsola uruchomiona. Witaj w WildTerraHook!");
+            Debug.Log("[MainHack] Hook załadowany pomyślnie.");
 
             _isInitialized = true;
         }
 
         public void OnDestroy()
         {
-            // Bardzo ważne: odpinamy event logowania, żeby nie było wycieków pamięci
             if (_consoleModule != null) _consoleModule.Shutdown();
         }
 
@@ -87,7 +83,11 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(450));
+                // Aktualizujemy globalne wymiary dla modułów (do skalowania list)
+                ConfigManager.Menu_W = _windowRect.width;
+                ConfigManager.Menu_H = _windowRect.height;
+
+                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(450), GUILayout.MinHeight(300));
 
                 GUI.matrix = oldMatrix;
             }
@@ -109,10 +109,14 @@ namespace WildTerraHook
             {
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
-                _windowRect.height = 0;
+                // USUNIĘTO: _windowRect.height = 0; -> Zapobiega to zmianie rozmiaru okna przy przełączaniu zakładek
             }
 
             GUILayout.Space(10);
+
+            // Rysowanie zawartości
+            // Używamy ScrollView dla całego kontentu, jeśli wyjdzie poza okno, 
+            // ale moduły mają własne scrolle, więc tutaj po prostu expand.
 
             switch (_currentTab)
             {
@@ -121,7 +125,7 @@ namespace WildTerraHook
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: _dropModule.DrawMenu(); break;
                 case 4: DrawMiscTab(); break;
-                case 5: _consoleModule.DrawMenu(); break; // Rysowanie konsoli
+                case 5: _consoleModule.DrawMenu(); break;
             }
 
             GUILayout.Space(10);
@@ -175,7 +179,8 @@ namespace WildTerraHook
             {
                 _windowRect.width += e.delta.x;
                 _windowRect.height += e.delta.y;
-                if (_windowRect.width < 350) _windowRect.width = 350;
+                if (_windowRect.width < 450) _windowRect.width = 450;
+                if (_windowRect.height < 300) _windowRect.height = 300;
                 e.Use();
             }
         }
