@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Text;
+using System.IO;
+using System;
 
 namespace WildTerraHook
 {
@@ -20,12 +22,10 @@ namespace WildTerraHook
         private bool _showLogs = true;
         private bool _showWarnings = true;
 
-        // Ograniczenie pamięci
-        private const int MAX_LOGS = 300;
+        private const int MAX_LOGS = 500;
 
         public DebugConsoleModule()
         {
-            // Rejestracja callbacku systemowego Unity
             Application.logMessageReceived += HandleLog;
         }
 
@@ -43,7 +43,7 @@ namespace WildTerraHook
 
             _logs.Add(new LogEntry
             {
-                Message = $"[{System.DateTime.Now:HH:mm:ss}] {logString}",
+                Message = $"[{DateTime.Now:HH:mm:ss}] {logString}",
                 StackTrace = stackTrace,
                 Type = type
             });
@@ -58,16 +58,23 @@ namespace WildTerraHook
         {
             GUILayout.BeginVertical("box");
 
-            // Pasek narzędzi konsoli
+            // Pasek narzędzi
             GUILayout.BeginHorizontal();
             GUILayout.Label("<b>DEBUG CONSOLE</b>");
             GUILayout.FlexibleSpace();
-            _autoScroll = GUILayout.Toggle(_autoScroll, "Auto-Scroll");
+
+            // PRZYCISK ZAPISU
+            if (GUILayout.Button("SAVE LOG", GUILayout.Width(100)))
+            {
+                SaveLogsToFile();
+            }
+
             if (GUILayout.Button("Clear", GUILayout.Width(60))) _logs.Clear();
             GUILayout.EndHorizontal();
 
             // Filtry
             GUILayout.BeginHorizontal();
+            _autoScroll = GUILayout.Toggle(_autoScroll, "Auto-Scroll");
             _showLogs = GUILayout.Toggle(_showLogs, "Info");
             _showWarnings = GUILayout.Toggle(_showWarnings, "Warn");
             _showErrors = GUILayout.Toggle(_showErrors, "Error");
@@ -86,21 +93,17 @@ namespace WildTerraHook
             {
                 var log = _logs[i];
 
-                // Filtrowanie
                 if (log.Type == LogType.Log && !_showLogs) continue;
                 if (log.Type == LogType.Warning && !_showWarnings) continue;
                 if ((log.Type == LogType.Error || log.Type == LogType.Exception) && !_showErrors) continue;
 
-                // Kolorowanie
                 string color = "white";
                 if (log.Type == LogType.Warning) color = "yellow";
                 else if (log.Type == LogType.Error || log.Type == LogType.Exception) color = "red";
 
-                // Rysowanie
                 style.normal.textColor = GetColor(log.Type);
                 GUILayout.Label(log.Message, style);
 
-                // Stack trace dla błędów
                 if (log.Type == LogType.Exception || log.Type == LogType.Error)
                 {
                     GUILayout.Label($"<color=grey><size=10>{log.StackTrace}</size></color>", style);
@@ -109,6 +112,31 @@ namespace WildTerraHook
 
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
+        }
+
+        private void SaveLogsToFile()
+        {
+            try
+            {
+                string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook", "log.txt");
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine($"--- LOG SAVED AT {DateTime.Now} ---");
+
+                foreach (var log in _logs)
+                {
+                    sb.AppendLine($"{log.Message}");
+                    if (!string.IsNullOrEmpty(log.StackTrace))
+                        sb.AppendLine(log.StackTrace);
+                    sb.AppendLine("------------------------------------------------");
+                }
+
+                File.WriteAllText(path, sb.ToString());
+                Debug.Log($"[Console] Log saved to: {path}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Console] Failed to save log: {ex.Message}");
+            }
         }
 
         private Color GetColor(LogType type)
