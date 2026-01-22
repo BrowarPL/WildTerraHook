@@ -22,12 +22,9 @@ namespace WildTerraHook
             Localization.Init();
             ConfigManager.Load();
 
-            // Wczytanie z Configu
             _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
-
-            // Minimalne bezpieczne wymiary startowe
-            if (_windowRect.width < 300) _windowRect.width = 450;
-            if (_windowRect.height < 50) _windowRect.height = 0; // 0 = auto-height
+            if (_windowRect.width < 350) _windowRect.width = 450;
+            if (_windowRect.height < 50) _windowRect.height = 0;
 
             _currentTab = ConfigManager.Menu_Tab;
             _isInitialized = true;
@@ -73,7 +70,6 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                // Rysowanie okna
                 _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(350));
 
                 GUI.matrix = oldMatrix;
@@ -86,36 +82,26 @@ namespace WildTerraHook
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
-            // --- SZEROKIE ZAKŁADKI (90% szerokości okna) ---
+            // Tabs
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            // Obliczamy szerokość na podstawie aktualnej szerokości okna
-            float toolbarWidth = _windowRect.width * 0.92f;
-            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(28), GUILayout.Width(toolbarWidth));
+            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.9f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            // -----------------------------------------------
 
             if (newTab != _currentTab)
             {
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
-                _windowRect.height = 0; // Reset wysokości przy zmianie zakładki
+                _windowRect.height = 0;
             }
 
             GUILayout.Space(10);
 
-            // Zawartość zakładek
             switch (_currentTab)
             {
                 case 0: _espModule.DrawMenu(); break;
-                case 1:
-                    GUILayout.BeginVertical("box");
-                    _colorFishModule.DrawMenu();
-                    GUILayout.Space(10);
-                    _memFishModule.DrawMenu();
-                    GUILayout.EndVertical();
-                    break;
+                case 1: DrawFishingTab(); break;
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: DrawMiscTab(); break;
             }
@@ -125,9 +111,50 @@ namespace WildTerraHook
 
             DrawResizer();
             GUI.DragWindow(new Rect(0, 0, 10000, 20));
-
-            // Zapisz konfigurację okna przy puszczeniu myszki (żeby nie spamować dysku)
             if (GUI.changed || Input.GetMouseButtonUp(0)) SaveWindowConfig();
+        }
+
+        private void DrawFishingTab()
+        {
+            GUILayout.BeginVertical("box");
+
+            // --- COLOR BOT CHECKBOX ---
+            bool colorEn = GUILayout.Toggle(ConfigManager.ColorFish_Enabled, " <b>Color Bot</b> (Standard)");
+            if (colorEn != ConfigManager.ColorFish_Enabled)
+            {
+                ConfigManager.ColorFish_Enabled = colorEn;
+                if (colorEn) ConfigManager.MemFish_Enabled = false; // Wyłączamy konkurencję
+                ConfigManager.Save();
+            }
+
+            // Opcje Color Bota (widoczne tylko jak zaznaczony)
+            if (ConfigManager.ColorFish_Enabled)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                _colorFishModule.DrawMenu();
+                GUILayout.EndVertical();
+            }
+
+            GUILayout.Space(5);
+
+            // --- MEMORY BOT CHECKBOX ---
+            bool memEn = GUILayout.Toggle(ConfigManager.MemFish_Enabled, " <b>Memory Bot</b> (Cave / Hidden)");
+            if (memEn != ConfigManager.MemFish_Enabled)
+            {
+                ConfigManager.MemFish_Enabled = memEn;
+                if (memEn) ConfigManager.ColorFish_Enabled = false; // Wyłączamy konkurencję
+                ConfigManager.Save();
+            }
+
+            // Opcje Memory Bota (widoczne tylko jak zaznaczony)
+            if (ConfigManager.MemFish_Enabled)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                _memFishModule.DrawMenu();
+                GUILayout.EndVertical();
+            }
+
+            GUILayout.EndVertical();
         }
 
         private void DrawMiscTab()
@@ -154,7 +181,6 @@ namespace WildTerraHook
             {
                 _windowRect.width += e.delta.x;
                 _windowRect.height += e.delta.y;
-                // Limity minimalne
                 if (_windowRect.width < 350) _windowRect.width = 350;
                 e.Use();
             }
