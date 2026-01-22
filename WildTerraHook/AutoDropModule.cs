@@ -10,13 +10,14 @@ namespace WildTerraHook
         private float _nextDropTime = 0f;
         private string _searchQuery = "";
         private Vector2 _scrollPos;
+        private Vector2 _activeListScrollPos; // Scroll dla listy aktywnych
         private Vector2 _savedProfilesScroll;
         private string _newProfileName = "";
 
         private List<string> _allGameItems = new List<string>();
         private float _lastCacheTime = 0f;
 
-        // --- REFLECTION DO DROPWANIA ---
+        // --- REFLECTION ---
         private MethodInfo _dropMethod;
         private bool _initReflection = false;
 
@@ -25,27 +26,25 @@ namespace WildTerraHook
             if (!ConfigManager.Drop_Enabled) return;
             if (Time.time < _nextDropTime) return;
 
-            // Pobierz gracza
             var player = global::Player.localPlayer as global::WTPlayer;
             if (player == null) return;
-
-            // Pobierz inwentarz
             if (player.inventory == null) return;
 
-            // Inicjalizacja metody dropowania (szukamy metody CmdDropItem lub podobnej)
+            // Szukamy metody CmdDropItem (lub podobnej)
             if (!_initReflection)
             {
-                // Szukamy metody w WTPlayer, która ma "Drop" w nazwie i bierze 2 inty (slotIndex, amount)
                 var methods = typeof(global::WTPlayer).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var m in methods)
                 {
+                    // Szukamy metody, która ma w nazwie "Drop" i "Cmd" (Network Command)
                     if (m.Name.IndexOf("Drop", System.StringComparison.OrdinalIgnoreCase) >= 0 && m.Name.StartsWith("Cmd"))
                     {
                         var pars = m.GetParameters();
+                        // Sprawdzamy czy ma 2 parametry typu int (index, amount)
                         if (pars.Length == 2 && pars[0].ParameterType == typeof(int) && pars[1].ParameterType == typeof(int))
                         {
                             _dropMethod = m;
-                            Debug.Log($"[AutoDrop] Znaleziono metodę dropowania: {m.Name}");
+                            Debug.Log($"[AutoDrop] ZNALEZIONO METODĘ: {m.Name}");
                             break;
                         }
                     }
@@ -53,7 +52,7 @@ namespace WildTerraHook
                 _initReflection = true;
             }
 
-            if (_dropMethod == null) return; // Nie znaleziono metody, nie możemy działać
+            if (_dropMethod == null) return;
 
             List<string> blackList = ConfigManager.GetCombinedActiveDropList();
             if (blackList.Count == 0) return;
@@ -61,27 +60,16 @@ namespace WildTerraHook
             // Iteracja po plecaku
             for (int i = 0; i < player.inventory.Count; i++)
             {
-                // FIX: ItemSlot to struct, nie może być null. Pobieramy go przez wartość.
                 var slot = player.inventory[i];
-
-                // FIX: Sprawdzamy czy slot jest pusty po ilości (Amount > 0)
                 if (slot.amount <= 0) continue;
 
-                // FIX: Pobieramy nazwę z wnętrza struktury Item.
-                // Struktura to zazwyczaj: ItemSlot -> Item -> name
+                // Pobranie nazwy przedmiotu
                 string itemName = "";
-                try
-                {
-                    itemName = slot.item.name;
-                }
-                catch
-                {
-                    continue;
-                }
+                try { itemName = slot.item.name; } catch { continue; }
 
                 if (string.IsNullOrEmpty(itemName)) continue;
 
-                // Sprawdzanie blacklisty
+                // Sprawdzenie czy jest na liście (Contains dla elastyczności)
                 bool shouldDrop = false;
                 foreach (string badItem in blackList)
                 {
@@ -96,19 +84,18 @@ namespace WildTerraHook
                 {
                     try
                     {
-                        // WYWOŁANIE PRZEZ REFLECTION (omija błąd kompilacji CS1061)
-                        // Wywołujemy np. CmdDropItem(i, slot.amount)
+                        // Wywołanie dropu przez Reflection
                         _dropMethod.Invoke(player, new object[] { i, slot.amount });
 
                         if (ConfigManager.Drop_Debug)
-                            Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (x{slot.amount}) ze slotu {i}");
+                            Debug.Log($"[AutoDrop] Wyrzucono: {itemName} (Slot: {i}, Ilość: {slot.amount})");
 
                         _nextDropTime = Time.time + ConfigManager.Drop_Delay;
-                        return; // Wyrzucamy tylko jeden przedmiot na cykl (bezpieczeństwo)
+                        return; // Wyrzucamy 1 przedmiot na klatkę/delay
                     }
                     catch (System.Exception ex)
                     {
-                        Debug.LogError($"[AutoDrop] Błąd podczas wyrzucania: {ex.Message}");
+                        Debug.LogError($"[AutoDrop] Błąd dropowania: {ex.Message}");
                     }
                 }
             }
@@ -116,87 +103,122 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
+            // UKŁAD IDENTYCZNY JAK AUTO LOOT
             GUILayout.BeginVertical("box");
             GUILayout.Label("<b>AUTO DROP (Blacklist)</b>");
 
-            bool newVal = GUILayout.Toggle(ConfigManager.Drop_Enabled, " Włącz Auto Drop");
+            // 1. Włącznik i Debug
+            GUILayout.BeginHorizontal();
+            bool newVal = GUILayout.Toggle(ConfigManager.Drop_Enabled, " WŁĄCZ");
             if (newVal != ConfigManager.Drop_Enabled) { ConfigManager.Drop_Enabled = newVal; ConfigManager.Save(); }
 
+            bool debugVal = GUILayout.Toggle(ConfigManager.Drop_Debug, " Debug Mode");
+            if (debugVal != ConfigManager.Drop_Debug) { ConfigManager.Drop_Debug = debugVal; ConfigManager.Save(); }
+            GUILayout.EndHorizontal();
+
+            // 2. Slider
             GUILayout.BeginHorizontal();
             GUILayout.Label($"Opóźnienie: {ConfigManager.Drop_Delay:F2}s");
             float newDelay = GUILayout.HorizontalSlider(ConfigManager.Drop_Delay, 0.1f, 2.0f);
             if (Mathf.Abs(newDelay - ConfigManager.Drop_Delay) > 0.01f) { ConfigManager.Drop_Delay = newDelay; ConfigManager.Save(); }
             GUILayout.EndHorizontal();
 
-            bool debugVal = GUILayout.Toggle(ConfigManager.Drop_Debug, " Debug Mode (Logi)");
-            if (debugVal != ConfigManager.Drop_Debug) { ConfigManager.Drop_Debug = debugVal; ConfigManager.Save(); }
+            GUILayout.Space(5);
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator
+            GUILayout.Space(5);
 
-            GUILayout.Space(10);
-
-            GUILayout.Label("<b>Dodaj do Blacklisty:</b>");
+            // 3. Dodawanie (Search)
+            GUILayout.Label("<b>Dodaj Przedmiot do Blacklisty:</b>");
             _searchQuery = GUILayout.TextField(_searchQuery);
 
-            // Pobieranie listy przedmiotów z gry (Cache co 5s)
+            // Pobieranie bazy przedmiotów (Cache)
             if (Time.time - _lastCacheTime > 5.0f && global::ScriptableItem.dict != null)
             {
                 _allGameItems = global::ScriptableItem.dict.Values.Select(x => x.name).ToList();
                 _lastCacheTime = Time.time;
             }
 
+            // Lista podpowiedzi
             if (!string.IsNullOrEmpty(_searchQuery))
             {
-                _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(100));
+                GUILayout.BeginVertical("box");
+                _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(120));
+
                 var matches = _allGameItems.Where(x => x.IndexOf(_searchQuery, System.StringComparison.OrdinalIgnoreCase) >= 0).Take(20);
+                bool any = false;
 
                 foreach (var item in matches)
                 {
-                    if (GUILayout.Button(item))
+                    any = true;
+                    if (GUILayout.Button($"Dodaj: {item}"))
                     {
                         AddItemToActiveProfiles(item);
                         _searchQuery = "";
                         ConfigManager.Save();
                     }
                 }
-                GUILayout.EndScrollView();
-            }
 
-            if (!string.IsNullOrEmpty(_searchQuery))
-            {
-                if (GUILayout.Button($"Dodaj ręcznie: '{_searchQuery}'"))
+                // Opcja ręczna, jeśli nie ma na liście
+                if (!any) GUILayout.Label("Brak wyników w bazie...");
+
+                if (GUILayout.Button($"[+] Dodaj ręcznie: \"{_searchQuery}\""))
                 {
                     AddItemToActiveProfiles(_searchQuery);
                     _searchQuery = "";
                     ConfigManager.Save();
                 }
+
+                GUILayout.EndScrollView();
+                GUILayout.EndVertical();
             }
 
-            GUILayout.Space(10);
-            GUILayout.Label("<b>Aktywna Blacklista:</b>");
+            GUILayout.Space(5);
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator
+            GUILayout.Space(5);
+
+            // 4. Lista Aktywna
+            GUILayout.Label("<b>Aktywna Lista (Do Wyrzucenia):</b>");
             var combinedList = ConfigManager.GetCombinedActiveDropList();
 
             if (combinedList.Count == 0)
             {
-                GUILayout.Label("(Pusta lista - nic nie wyrzucam)");
+                GUILayout.Label("<i>Lista jest pusta.</i>");
             }
             else
             {
-                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.BeginVertical("box");
+                _activeListScrollPos = GUILayout.BeginScrollView(_activeListScrollPos, GUILayout.Height(150));
+
                 foreach (var item in combinedList)
                 {
                     GUILayout.BeginHorizontal();
                     GUILayout.Label(item);
-                    if (GUILayout.Button("X", GUILayout.Width(25)))
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("Usuń", GUILayout.Width(60)))
                     {
                         RemoveItemFromActiveProfiles(item);
                         ConfigManager.Save();
                     }
                     GUILayout.EndHorizontal();
                 }
+
+                GUILayout.EndScrollView();
                 GUILayout.EndVertical();
+
+                if (GUILayout.Button("Wyczyść wszystko"))
+                {
+                    ClearAllDropLists();
+                    ConfigManager.Save();
+                }
             }
 
-            GUILayout.Space(10);
+            GUILayout.Space(5);
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator
+            GUILayout.Space(5);
+
+            // 5. Profile Manager
             DrawProfileManager();
+
             GUILayout.EndVertical();
         }
 
@@ -217,32 +239,55 @@ namespace WildTerraHook
             foreach (var profName in ConfigManager.ActiveDropProfiles)
             {
                 if (ConfigManager.DropProfiles.ContainsKey(profName))
-                {
                     ConfigManager.DropProfiles[profName].Remove(item);
-                }
+            }
+        }
+
+        private void ClearAllDropLists()
+        {
+            foreach (var profName in ConfigManager.ActiveDropProfiles)
+            {
+                if (ConfigManager.DropProfiles.ContainsKey(profName))
+                    ConfigManager.DropProfiles[profName].Clear();
             }
         }
 
         private void DrawProfileManager()
         {
-            GUILayout.Label("<b>Profile Drop:</b>");
+            GUILayout.Label("<b>Zarządzanie Profilami:</b>");
+
             _savedProfilesScroll = GUILayout.BeginScrollView(_savedProfilesScroll, GUILayout.Height(80));
             foreach (var profileKey in ConfigManager.DropProfiles.Keys.ToList())
             {
+                GUILayout.BeginHorizontal();
                 bool isActive = ConfigManager.ActiveDropProfiles.Contains(profileKey);
                 bool newActive = GUILayout.Toggle(isActive, profileKey);
+
                 if (newActive != isActive)
                 {
                     if (newActive) ConfigManager.ActiveDropProfiles.Add(profileKey);
                     else ConfigManager.ActiveDropProfiles.Remove(profileKey);
                     ConfigManager.Save();
                 }
+
+                GUILayout.FlexibleSpace();
+                // Opcja usunięcia profilu (nie usuwamy Default)
+                if (profileKey != "Default")
+                {
+                    if (GUILayout.Button("X", GUILayout.Width(25)))
+                    {
+                        ConfigManager.DropProfiles.Remove(profileKey);
+                        ConfigManager.ActiveDropProfiles.Remove(profileKey);
+                        ConfigManager.Save();
+                    }
+                }
+                GUILayout.EndHorizontal();
             }
             GUILayout.EndScrollView();
 
             GUILayout.BeginHorizontal();
-            _newProfileName = GUILayout.TextField(_newProfileName, GUILayout.Width(100));
-            if (GUILayout.Button("Nowy Profil"))
+            _newProfileName = GUILayout.TextField(_newProfileName, GUILayout.Width(120));
+            if (GUILayout.Button("Utwórz Profil"))
             {
                 if (!string.IsNullOrEmpty(_newProfileName) && !ConfigManager.DropProfiles.ContainsKey(_newProfileName))
                 {

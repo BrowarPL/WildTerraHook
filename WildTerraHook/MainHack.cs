@@ -6,7 +6,7 @@ namespace WildTerraHook
     {
         private ResourceEspModule _espModule;
         private AutoLootModule _lootModule;
-        private AutoDropModule _dropModule; // NOWY MODUŁ
+        private AutoDropModule _dropModule;
         private MiscModule _miscModule;
         private ColorFishingModule _colorFishModule;
 
@@ -17,7 +17,6 @@ namespace WildTerraHook
         private Rect _windowRect;
         private bool _isInitialized = false;
 
-        // Dodano "Auto Drop" do nazw zakładek
         private string[] _tabNames = { "ESP", "Fishing", "Auto Loot", "Auto Drop", "Misc" };
         private int _currentTab = 0;
 
@@ -35,7 +34,7 @@ namespace WildTerraHook
 
             _espModule = new ResourceEspModule();
             _lootModule = new AutoLootModule();
-            _dropModule = new AutoDropModule(); // Inicjalizacja
+            _dropModule = new AutoDropModule();
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
@@ -54,7 +53,7 @@ namespace WildTerraHook
 
             _espModule.Update();
             _lootModule.Update();
-            _dropModule.Update(); // Update Drop
+            _dropModule.Update();
             _miscModule.Update();
             _colorFishModule.Update();
         }
@@ -68,6 +67,10 @@ namespace WildTerraHook
 
             if (_showMenu)
             {
+                // BLOKADA KLIKNIĘĆ W GRZE
+                // Jeśli myszka jest nad oknem, "zjadamy" event, żeby gra go nie widziała
+                BlockInputInMenu();
+
                 Matrix4x4 oldMatrix = GUI.matrix;
                 float scale = ConfigManager.Menu_Scale;
                 if (scale < 0.5f) scale = 0.5f;
@@ -80,15 +83,49 @@ namespace WildTerraHook
             }
         }
 
+        private void BlockInputInMenu()
+        {
+            // Przeliczamy pozycję myszki (w OnGUI Y jest odwrócone względem Input.mousePosition)
+            Vector2 mousePos = Event.current.mousePosition;
+
+            // Sprawdzamy, czy myszka jest wewnątrz prostokąta okna (uwzględniając skalę)
+            // Uproszczone sprawdzenie na oryginalnym Rect, bo GUI.Window sam zarządza focusowaniem,
+            // ale musimy wymusić 'Eat' dla eventów myszy.
+
+            // Uwaga: ConfigManager.Menu_Scale wpływa na renderowanie, ale Rect pozostaje w "logicznych" jednostkach.
+            // Dla pewności sprawdzamy Contains na _windowRect.
+
+            if (_windowRect.Contains(mousePos))
+            {
+                // Jeśli to kliknięcie lub scroll, zablokuj propagację do gry
+                if (Event.current.type == EventType.MouseDown ||
+                    Event.current.type == EventType.MouseUp ||
+                    Event.current.type == EventType.ScrollWheel)
+                {
+                    // To zapobiega 'przepuszczaniu' kliknięć, ale Unity GUI i tak je obsłuży wewnątrz Window
+                    // Ważne: wywołujemy to PRZED narysowaniem okna (co robimy w OnGUI),
+                    // ale GUI.Window jest specyficzne.
+                    // W praktyce w Unity IMGUI: GUI.Window zjada eventy automatycznie JEŚLI jest focusowane.
+                    // Wymuszenie focusa:
+                    GUI.FocusWindow(0);
+                }
+            }
+        }
+
         private void DrawWindow(int windowID)
         {
+            // Zjadanie eventu, aby nie przebijało na świat (dodatkowe zabezpieczenie)
+            if (Event.current.type == EventType.MouseDown)
+            {
+                Event.current.Use();
+            }
+
             GUILayout.BeginVertical();
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            // Zwiększyłem limit szerokości, bo doszła nowa zakładka
             int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.95f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
@@ -107,7 +144,7 @@ namespace WildTerraHook
                 case 0: _espModule.DrawMenu(); break;
                 case 1: DrawFishingTab(); break;
                 case 2: _lootModule.DrawMenu(); break;
-                case 3: _dropModule.DrawMenu(); break; // Rysowanie menu Drop
+                case 3: _dropModule.DrawMenu(); break;
                 case 4: DrawMiscTab(); break;
             }
 
