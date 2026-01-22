@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.Reflection;
 
 namespace WildTerraHook
 {
@@ -10,7 +11,7 @@ namespace WildTerraHook
         // --- USTAWIENIA ---
         public bool EspEnabled = false;
         public bool ShowBoxes = true;
-        public bool ShowXRay = true; // Wallhack Glow
+        public bool ShowXRay = true;
 
         // Kategorie
         private bool _showResources = false;
@@ -28,7 +29,7 @@ namespace WildTerraHook
         private bool _showColorMenu = false;
         private float _maxDistance = 150f;
 
-        // Listy toggle
+        // Toggle Lists
         private Dictionary<string, bool> _miningToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
@@ -41,15 +42,22 @@ namespace WildTerraHook
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
 
-        // X-RAY MATERIAL SYSTEM
+        // X-RAY & REFLECTION
         private Material _xrayMaterial;
         private Dictionary<Renderer, Material[]> _originalMaterials = new Dictionary<Renderer, Material[]>();
+
+        // CAST BAR CACHE
+        private FieldInfo _fCastEndTime;
+        private FieldInfo _fCastTotalTime;
+        private bool _castReflectionInit = false;
 
         // GUI
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
         private Texture2D _boxTexture;
+        private Texture2D _castBarTexture; // Tekstura paska castowania
+        private Texture2D _castBackgroundTexture;
         private Vector2 _scrollPos;
 
         private struct CachedObject
@@ -62,13 +70,17 @@ namespace WildTerraHook
             public string HpText;
             public bool IsMob;
             public float Height;
-            public bool ShouldGlow; // Czy ten konkretny obiekt ma świecić?
+            public bool ShouldGlow;
             public Renderer[] Renderers;
+
+            // Cast Info
+            public object MobScript; // Referencja do skryptu moba
         }
 
         public ResourceEspModule()
         {
             InitializeLists();
+            LoadFromConfig();
             CreateXRayMaterial();
         }
 
@@ -87,11 +99,25 @@ namespace WildTerraHook
             foreach (var s in godsend) _godsendToggles[s] = false;
         }
 
+        private void LoadFromConfig()
+        {
+            ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Mining, _miningToggles);
+            ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Gather, _gatheringToggles);
+            ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Lumber, _lumberToggles);
+            ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Godsend, _godsendToggles);
+        }
+
+        private void SyncToConfig()
+        {
+            ConfigManager.Esp_List_Mining = ConfigManager.SerializeToggleList(_miningToggles);
+            ConfigManager.Esp_List_Gather = ConfigManager.SerializeToggleList(_gatheringToggles);
+            ConfigManager.Esp_List_Lumber = ConfigManager.SerializeToggleList(_lumberToggles);
+            ConfigManager.Esp_List_Godsend = ConfigManager.SerializeToggleList(_godsendToggles);
+            ConfigManager.Save();
+        }
+
         private void CreateXRayMaterial()
         {
-            // Tworzymy materiał "Wallhack"
-            // Używamy shadera GUI/Text Shader, bo on zawsze rysuje się na wierzchu UI
-            // Jeśli gra go nie ma, fallback na Sprites/Default
             Shader shader = Shader.Find("GUI/Text Shader");
             if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
             if (shader == null) shader = Shader.Find("Sprites/Default");
@@ -99,19 +125,31 @@ namespace WildTerraHook
             if (shader != null)
             {
                 _xrayMaterial = new Material(shader);
-                // 8 = Always (Rysuj zawsze, ignoruj ściany)
                 _xrayMaterial.SetInt("_ZTest", 8);
-                // Wyłącz zapis do bufora głębi
                 _xrayMaterial.SetInt("_ZWrite", 0);
-                _xrayMaterial.SetInt("_Cull", 0); // Rysuj obie strony (Off)
-                // Ustaw kolejkę renderowania na Overlay (najwyższa możliwa)
+                _xrayMaterial.SetInt("_Cull", 0);
                 _xrayMaterial.renderQueue = 5000;
             }
         }
 
+        private void InitCastReflection(object mobObj)
+        {
+            if (_castReflectionInit || mobObj == null) return;
+            try
+            {
+                Type t = mobObj.GetType();
+                // Szukamy popularnych nazw pól dla castowania
+                _fCastEndTime = t.GetField("castEndTime") ?? t.GetField("castFinishTime") ?? t.GetField("castingEndTime");
+                _fCastTotalTime = t.GetField("castTime") ?? t.GetField("castDuration") ?? t.GetField("totalCastTime");
+
+                _castReflectionInit = true;
+            }
+            catch { }
+        }
+
         public void Update()
         {
-            if (!EspEnabled)
+            if (!ConfigManager.Esp_Enabled)
             {
                 ClearAllXRay();
                 return;
@@ -138,7 +176,7 @@ namespace WildTerraHook
             try
             {
                 // RESOURCES
-                if (_showResources)
+                if (ConfigManager.Esp_ShowResources)
                 {
                     List<string> activeMining = GetActiveKeys(_miningToggles);
                     List<string> activeGather = GetActiveKeys(_gatheringToggles);
@@ -150,36 +188,34 @@ namespace WildTerraHook
                     foreach (var obj in objects)
                     {
                         if (obj == null) continue;
-                        if ((obj.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance)) continue;
+                        if ((obj.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
 
                         string name = obj.name;
                         if (IsIgnored(name)) continue;
 
                         bool matched = false;
-                        // Dla nazwanych surowców -> GLOW ON (true)
-                        if (_showMining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false, true)) matched = true;
-                        else if (_showGathering && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false, true)) matched = true;
-                        else if (_showLumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false, true)) matched = true;
-                        else if (_showGodsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false, true)) matched = true;
+                        if (ConfigManager.Esp_Cat_Mining && CheckList(name, activeMining, obj, ConfigManager.Colors.ResMining, newCache, false)) matched = true;
+                        else if (ConfigManager.Esp_Cat_Gather && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false)) matched = true;
+                        else if (ConfigManager.Esp_Cat_Lumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false)) matched = true;
+                        else if (ConfigManager.Esp_Cat_Godsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false)) matched = true;
 
-                        // Dla "Innych" -> GLOW OFF (false)
-                        if (!matched && _showOthers && !name.Contains("Player") && !name.Contains("Character"))
+                        if (!matched && ConfigManager.Esp_Cat_Others && !name.Contains("Player") && !name.Contains("Character"))
                         {
-                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false);
+                            AddToCache(newCache, obj.gameObject, obj.transform.position, obj.transform, name, Color.white, "", false, 0f, false, null);
                             matched = true;
                         }
                     }
                 }
 
-                // MOBS (Zawsze GLOW ON)
-                if (_showMobs)
+                // MOBS
+                if (ConfigManager.Esp_ShowMobs)
                 {
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
                     foreach (var mob in mobs)
                     {
                         if (mob != null && mob.health > 0)
                         {
-                            if ((mob.transform.position - playerPos).sqrMagnitude > (_maxDistance * _maxDistance)) continue;
+                            if ((mob.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
                             ProcessMob(mob, newCache);
                         }
                     }
@@ -187,36 +223,29 @@ namespace WildTerraHook
             }
             catch { }
 
-            // --- ZARZĄDZANIE MATERIAŁAMI ---
-
-            // 1. Zidentyfikuj aktywne renderery
+            // X-RAY
             foreach (var item in newCache)
             {
-                if (item.Renderers != null)
-                {
-                    foreach (var r in item.Renderers) currentRenderers.Add(r);
-                }
+                if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
             }
 
-            // 2. Wyczyść stare (obiekty które zniknęły)
             List<Renderer> toRemove = new List<Renderer>();
             foreach (var kvp in _originalMaterials)
             {
                 if (kvp.Key == null || !currentRenderers.Contains(kvp.Key))
                 {
-                    if (kvp.Key != null) kvp.Key.materials = kvp.Value; // Przywróć oryginał
+                    if (kvp.Key != null) kvp.Key.materials = kvp.Value;
                     toRemove.Add(kvp.Key);
                 }
             }
             foreach (var r in toRemove) _originalMaterials.Remove(r);
 
-            // 3. Aplikuj Glow (tylko tam gdzie ShouldGlow == true)
-            if (ShowXRay)
+            if (ConfigManager.Esp_ShowXRay)
             {
                 foreach (var item in newCache)
                 {
                     if (item.ShouldGlow) ApplyXRay(item.Renderers, item.Color);
-                    else RestoreOriginal(item.Renderers); // Jeśli obiekt jest w liście (Inne), ale bez glow
+                    else RestoreOriginal(item.Renderers);
                 }
             }
             else
@@ -256,14 +285,14 @@ namespace WildTerraHook
             return active;
         }
 
-        private bool CheckList(string objName, List<string> activeKeys, global::WTObject obj, Color color, List<CachedObject> cache, bool isMob, bool glow)
+        private bool CheckList(string objName, List<string> activeKeys, global::WTObject obj, Color color, List<CachedObject> cache, bool isMob)
         {
             if (activeKeys.Count == 0) return false;
             foreach (var key in activeKeys)
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, glow);
+                    AddToCache(cache, obj.gameObject, obj.transform.position, obj.transform, key, color, "", isMob, 0f, true, null);
                     return true;
                 }
             }
@@ -295,21 +324,26 @@ namespace WildTerraHook
 
             if (isAggro)
             {
-                if (_showAggressive) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; show = true; }
+                if (ConfigManager.Esp_Mob_Aggro) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; show = true; }
             }
             else if (isPassive)
             {
-                if (_showPassive) { textColor = ConfigManager.Colors.MobPassive; show = true; }
+                if (ConfigManager.Esp_Mob_Passive) { textColor = ConfigManager.Colors.MobPassive; show = true; }
             }
             else
             {
-                if (_showRetaliating) { textColor = ConfigManager.Colors.MobFleeing; show = true; }
+                if (ConfigManager.Esp_Mob_Retal) { textColor = ConfigManager.Colors.MobFleeing; show = true; }
             }
 
-            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true);
+            // Inicjalizacja refleksji castowania raz na pierwszego moba
+            if (show)
+            {
+                if (!_castReflectionInit) InitCastReflection(mob);
+                AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true, mob);
+            }
         }
 
-        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow)
+        private void AddToCache(List<CachedObject> cache, GameObject go, Vector3 pos, Transform tr, string label, Color col, string hp, bool isMob, float h, bool glow, object script)
         {
             var rends = go.GetComponentsInChildren<Renderer>();
             cache.Add(new CachedObject
@@ -323,49 +357,35 @@ namespace WildTerraHook
                 IsMob = isMob,
                 Height = h,
                 ShouldGlow = glow,
-                Renderers = rends
+                Renderers = rends,
+                MobScript = script
             });
         }
 
-        // --- X-RAY LOGIC ---
-
+        // --- X-RAY IMPL ---
         private void ApplyXRay(Renderer[] renderers, Color color)
         {
             if (renderers == null || _xrayMaterial == null) return;
-
             foreach (var r in renderers)
             {
-                if (r == null) continue;
-                if (r is ParticleSystemRenderer) continue;
-
-                // Zapisz oryginał
-                if (!_originalMaterials.ContainsKey(r)) _originalMaterials[r] = r.sharedMaterials; // shared lepsze dla wydajności
+                if (r == null || r is ParticleSystemRenderer) continue;
+                if (!_originalMaterials.ContainsKey(r)) _originalMaterials[r] = r.sharedMaterials;
 
                 var currentMats = r.materials;
                 bool hasXRay = false;
-
-                if (currentMats.Length > 0)
+                if (currentMats.Length > 0 && currentMats[currentMats.Length - 1].shader.name == _xrayMaterial.shader.name)
                 {
-                    var lastMat = currentMats[currentMats.Length - 1];
-                    // Sprawdzamy po nazwie shadera, bo to najpewniejsze
-                    if (lastMat.shader.name == _xrayMaterial.shader.name)
-                    {
-                        // Aktualizuj kolor (z alphą 0.5 dla przezroczystości)
-                        Color targetColor = new Color(color.r, color.g, color.b, 0.5f);
-                        if (lastMat.color != targetColor) lastMat.color = targetColor;
-                        hasXRay = true;
-                    }
+                    Color targetColor = new Color(color.r, color.g, color.b, 0.5f);
+                    if (currentMats[currentMats.Length - 1].color != targetColor) currentMats[currentMats.Length - 1].color = targetColor;
+                    hasXRay = true;
                 }
 
                 if (!hasXRay)
                 {
-                    // Dodaj materiał XRay na wierzch
                     Material[] newMats = new Material[currentMats.Length + 1];
                     Array.Copy(currentMats, newMats, currentMats.Length);
-
                     Material instanceXRay = new Material(_xrayMaterial);
                     instanceXRay.color = new Color(color.r, color.g, color.b, 0.5f);
-
                     newMats[newMats.Length - 1] = instanceXRay;
                     r.materials = newMats;
                 }
@@ -384,6 +404,9 @@ namespace WildTerraHook
         {
             if (_bgTexture == null) { _bgTexture = new Texture2D(1, 1); _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.75f)); _bgTexture.Apply(); }
             if (_boxTexture == null) { _boxTexture = new Texture2D(1, 1); _boxTexture.SetPixel(0, 0, Color.white); _boxTexture.Apply(); }
+            if (_castBarTexture == null) { _castBarTexture = new Texture2D(1, 1); _castBarTexture.SetPixel(0, 0, ConfigManager.Colors.CastBar); _castBarTexture.Apply(); }
+            if (_castBackgroundTexture == null) { _castBackgroundTexture = new Texture2D(1, 1); _castBackgroundTexture.SetPixel(0, 0, Color.black); _castBackgroundTexture.Apply(); }
+
             if (_styleBackground == null) { _styleBackground = new GUIStyle(); _styleBackground.normal.background = _bgTexture; }
             if (_styleLabel == null)
             {
@@ -399,51 +422,89 @@ namespace WildTerraHook
         public void DrawMenu()
         {
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(450));
-            EspEnabled = GUILayout.Toggle(EspEnabled, $"<b>{Localization.Get("ESP_MAIN_BTN")}</b>");
+
+            bool newVal; float newFloat;
+
+            newVal = GUILayout.Toggle(ConfigManager.Esp_Enabled, $"<b>{Localization.Get("ESP_MAIN_BTN")}</b>");
+            if (newVal != ConfigManager.Esp_Enabled) { ConfigManager.Esp_Enabled = newVal; ConfigManager.Save(); }
+
             GUILayout.Space(5);
 
-            if (EspEnabled)
+            if (ConfigManager.Esp_Enabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("ESP_DIST")}: {_maxDistance:F0}m", GUILayout.Width(100));
-                _maxDistance = GUILayout.HorizontalSlider(_maxDistance, 20f, 300f);
+                GUILayout.Label($"{Localization.Get("ESP_DIST")}: {ConfigManager.Esp_Distance:F0}m", GUILayout.Width(100));
+                newFloat = GUILayout.HorizontalSlider(ConfigManager.Esp_Distance, 20f, 300f);
+                if (Math.Abs(newFloat - ConfigManager.Esp_Distance) > 0.1f) { ConfigManager.Esp_Distance = newFloat; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
-                ShowBoxes = GUILayout.Toggle(ShowBoxes, "Box ESP");
-                ShowXRay = GUILayout.Toggle(ShowXRay, "X-Ray Glow (Visible Through Walls)");
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, "Box ESP");
+                if (newVal != ConfigManager.Esp_ShowBoxes) { ConfigManager.Esp_ShowBoxes = newVal; ConfigManager.Save(); }
+
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowXRay, "X-Ray Glow");
+                if (newVal != ConfigManager.Esp_ShowXRay) { ConfigManager.Esp_ShowXRay = newVal; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowCastBars, Localization.Get("ESP_CAST_BARS"));
+                if (newVal != ConfigManager.Esp_ShowCastBars) { ConfigManager.Esp_ShowCastBars = newVal; ConfigManager.Save(); }
+
                 GUILayout.Space(10);
-                _showResources = GUILayout.Toggle(_showResources, $"<b>{Localization.Get("ESP_RES_TITLE")}</b>");
-                if (_showResources)
+
+                // --- RESOURCES ---
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowResources, $"<b>{Localization.Get("ESP_RES_TITLE")}</b>");
+                if (newVal != ConfigManager.Esp_ShowResources) { ConfigManager.Esp_ShowResources = newVal; ConfigManager.Save(); }
+
+                if (ConfigManager.Esp_ShowResources)
                 {
                     GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
-                    if (_showMining = GUILayout.Toggle(_showMining, Localization.Get("ESP_CAT_MINING"))) DrawDictionary(_miningToggles);
-                    if (_showGathering = GUILayout.Toggle(_showGathering, Localization.Get("ESP_CAT_GATHER"))) DrawDictionary(_gatheringToggles);
-                    if (_showLumber = GUILayout.Toggle(_showLumber, Localization.Get("ESP_CAT_LUMBER"))) DrawDictionary(_lumberToggles);
+
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Mining, Localization.Get("ESP_CAT_MINING"));
+                    if (newVal != ConfigManager.Esp_Cat_Mining) { ConfigManager.Esp_Cat_Mining = newVal; ConfigManager.Save(); }
+                    if (ConfigManager.Esp_Cat_Mining) DrawDictionary(_miningToggles);
+
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Gather, Localization.Get("ESP_CAT_GATHER"));
+                    if (newVal != ConfigManager.Esp_Cat_Gather) { ConfigManager.Esp_Cat_Gather = newVal; ConfigManager.Save(); }
+                    if (ConfigManager.Esp_Cat_Gather) DrawDictionary(_gatheringToggles);
+
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Lumber, Localization.Get("ESP_CAT_LUMBER"));
+                    if (newVal != ConfigManager.Esp_Cat_Lumber) { ConfigManager.Esp_Cat_Lumber = newVal; ConfigManager.Save(); }
+                    if (ConfigManager.Esp_Cat_Lumber) DrawDictionary(_lumberToggles);
+
                     GUILayout.Space(5);
-                    if (_showGodsend = GUILayout.Toggle(_showGodsend, Localization.Get("ESP_CAT_GODSEND"))) DrawDictionary(_godsendToggles);
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Godsend, Localization.Get("ESP_CAT_GODSEND"));
+                    if (newVal != ConfigManager.Esp_Cat_Godsend) { ConfigManager.Esp_Cat_Godsend = newVal; ConfigManager.Save(); }
+                    if (ConfigManager.Esp_Cat_Godsend) DrawDictionary(_godsendToggles);
+
                     GUILayout.Space(5);
-                    _showOthers = GUILayout.Toggle(_showOthers, Localization.Get("ESP_CAT_OTHERS"));
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Others, Localization.Get("ESP_CAT_OTHERS"));
+                    if (newVal != ConfigManager.Esp_Cat_Others) { ConfigManager.Esp_Cat_Others = newVal; ConfigManager.Save(); }
+
                     GUILayout.EndVertical(); GUILayout.EndHorizontal();
                 }
 
                 GUILayout.Space(10);
-                _showMobs = GUILayout.Toggle(_showMobs, $"<b>{Localization.Get("ESP_MOB_TITLE")}</b>");
-                if (_showMobs)
+
+                // --- MOBS ---
+                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowMobs, $"<b>{Localization.Get("ESP_MOB_TITLE")}</b>");
+                if (newVal != ConfigManager.Esp_ShowMobs) { ConfigManager.Esp_ShowMobs = newVal; ConfigManager.Save(); }
+
+                if (ConfigManager.Esp_ShowMobs)
                 {
                     GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
-                    _showAggressive = GUILayout.Toggle(_showAggressive, Localization.Get("ESP_MOB_AGGRO"));
-                    _showRetaliating = GUILayout.Toggle(_showRetaliating, Localization.Get("ESP_MOB_RETAL"));
-                    _showPassive = GUILayout.Toggle(_showPassive, Localization.Get("ESP_MOB_PASSIVE"));
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Mob_Aggro, Localization.Get("ESP_MOB_AGGRO"));
+                    if (newVal != ConfigManager.Esp_Mob_Aggro) { ConfigManager.Esp_Mob_Aggro = newVal; ConfigManager.Save(); }
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Mob_Retal, Localization.Get("ESP_MOB_RETAL"));
+                    if (newVal != ConfigManager.Esp_Mob_Retal) { ConfigManager.Esp_Mob_Retal = newVal; ConfigManager.Save(); }
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Mob_Passive, Localization.Get("ESP_MOB_PASSIVE"));
+                    if (newVal != ConfigManager.Esp_Mob_Passive) { ConfigManager.Esp_Mob_Passive = newVal; ConfigManager.Save(); }
                     GUILayout.EndVertical(); GUILayout.EndHorizontal();
                 }
+
                 GUILayout.Space(15);
                 if (GUILayout.Button(_showColorMenu ? Localization.Get("ESP_HIDE_COLORS") : Localization.Get("ESP_EDIT_COLORS")))
                 {
                     _showColorMenu = !_showColorMenu;
-                    if (!_showColorMenu) ConfigManager.Save();
                 }
                 if (_showColorMenu) DrawColorSettings();
             }
@@ -482,13 +543,19 @@ namespace WildTerraHook
         {
             GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
             var keys = new List<string>(dict.Keys);
-            foreach (var key in keys) dict[key] = GUILayout.Toggle(dict[key], key);
+            bool changed = false;
+            foreach (var key in keys)
+            {
+                bool v = GUILayout.Toggle(dict[key], key);
+                if (v != dict[key]) { dict[key] = v; changed = true; }
+            }
+            if (changed) SyncToConfig();
             GUILayout.EndVertical(); GUILayout.EndHorizontal();
         }
 
         public void DrawESP()
         {
-            if (!EspEnabled) return;
+            if (!ConfigManager.Esp_Enabled) return;
             CreateStyles();
             Camera cam = Camera.main;
             if (cam == null) return;
@@ -501,7 +568,7 @@ namespace WildTerraHook
             {
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
-                if (dist > _maxDistance) continue;
+                if (dist > ConfigManager.Esp_Distance) continue;
 
                 Vector3 screenHead = cam.WorldToScreenPoint(currentPos + Vector3.up * obj.Height);
                 Vector3 screenFeet = cam.WorldToScreenPoint(currentPos);
@@ -532,7 +599,7 @@ namespace WildTerraHook
                 {
                     float feetY = screenH - screenFeet.y;
                     float headY = screenH - screenHead.y;
-                    if (obj.IsMob && ShowBoxes)
+                    if (obj.IsMob && ConfigManager.Esp_ShowBoxes)
                     {
                         float boxHeight = Mathf.Abs(feetY - headY);
                         if (boxHeight < 5) boxHeight = 5;
@@ -541,9 +608,37 @@ namespace WildTerraHook
                         float boxY = headY;
                         DrawBoxOutline(new Rect(boxX, boxY, boxWidth, boxHeight), obj.Color, 2f);
                     }
+
                     string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
                     Vector2 textPos = new Vector2(screenHead.x, headY - 15);
                     DrawLabelWithBackground(textPos, text, obj.Color);
+
+                    // --- CAST BAR ---
+                    if (obj.IsMob && ConfigManager.Esp_ShowCastBars && obj.MobScript != null && _castReflectionInit)
+                    {
+                        try
+                        {
+                            // Pobieranie czasu castowania
+                            float endTime = _fCastEndTime != null ? Convert.ToSingle(_fCastEndTime.GetValue(obj.MobScript)) : 0f;
+                            float totalTime = _fCastTotalTime != null ? Convert.ToSingle(_fCastTotalTime.GetValue(obj.MobScript)) : 0f;
+
+                            if (endTime > Time.time && totalTime > 0)
+                            {
+                                float remaining = endTime - Time.time;
+                                float progress = 1.0f - (remaining / totalTime);
+                                if (progress < 0) progress = 0; if (progress > 1) progress = 1;
+
+                                float barW = 60f; float barH = 6f;
+                                Rect barRect = new Rect(textPos.x - barW / 2, textPos.y + 20, barW, barH);
+
+                                // Tło paska
+                                GUI.DrawTexture(barRect, _castBackgroundTexture);
+                                // Pasek postępu
+                                GUI.DrawTexture(new Rect(barRect.x, barRect.y, barW * progress, barH), _castBarTexture);
+                            }
+                        }
+                        catch { }
+                    }
                 }
             }
         }

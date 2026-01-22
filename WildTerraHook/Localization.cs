@@ -36,11 +36,11 @@ namespace WildTerraHook
                     }
                     loadedFromDisk = true;
                 }
-                catch { Debug.LogError("[Localization] Błąd odczytu pliku."); }
+                catch { Debug.LogError("[Localization] Read Error."); }
             }
 
-            // AUTO-FIX dla kluczy
-            if (!loadedFromDisk || !_currentDict.ContainsKey("LOOT_PROFILES"))
+            // AUTO-FIX: Sprawdź czy jest nowy klucz ESP_CAST_BARS
+            if (!loadedFromDisk || !_currentDict.ContainsKey("ESP_CAST_BARS"))
             {
                 string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
                 try { File.WriteAllText(path, content); } catch { }
@@ -94,6 +94,7 @@ ESP_DIST=Distance
 ESP_EDIT_COLORS=Edit ESP Colors
 ESP_HIDE_COLORS=Hide Colors
 ESP_SAVE_COLORS=Save Colors
+ESP_CAST_BARS=Enemy Cast Bars
 
 ESP_CAT_MINING=Mining
 ESP_CAT_GATHER=Gathering
@@ -173,6 +174,7 @@ ESP_DIST=Dystans Rysowania
 ESP_EDIT_COLORS=Edytuj Kolory ESP
 ESP_HIDE_COLORS=Ukryj Edytor Kolorów
 ESP_SAVE_COLORS=Zapisz Konfigurację
+ESP_CAST_BARS=Paski Castowania Wroga
 
 ESP_CAT_MINING=Górnictwo (Mining)
 ESP_CAT_GATHER=Zbieractwo (Gathering)
