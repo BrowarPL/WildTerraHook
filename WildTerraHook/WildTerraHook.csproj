@@ -97,6 +97,7 @@
   <ItemGroup>
     <Compile Include="AutoLootModule.cs" />
     <Compile Include="ConfigManager.cs" />
+    <Compile Include="FishBotModule.cs" />
     <Compile Include="Loader.cs" />
     <Compile Include="Localization.cs" />
     <Compile Include="MainHack.cs" />

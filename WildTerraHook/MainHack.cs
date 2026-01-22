@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using System.Collections;
 
 namespace WildTerraHook
 {
@@ -7,82 +6,97 @@ namespace WildTerraHook
     {
         // --- MODUŁY ---
         private ResourceEspModule _espModule;
-        private MiscModule _miscModule;
-        private ColorFishingModule _fishingModule;
         private AutoLootModule _lootModule;
+        private MiscModule _miscModule;
+        private FishBotModule _fishBotModule; // NOWY MODUŁ
 
-        // --- GUI ---
-        private Rect _menuRect = new Rect(20, 20, 600, 600);
-
+        // --- UI ---
         private bool _showMenu = true;
-        private bool _globalUiVisible = true;
-
-        private int _selectedTab = 0;
-        private string[] _tabNames = { "ESP", "Fishing", "Loot", "Misc" };
+        private Rect _windowRect = new Rect(20, 20, 520, 500); // Nieco szersze okno
 
         public void Start()
         {
-            ConfigManager.Load();
+            // Inicjalizacja lokalizacji i configu
             Localization.Init();
+            ConfigManager.Load();
 
+            // Inicjalizacja modułów
             _espModule = new ResourceEspModule();
-            _miscModule = new MiscModule();
-            _fishingModule = new ColorFishingModule();
             _lootModule = new AutoLootModule();
+            _miscModule = new MiscModule();
+            _fishBotModule = new FishBotModule(); // Inicjalizacja FishBota
         }
 
         public void Update()
         {
-            if (Input.GetKeyDown(KeyCode.Delete))
-            {
-                _globalUiVisible = !_globalUiVisible;
-            }
-
-            if (_globalUiVisible && Input.GetKeyDown(KeyCode.Insert))
+            // Przełączanie Menu (Insert)
+            if (Input.GetKeyDown(KeyCode.Insert))
             {
                 _showMenu = !_showMenu;
             }
 
-            // Update modułów
+            // Awaryjne zamknięcie (Delete) - usuwa Hacka
+            if (Input.GetKeyDown(KeyCode.Delete))
+            {
+                ConfigManager.Save();
+                Destroy(this.gameObject);
+                return;
+            }
+
+            // Aktualizacja modułów
             _espModule.Update();
-            _miscModule.Update();
-            _fishingModule.Update();
             _lootModule.Update();
+            _miscModule.Update();
+            _fishBotModule.Update(); // Update FishBota
         }
 
         public void OnGUI()
         {
-            if (!_globalUiVisible) return;
-
-            // Rysowanie na ekranie
+            // Rysowanie ESP (zawsze, jeśli włączone)
             _espModule.DrawESP();
-            _fishingModule.OnGUI();
-            _miscModule.OnGUI(); // NOWOŚĆ: Rysowanie okręgów agresji
 
-            // Menu
+            // Rysowanie Menu
             if (_showMenu)
             {
-                _menuRect = GUILayout.Window(0, _menuRect, DrawMenuWindow, Localization.Get("MENU_TITLE"));
+                _windowRect = GUI.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"));
             }
         }
 
-        private void DrawMenuWindow(int windowID)
+        private void DrawWindow(int windowID)
         {
-            GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"));
+            GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
-            _selectedTab = GUILayout.Toolbar(_selectedTab, _tabNames);
+            GUILayout.BeginHorizontal();
+
+            // Kolumna 1: ESP & FishBot
+            GUILayout.BeginVertical(GUILayout.Width(250));
+            _espModule.DrawMenu();
+            GUILayout.Space(10);
+            _fishBotModule.DrawMenu(); // Menu FishBota
+            GUILayout.EndVertical();
+
             GUILayout.Space(10);
 
-            switch (_selectedTab)
-            {
-                case 0: _espModule.DrawMenu(); break;
-                case 1: _fishingModule.DrawMenu(); break;
-                case 2: _lootModule.DrawMenu(); break;
-                case 3: _miscModule.DrawMenu(); break;
-            }
+            // Kolumna 2: Loot & Misc
+            GUILayout.BeginVertical(GUILayout.Width(230));
+            _lootModule.DrawMenu();
+            GUILayout.Space(10);
+            _miscModule.DrawMenu();
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
 
             GUI.DragWindow();
+        }
+
+        private GUIStyle CenteredLabel()
+        {
+            GUIStyle s = new GUIStyle(GUI.skin.label);
+            s.alignment = TextAnchor.MiddleCenter;
+            s.fontSize = 10;
+            s.normal.textColor = Color.gray;
+            return s;
         }
     }
 }
