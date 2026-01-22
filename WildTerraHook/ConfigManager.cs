@@ -39,7 +39,7 @@ namespace WildTerraHook
         public static bool Drop_Enabled = false;
         public static float Drop_Delay = 0.5f;
         public static bool Drop_Debug = false;
-        public static string Drop_OverrideMethod = ""; // DODANO: Zapisywanie metody override
+        public static string Drop_OverrideMethod = "";
 
         // --- BOTS ---
         public static bool ColorFish_Enabled = false;
@@ -70,7 +70,7 @@ namespace WildTerraHook
         // --- ESP ---
         public static bool Esp_Enabled = false;
         public static float Esp_Distance = 150f;
-        public static float Esp_RefreshRate = 60f; // DODANO: Zapisywanie FPS
+        // USUNIĘTO: Esp_RefreshRate (synchronizacja z FPS gry)
         public static bool Esp_ShowBoxes = true;
         public static bool Esp_ShowXRay = true;
         public static bool Esp_ShowResources = false;
@@ -89,7 +89,7 @@ namespace WildTerraHook
         public static string Esp_List_Lumber = "";
         public static string Esp_List_Godsend = "";
 
-        // --- CONSOLE --- (DODANO)
+        // --- CONSOLE ---
         public static bool Console_AutoScroll = true;
         public static bool Console_ShowInfo = true;
         public static bool Console_ShowWarnings = true;
@@ -155,7 +155,7 @@ namespace WildTerraHook
                     sw.WriteLine($"Drop_Enabled={Drop_Enabled}");
                     sw.WriteLine($"Drop_Delay={Drop_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Drop_Debug={Drop_Debug}");
-                    sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}"); // SAVE
+                    sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
                     sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
 
                     // Bots
@@ -187,7 +187,7 @@ namespace WildTerraHook
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
-                    sw.WriteLine($"Esp_RefreshRate={Esp_RefreshRate.ToString(CultureInfo.InvariantCulture)}"); // SAVE
+                    // USUNIĘTO: Esp_RefreshRate
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
                     sw.WriteLine($"Esp_ShowXRay={Esp_ShowXRay}");
                     sw.WriteLine($"Esp_ShowResources={Esp_ShowResources}");
@@ -274,7 +274,7 @@ namespace WildTerraHook
                     else if (key == "Drop_Enabled") bool.TryParse(val, out Drop_Enabled);
                     else if (key == "Drop_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Drop_Delay);
                     else if (key == "Drop_Debug") bool.TryParse(val, out Drop_Debug);
-                    else if (key == "Drop_OverrideMethod") Drop_OverrideMethod = val; // LOAD
+                    else if (key == "Drop_OverrideMethod") Drop_OverrideMethod = val;
                     else if (key == "ActiveDropProfiles")
                     {
                         ActiveDropProfiles.Clear();
@@ -303,7 +303,7 @@ namespace WildTerraHook
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
-                    else if (key == "Esp_RefreshRate") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_RefreshRate); // LOAD
+                    // USUNIĘTO: Esp_RefreshRate
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
                     else if (key == "Esp_ShowXRay") bool.TryParse(val, out Esp_ShowXRay);
                     else if (key == "Esp_ShowResources") bool.TryParse(val, out Esp_ShowResources);

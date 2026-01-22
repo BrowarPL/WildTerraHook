@@ -22,9 +22,10 @@ namespace WildTerraHook
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
         private float _scanInterval = 1.0f;
-        private float _lastDrawTime = 0f; // Timer rysowania FPS
 
-        // Max Health Cache (Highest Seen) - Naprawa błędnego HP
+        // USUNIĘTO: _lastDrawTime (dead code)
+
+        // Max Health Cache (Highest Seen)
         private Dictionary<int, int> _maxHealthCache = new Dictionary<int, int>();
 
         // X-RAY & MAT
@@ -396,12 +397,7 @@ namespace WildTerraHook
                 if (Math.Abs(newFloat - ConfigManager.Esp_Distance) > 0.1f) { ConfigManager.Esp_Distance = newFloat; ConfigManager.Save(); }
                 GUILayout.EndHorizontal();
 
-                // SUWAK FPS
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("ESP_FPS")}: {ConfigManager.Esp_RefreshRate:F0}", GUILayout.Width(100));
-                newFloat = GUILayout.HorizontalSlider(ConfigManager.Esp_RefreshRate, 30f, 120f);
-                if (Math.Abs(newFloat - ConfigManager.Esp_RefreshRate) > 1f) { ConfigManager.Esp_RefreshRate = newFloat; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
+                // USUNIĘTO SUWAK FPS (Teraz ESP rysuje się co klatkę)
 
                 GUILayout.BeginHorizontal();
                 newVal = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, Localization.Get("ESP_BOX"));
@@ -522,16 +518,7 @@ namespace WildTerraHook
 
             CreateStyles();
 
-            // FIX: Sprawdzamy limit FPS tylko podczas fazy Repaint (odrysowywania).
-            // Layout jest ignorowany przez ten limit, aby nie zepsuć obliczeń GUI.
-            if (Event.current.type == EventType.Repaint)
-            {
-                if (Time.unscaledTime - _lastDrawTime < (1f / ConfigManager.Esp_RefreshRate))
-                {
-                    return; // Pomijamy rysowanie w tej klatce
-                }
-                _lastDrawTime = Time.unscaledTime;
-            }
+            // USUNIĘTO LIMIT FPS - Rysujemy zawsze gdy OnGUI jest wywoływane
 
             Vector3 originPos = cam.transform.position;
             if (global::Player.localPlayer != null) originPos = global::Player.localPlayer.transform.position;
@@ -540,6 +527,7 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
+                // Używamy Transform.position dla maksymalnej płynności (live update)
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
