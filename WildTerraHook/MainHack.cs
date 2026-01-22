@@ -79,7 +79,15 @@ namespace WildTerraHook
             GUILayout.Label(Localization.Get("MENU_TOGGLE_INFO"), CenteredLabel());
             GUILayout.Space(5);
 
-            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(30));
+            // --- MODYFIKACJA ZAKŁADEK (1/3 SZEROKOŚCI) ---
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace(); // Centrowanie
+            // Szerokość ustawiona na 35% szerokości okna
+            int newTab = GUILayout.Toolbar(_currentTab, _tabNames, GUILayout.Height(25), GUILayout.Width(_windowRect.width * 0.35f));
+            GUILayout.FlexibleSpace(); // Centrowanie
+            GUILayout.EndHorizontal();
+            // ----------------------------------------------
+
             if (newTab != _currentTab)
             {
                 _currentTab = newTab;

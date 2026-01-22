@@ -14,16 +14,14 @@ namespace WildTerraHook
         private string _status = "Init";
         private bool _reflectionInit = false;
 
-        // Pola UI (przyciski)
-        private FieldInfo _fBtnDrag;
-        private FieldInfo _fBtnPull;
-        private FieldInfo _fBtnStrike;
+        // Pola UI (Obrazki, z których pobierzemy przyciski)
+        private FieldInfo _fBtnDragImg;
+        private FieldInfo _fBtnPullImg;
+        private FieldInfo _fBtnStrikeImg;
 
         // Pola Danych (logika gry)
-        private FieldInfo _fFishActions; // List<FishBite>
-
-        // Pola Klasy FishBite (Naprawa błędu CS1061)
-        private FieldInfo _fBiteUse;     // Pole określające typ akcji wewnątrz FishBite
+        private FieldInfo _fFishActions;
+        private FieldInfo _fBiteUse;
 
         public void Update()
         {
@@ -49,20 +47,16 @@ namespace WildTerraHook
                 Type uiType = uiObj.GetType();
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-                // 1. Pobieramy przyciski z UI
-                _fBtnDrag = uiType.GetField("dragOutActionButton", flags);
-                _fBtnPull = uiType.GetField("pullActionButton", flags);
-                _fBtnStrike = uiType.GetField("strikeActionButton", flags);
+                // 1. Pobieramy OBRAZKI przycisków (bo te pola istnieją na pewno)
+                _fBtnDragImg = uiType.GetField("dragOutActionButtonImage", flags);
+                _fBtnPullImg = uiType.GetField("pullActionButtonImage", flags);
+                _fBtnStrikeImg = uiType.GetField("strikeActionButtonImage", flags);
 
                 // 2. Pobieramy listę akcji
                 _fFishActions = uiType.GetField("fishActions", flags);
 
-                // 3. Analiza klasy FishBite (Naprawa błędu kompilacji)
-                // Pobieramy typ klasy FishBite
+                // 3. Szukamy pola typu FishingUse w klasie FishBite
                 Type biteType = typeof(global::FishBite);
-
-                // Szukamy pola, które jest typu FishingUse (enum). Zazwyczaj nazywa się 'use' lub 'action'.
-                // Skanujemy wszystkie pola, aby znaleźć to właściwe.
                 foreach (var field in biteType.GetFields(flags))
                 {
                     if (field.FieldType == typeof(global::FishingUse))
@@ -72,16 +66,16 @@ namespace WildTerraHook
                     }
                 }
 
-                // Fallback po nazwie, jeśli automatyczne wykrywanie typu zawiedzie
+                // Fallback nazwy
                 if (_fBiteUse == null)
                     _fBiteUse = biteType.GetField("use", flags) ?? biteType.GetField("action", flags);
 
-                if (_fBtnDrag == null || _fBtnPull == null || _fBtnStrike == null)
-                    _status = "Błąd: Brak przycisków";
+                if (_fBtnDragImg == null || _fBtnPullImg == null || _fBtnStrikeImg == null)
+                    _status = "Błąd: Brak pól Image";
                 else if (_fFishActions == null)
                     _status = "Błąd: Brak listy akcji";
                 else if (_fBiteUse == null)
-                    _status = "Błąd: Nie rozpoznano struktury FishBite";
+                    _status = "Błąd: Nieznana struktura FishBite";
                 else
                     _reflectionInit = true;
             }
@@ -91,45 +85,41 @@ namespace WildTerraHook
             }
         }
 
+        // Pomocnicza metoda do wyciągania przycisku z pola Image
+        private Button GetButtonFromImageField(FieldInfo field, object instance)
+        {
+            if (field == null || instance == null) return null;
+            var img = field.GetValue(instance) as Image;
+            return img != null ? img.GetComponent<Button>() : null;
+        }
+
         private void ProcessFishing(global::WTUIFishingActions ui)
         {
             if (!_reflectionInit) return;
 
             try
             {
-                // Pobierz listę aktywnych 'ugryzień'
                 var actionsList = _fFishActions.GetValue(ui) as System.Collections.IList;
-
                 if (actionsList == null || actionsList.Count == 0)
                 {
                     _status = "Czekam na rybę...";
                     return;
                 }
 
-                // Ostatnia akcja na liście to ta aktualna
                 object currentBite = actionsList[actionsList.Count - 1];
-
-                // Pobierz typ wymaganej akcji (używając Reflection, aby uniknąć błędu kompilacji)
                 global::FishingUse requiredAction = (global::FishingUse)_fBiteUse.GetValue(currentBite);
 
-                // Pobierz przyciski z UI
-                Button btnDrag = _fBtnDrag.GetValue(ui) as Button;
-                Button btnPull = _fBtnPull.GetValue(ui) as Button;
-                Button btnStrike = _fBtnStrike.GetValue(ui) as Button;
+                // Pobieramy przyciski z obrazków
+                Button btnDrag = GetButtonFromImageField(_fBtnDragImg, ui);
+                Button btnPull = GetButtonFromImageField(_fBtnPullImg, ui);
+                Button btnStrike = GetButtonFromImageField(_fBtnStrikeImg, ui);
 
                 Button targetBtn = null;
-
                 switch (requiredAction)
                 {
-                    case global::FishingUse.DragOut:
-                        targetBtn = btnDrag;
-                        break;
-                    case global::FishingUse.Pull:
-                        targetBtn = btnPull;
-                        break;
-                    case global::FishingUse.Strike:
-                        targetBtn = btnStrike;
-                        break;
+                    case global::FishingUse.DragOut: targetBtn = btnDrag; break;
+                    case global::FishingUse.Pull: targetBtn = btnPull; break;
+                    case global::FishingUse.Strike: targetBtn = btnStrike; break;
                 }
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
@@ -148,7 +138,7 @@ namespace WildTerraHook
                 }
                 else
                 {
-                    _status = "Błąd celu";
+                    _status = "Błąd celu (Button null?)";
                 }
             }
             catch (Exception ex) { _status = "Run Error: " + ex.Message; }
@@ -173,9 +163,9 @@ namespace WildTerraHook
                 Button targetBtn = null;
                 switch (requiredAction)
                 {
-                    case global::FishingUse.DragOut: targetBtn = _fBtnDrag.GetValue(ui) as Button; break;
-                    case global::FishingUse.Pull: targetBtn = _fBtnPull.GetValue(ui) as Button; break;
-                    case global::FishingUse.Strike: targetBtn = _fBtnStrike.GetValue(ui) as Button; break;
+                    case global::FishingUse.DragOut: targetBtn = GetButtonFromImageField(_fBtnDragImg, ui); break;
+                    case global::FishingUse.Pull: targetBtn = GetButtonFromImageField(_fBtnPullImg, ui); break;
+                    case global::FishingUse.Strike: targetBtn = GetButtonFromImageField(_fBtnStrikeImg, ui); break;
                 }
 
                 if (targetBtn != null && targetBtn.gameObject.activeSelf)
@@ -189,8 +179,11 @@ namespace WildTerraHook
         private void DrawBoxOnButton(Button btn)
         {
             if (btn == null) return;
+            RectTransform rt = btn.GetComponent<RectTransform>();
+            if (rt == null) return;
+
             Vector3[] corners = new Vector3[4];
-            btn.GetComponent<RectTransform>().GetWorldCorners(corners);
+            rt.GetWorldCorners(corners);
 
             float x = corners[0].x;
             float y = Screen.height - corners[1].y;
@@ -200,7 +193,7 @@ namespace WildTerraHook
             if (_boxTexture == null)
             {
                 _boxTexture = new Texture2D(1, 1);
-                _boxTexture.SetPixel(0, 0, new Color(1f, 0f, 1f, 0.5f)); // Fioletowy (Magenta)
+                _boxTexture.SetPixel(0, 0, new Color(1f, 0f, 1f, 0.5f)); // Fioletowy
                 _boxTexture.Apply();
             }
 
