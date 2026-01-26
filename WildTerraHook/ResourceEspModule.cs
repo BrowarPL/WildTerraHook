@@ -284,10 +284,13 @@ namespace WildTerraHook
             try { var col = mob.GetComponent<Collider>(); if (col != null) height = col.bounds.size.y; } catch { }
 
             // LOGIKA KATEGORII MOBÓW
-            bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep");
+            bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep") || name.Contains("Crow") || name.Contains("Seagull");
 
-            // Retaliating (Fox/Horse) - wykluczamy LargeFox, bo on jest agresywny
-            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox")) || name.Contains("Horse");
+            // Retaliating: Fox (ale nie Large/FoxLarge), Horse, Goat, Boar (ale nie ZombieBoar)
+            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge"))
+                        || name.Contains("Horse")
+                        || name.Contains("Goat")
+                        || (name.Contains("Boar") && !name.Contains("ZombieBoar"));
 
             Color textColor = ConfigManager.Colors.MobAggressive; // Domyślnie Agresywne
             string label = name;
@@ -303,7 +306,7 @@ namespace WildTerraHook
             }
             else
             {
-                // Domyślnie (Aggressive) - obejmuje Boss, LargeFox, Bear, Wolf oraz wszystko spoza list
+                // Domyślnie (Aggressive) - obejmuje Boss, LargeFox, FoxLarge, ZombieBoar, Bear, Wolf oraz wszystko spoza list
                 if (ConfigManager.Esp_Mob_Aggro)
                 {
                     textColor = ConfigManager.Colors.MobAggressive;
