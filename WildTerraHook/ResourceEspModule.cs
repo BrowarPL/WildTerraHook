@@ -65,10 +65,12 @@ namespace WildTerraHook
             string[] mining = { "Rock", "Copper", "Tin", "Limestone", "Coal", "Sulfur", "Iron", "Marblestone", "Arsenic", "Zuperit", "Mortuus", "Sangit" };
             foreach (var s in mining) _miningToggles[s] = false;
 
-            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "Swamp thorn", "Mountain sage", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
+            // POPRAWKA: Mountain sage -> MountainSagePlant
+            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "Swamp thorn", "MountainSagePlant", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
             foreach (var s in gathering) _gatheringToggles[s] = false;
 
-            string[] lumber = { "Apple tree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
+            // POPRAWKA: Apple tree -> AppleTree
+            string[] lumber = { "AppleTree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
             foreach (var s in lumber) _lumberToggles[s] = false;
 
             string[] godsend = { "Godsend" };
@@ -281,24 +283,33 @@ namespace WildTerraHook
             float height = 1.8f;
             try { var col = mob.GetComponent<Collider>(); if (col != null) height = col.bounds.size.y; } catch { }
 
-            bool isAggro = name.Contains("LargeFox") || name.Contains("Boss") || name.Contains("King") || name.Contains("Elite") || name.Contains("Bear") || name.Contains("Wolf");
+            // LOGIKA KATEGORII MOBÓW
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep");
 
-            Color textColor = Color.red;
+            // Retaliating (Fox/Horse) - wykluczamy LargeFox, bo on jest agresywny
+            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox")) || name.Contains("Horse");
+
+            Color textColor = ConfigManager.Colors.MobAggressive; // Domyślnie Agresywne
             string label = name;
             bool show = false;
 
-            if (isAggro)
-            {
-                if (ConfigManager.Esp_Mob_Aggro) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; show = true; }
-            }
-            else if (isPassive)
+            if (isPassive)
             {
                 if (ConfigManager.Esp_Mob_Passive) { textColor = ConfigManager.Colors.MobPassive; show = true; }
             }
-            else
+            else if (isRetal)
             {
                 if (ConfigManager.Esp_Mob_Retal) { textColor = ConfigManager.Colors.MobFleeing; show = true; }
+            }
+            else
+            {
+                // Domyślnie (Aggressive) - obejmuje Boss, LargeFox, Bear, Wolf oraz wszystko spoza list
+                if (ConfigManager.Esp_Mob_Aggro)
+                {
+                    textColor = ConfigManager.Colors.MobAggressive;
+                    label = "[!] " + name;
+                    show = true;
+                }
             }
 
             if (show)
