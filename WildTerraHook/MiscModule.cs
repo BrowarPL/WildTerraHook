@@ -15,6 +15,8 @@ namespace WildTerraHook
         private WTRPGCamera _rpgCamera;
         private global::CameraMMO _mmoCamera;
         private float _cacheTimer = 0f;
+        private float _lastButcherTime = 0f;
+        private float _butcherInterval = 0.5f;
 
         public void Update()
         {
@@ -44,6 +46,12 @@ namespace WildTerraHook
             HandleBrightPlayer();
             HandleFov();
             if (ConfigManager.Misc_ZoomHack) HandleZoomHack();
+
+            if (ConfigManager.Misc_AutoButcher && Time.time - _lastButcherTime > _butcherInterval)
+            {
+                _lastButcherTime = Time.time;
+                AutoButcherLoop();
+            }
         }
 
         public void OnGUI() { }
@@ -252,6 +260,13 @@ namespace WildTerraHook
             }
 
             GUILayout.EndVertical();
+
+            bool newVal = GUILayout.Toggle(ConfigManager.Misc_AutoButcher, Localization.Get("MISC_AUTO_BUTCHER"));
+            if (newVal != ConfigManager.Misc_AutoButcher)
+            {
+                ConfigManager.Misc_AutoButcher = newVal;
+                ConfigManager.Save();
+            }
         }
 
         private void ChangeLanguage(string lang)
@@ -261,6 +276,29 @@ namespace WildTerraHook
                 ConfigManager.Language = lang;
                 ConfigManager.Save();
                 Localization.LoadLanguage(lang);
+            }
+        }
+        private void AutoButcherLoop()
+        {
+            if (global::Player.localPlayer == null || global::Player.localPlayer.myInventory == null) return;
+
+            var inventory = global::Player.localPlayer.myInventory;
+            for (int i = 0; i < inventory.slots.Count; i++)
+            {
+                var slot = inventory.slots[i];
+                if (slot != null && slot.item != null && slot.item.template != null && slot.item.template.actions != null)
+                {
+                    for (int actionIndex = 0; actionIndex < slot.item.template.actions.Count; actionIndex++)
+                    {
+                        var action = slot.item.template.actions[actionIndex];
+                        // Sprawdzamy czy akcja to Butcher (typ akcji dla oprawiania zwierzyny)
+                        if (action.type == global::ItemActionType.Butcher)
+                        {
+                            global::Player.localPlayer.CmdUseItem(i, actionIndex);
+                            return; // Wykonujemy jedną akcję na cykl pętli
+                        }
+                    }
+                }
             }
         }
     }

@@ -66,6 +66,7 @@ namespace WildTerraHook
         public static float Misc_ZoomSpeed = 60f;
         public static float Misc_Fov = 60f;
         public static float Misc_RenderDistance = 500f;
+        public static bool Misc_AutoButcher = false;
 
         // --- ESP ---
         public static bool Esp_Enabled = false;
