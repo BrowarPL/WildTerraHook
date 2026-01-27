@@ -15,6 +15,7 @@ namespace WildTerraHook
         private Dictionary<string, bool> _gatheringToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _lumberToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _godsendToggles = new Dictionary<string, bool>();
+        private Dictionary<string, bool> _dungeonsToggles = new Dictionary<string, bool>();
 
         private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
 
@@ -66,15 +67,18 @@ namespace WildTerraHook
             foreach (var s in mining) _miningToggles[s] = false;
 
             // POPRAWKA: Mountain sage -> MountainSagePlant
-            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "SwampThornRootPlant", "MountainSagePlant", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
+            string[] gathering = { "WildRoot", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "StonePile", "WildCereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "SwampThornRootPlant", "MountainSagePlant", "WolfBerriesBush", "Chelidonium", "Sand", "Strawberry" };
             foreach (var s in gathering) _gatheringToggles[s] = false;
 
             // POPRAWKA: Apple tree -> AppleTree
-            string[] lumber = { "AppleTree", "Snag", "Birch", "Grave tree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "Dried tree", "Oak", "Grim tree", "Infected grim tree" };
+            string[] lumber = { "AppleTree", "Snag", "Birch", "GraveTree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "DriedTree", "Oak", "GrimTree", "Infected grim tree" };
             foreach (var s in lumber) _lumberToggles[s] = false;
 
-            string[] godsend = { "Godsend" };
+            string[] godsend = { "Godsend", "PlagueSkeletonsCorpses", "PlagueAbandinedResources" };
             foreach (var s in godsend) _godsendToggles[s] = false;
+
+            string[] dungeons = { "DarkForestDunheonEnter", "HideoutEnter" };
+            foreach (var s in dungeons) _dungeonsToggles[s] = false;
         }
 
         private void LoadFromConfig()
@@ -83,6 +87,7 @@ namespace WildTerraHook
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Gather, _gatheringToggles);
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Lumber, _lumberToggles);
             ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Godsend, _godsendToggles);
+            ConfigManager.DeserializeToggleList(ConfigManager.Esp_List_Dungeons, _dungeonsToggles);
         }
 
         private void SyncToConfig()
@@ -91,6 +96,7 @@ namespace WildTerraHook
             ConfigManager.Esp_List_Gather = ConfigManager.SerializeToggleList(_gatheringToggles);
             ConfigManager.Esp_List_Lumber = ConfigManager.SerializeToggleList(_lumberToggles);
             ConfigManager.Esp_List_Godsend = ConfigManager.SerializeToggleList(_godsendToggles);
+            ConfigManager.Esp_List_Dungeons = ConfigManager.SerializeToggleList(_dungeonsToggles);
             ConfigManager.Save();
         }
 
@@ -143,6 +149,7 @@ namespace WildTerraHook
                     List<string> activeGather = GetActiveKeys(_gatheringToggles);
                     List<string> activeLumber = GetActiveKeys(_lumberToggles);
                     List<string> activeGodsend = GetActiveKeys(_godsendToggles);
+                    List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
 
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
 
@@ -159,6 +166,7 @@ namespace WildTerraHook
                         else if (ConfigManager.Esp_Cat_Gather && CheckList(name, activeGather, obj, ConfigManager.Colors.ResGather, newCache, false)) matched = true;
                         else if (ConfigManager.Esp_Cat_Lumber && CheckList(name, activeLumber, obj, ConfigManager.Colors.ResLumber, newCache, false)) matched = true;
                         else if (ConfigManager.Esp_Cat_Godsend && CheckList(name, activeGodsend, obj, new Color(0.8f, 0f, 1f), newCache, false)) matched = true;
+                        else if (ConfigManager.Esp_Cat_Dungeons && CheckList(name, activeDungeons, obj, new Color(1f, 0.5f, 0f), newCache, false)) matched = true;
 
                         if (!matched && ConfigManager.Esp_Cat_Others && !name.Contains("Player") && !name.Contains("Character"))
                         {
@@ -447,6 +455,10 @@ namespace WildTerraHook
                     if (newVal != ConfigManager.Esp_Cat_Godsend) { ConfigManager.Esp_Cat_Godsend = newVal; ConfigManager.Save(); }
                     if (ConfigManager.Esp_Cat_Godsend) DrawDictionary(_godsendToggles);
 
+                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Dungeons, Localization.Get("ESP_CAT_DUNGEONS"));
+                    if (newVal != ConfigManager.Esp_Cat_Dungeons) { ConfigManager.Esp_Cat_Dungeons = newVal; ConfigManager.Save(); }
+                    if (ConfigManager.Esp_Cat_Dungeons) DrawDictionary(_dungeonsToggles);
+
                     GUILayout.Space(5);
                     newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Others, Localization.Get("ESP_CAT_OTHERS"));
                     if (newVal != ConfigManager.Esp_Cat_Others) { ConfigManager.Esp_Cat_Others = newVal; ConfigManager.Save(); }
@@ -492,6 +504,8 @@ namespace WildTerraHook
             DrawColorPicker(Localization.Get("COLOR_RES_MINE"), ref ConfigManager.Colors.ResMining);
             DrawColorPicker(Localization.Get("COLOR_RES_GATHER"), ref ConfigManager.Colors.ResGather);
             DrawColorPicker(Localization.Get("COLOR_RES_LUMB"), ref ConfigManager.Colors.ResLumber);
+            DrawColorPicker(Localization.Get("COLOR_RES_GODSEND"), ref ConfigManager.Colors.ResGodsend);
+            DrawColorPicker(Localization.Get("COLOR_RES_DUNG"), ref ConfigManager.Colors.ResDungeon);
             if (GUILayout.Button(Localization.Get("ESP_SAVE_COLORS"))) ConfigManager.Save();
             GUILayout.EndVertical();
         }

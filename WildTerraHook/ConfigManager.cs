@@ -24,6 +24,8 @@ namespace WildTerraHook
             public static Color ResLumber = new Color(0.6f, 0.4f, 0.2f);
             public static Color ResMining = Color.gray;
             public static Color ResGather = Color.white;
+            public static Color ResGodsend = Color.blue;
+            public static Color ResDungeon = Color.magenta;
         }
 
         // --- AUTO LOOT ---
@@ -80,6 +82,7 @@ namespace WildTerraHook
         public static bool Esp_Cat_Gather = false;
         public static bool Esp_Cat_Lumber = false;
         public static bool Esp_Cat_Godsend = false;
+        public static bool Esp_Cat_Dungeons = false;
         public static bool Esp_Cat_Others = false;
         public static bool Esp_Mob_Aggro = false;
         public static bool Esp_Mob_Retal = false;
@@ -89,6 +92,7 @@ namespace WildTerraHook
         public static string Esp_List_Gather = "";
         public static string Esp_List_Lumber = "";
         public static string Esp_List_Godsend = "";
+        public static string Esp_List_Dungeons = "";
 
         // --- CONSOLE ---
         public static bool Console_AutoScroll = true;
@@ -212,6 +216,8 @@ namespace WildTerraHook
                     sw.WriteLine($"ResLumber={ColorToString(Colors.ResLumber)}");
                     sw.WriteLine($"ResMining={ColorToString(Colors.ResMining)}");
                     sw.WriteLine($"ResGather={ColorToString(Colors.ResGather)}");
+                    sw.WriteLine($"ResGodsend={ColorToString(Colors.ResGodsend)}");
+                    sw.WriteLine($"ResDungeon={ColorToString(Colors.ResDungeon)}");
 
                     // Console
                     sw.WriteLine($"Console_AutoScroll={Console_AutoScroll}");

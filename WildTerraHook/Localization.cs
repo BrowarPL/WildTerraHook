@@ -139,6 +139,7 @@ ESP_CAT_GATHER=Gathering
 ESP_CAT_LUMBER=Lumberjacking
 ESP_CAT_GODSEND=Godsend (Chests)
 ESP_CAT_OTHERS=Others
+ESP_CAT_DUNGEONS=Dungeons
 
 ESP_MOB_AGGRO=Aggressive (Boss/LargeFox)
 ESP_MOB_RETAL=Retaliating (Fox/Horse)
@@ -150,6 +151,8 @@ COLOR_MOB_FLEE=Fleeing/Retal Mobs
 COLOR_RES_MINE=Mining Nodes
 COLOR_RES_GATHER=Gatherables
 COLOR_RES_LUMB=Trees
+COLOR_RES_GODSEND=Chests/Godsend
+COLOR_RES_DUNG=Dungeons
 
 FISH_TITLE=Fish Bot (Smart)
 FISH_ENABLE=Enable Bot (Cast manually first)
@@ -277,6 +280,7 @@ ESP_CAT_GATHER=Zbieractwo (Gathering)
 ESP_CAT_LUMBER=Drwalnictwo (Lumber)
 ESP_CAT_GODSEND=Skarby (Godsend)
 ESP_CAT_OTHERS=Inne (Others)
+ESP_CAT_DUNGEONS=Lochy (Dungeons)
 
 ESP_MOB_AGGRO=Agresywne (Boss/LargeFox)
 ESP_MOB_RETAL=Oddające (Lis/Koń)
@@ -288,6 +292,8 @@ COLOR_MOB_FLEE=Kolor: Oddające
 COLOR_RES_MINE=Kolor: Skały/Rudy
 COLOR_RES_GATHER=Kolor: Zbieractwo
 COLOR_RES_LUMB=Kolor: Drzewa
+COLOR_RES_GODSEND=Kolor: Skrzynie/Skarby
+COLOR_RES_DUNG=Kolor: Lochy
 
 FISH_TITLE=Fish Bot (Inteligentny)
 FISH_ENABLE=Włącz Bota (Zarzuć ręcznie)
