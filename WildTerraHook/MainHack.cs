@@ -11,6 +11,7 @@ namespace WildTerraHook
         private ColorFishingModule _colorFishModule;
         private FishBotModule _memFishModule;
         private DebugConsoleModule _consoleModule;
+        private PersistentWorldModule _persistentModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -36,7 +37,7 @@ namespace WildTerraHook
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
-
+            _persistentModule = new PersistentWorldModule();
             _consoleModule = new DebugConsoleModule();
             Debug.Log("[MainHack] Hook załadowany pomyślnie.");
 
@@ -68,6 +69,7 @@ namespace WildTerraHook
             _dropModule.Update();
             _miscModule.Update();
             _colorFishModule.Update();
+            _persistentModule.Update();
             // _memFishModule.Update(); // UKRYTE: Memory Bot wyłączony do czasu znalezienia zmiennych
         }
 
@@ -198,6 +200,7 @@ namespace WildTerraHook
             float newScale = GUILayout.HorizontalSlider(ConfigManager.Menu_Scale, 0.8f, 2.0f);
             if (Mathf.Abs(newScale - ConfigManager.Menu_Scale) > 0.05f) ConfigManager.Menu_Scale = newScale;
             GUILayout.EndHorizontal();
+            _persistentModule.DrawMenu();
         }
 
         private void DrawResizer()
