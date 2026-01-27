@@ -1,6 +1,10 @@
-﻿using UnityEngine;
+﻿using JohnStairs.RCC.ThirdPerson;
 using System;
-using JohnStairs.RCC.ThirdPerson;
+using System.Collections.Generic;
+using System.Collections;
+using System.Reflection;
+using System.Linq;
+using UnityEngine;
 
 namespace WildTerraHook
 {
@@ -15,8 +19,15 @@ namespace WildTerraHook
         private WTRPGCamera _rpgCamera;
         private global::CameraMMO _mmoCamera;
         private float _cacheTimer = 0f;
+
+        // Auto Butcher
         private float _lastButcherTime = 0f;
         private float _butcherInterval = 0.5f;
+
+        // Reflection Cache
+        private MethodInfo _useItemMethod;          // CmdUseItem / CmdUseInventoryItem
+        private MethodInfo _actionItemMethod;       // CmdInventoryItemAction
+        private object _butcheringEnumValue;        // Zcacheowana wartość enuma dla Butchering
 
         public void Update()
         {
@@ -259,14 +270,17 @@ namespace WildTerraHook
                 ConfigManager.Save();
             }
 
-            GUILayout.EndVertical();
+            GUILayout.Space(10);
 
-            bool newVal = GUILayout.Toggle(ConfigManager.Misc_AutoButcher, Localization.Get("MISC_AUTO_BUTCHER"));
-            if (newVal != ConfigManager.Misc_AutoButcher)
+            // --- AUTO BUTCHER ---
+            bool butcherVal = GUILayout.Toggle(ConfigManager.Misc_AutoButcher, Localization.Get("MISC_AUTO_BUTCHER"));
+            if (butcherVal != ConfigManager.Misc_AutoButcher)
             {
-                ConfigManager.Misc_AutoButcher = newVal;
+                ConfigManager.Misc_AutoButcher = butcherVal;
                 ConfigManager.Save();
             }
+
+            GUILayout.EndVertical();
         }
 
         private void ChangeLanguage(string lang)
@@ -278,27 +292,103 @@ namespace WildTerraHook
                 Localization.LoadLanguage(lang);
             }
         }
+
+        // ==========================================================
+        //  AUTO BUTCHER LOGIC
+        // ==========================================================
         private void AutoButcherLoop()
         {
-            if (global::Player.localPlayer == null || global::Player.localPlayer.myInventory == null) return;
+            var player = global::Player.localPlayer as global::WTPlayer;
+            if (player == null || player.inventory == null) return;
 
-            var inventory = global::Player.localPlayer.myInventory;
-            for (int i = 0; i < inventory.slots.Count; i++)
+            var inventory = player.inventory;
+
+            // Inicjalizacja metod i enumów (raz)
+            if (_useItemMethod == null)
             {
-                var slot = inventory.slots[i];
-                if (slot != null && slot.item != null && slot.item.template != null && slot.item.template.actions != null)
+                _useItemMethod = player.GetType().GetMethod("CmdUseItem", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                              ?? player.GetType().GetMethod("CmdUseInventoryItem", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                _actionItemMethod = player.GetType().GetMethod("CmdInventoryItemAction", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                // Szukamy wartości enuma dla Butchering
+                try
                 {
-                    for (int actionIndex = 0; actionIndex < slot.item.template.actions.Count; actionIndex++)
+                    Type enumType = Type.GetType("ItemActionType, Assembly-CSharp");
+                    if (enumType != null)
                     {
-                        var action = slot.item.template.actions[actionIndex];
-                        // Sprawdzamy czy akcja to Butcher (typ akcji dla oprawiania zwierzyny)
-                        if (action.type == global::ItemActionType.Butcher)
+                        if (Enum.IsDefined(enumType, "Butchering"))
+                            _butcheringEnumValue = Enum.Parse(enumType, "Butchering");
+                        else if (Enum.IsDefined(enumType, "ButcheringAnimal"))
+                            _butcheringEnumValue = Enum.Parse(enumType, "ButcheringAnimal");
+                    }
+                }
+                catch { }
+            }
+
+            for (int i = 0; i < inventory.Count; i++)
+            {
+                var slot = inventory[i];
+                if (slot.amount > 0 && slot.item.data != null)
+                {
+                    var itemData = slot.item.data;
+                    var wtItem = itemData as global::WTScriptableItem;
+
+                    // JEŚLI ITEM MA BUTCHED ITEMS (np. SmallShellfish, Zwierzęta)
+                    if (wtItem != null && wtItem.butchedItems != null)
+                    {
+                        // Używamy CmdInventoryItemAction, jeśli udało się znaleźć enum Butchering
+                        if (_actionItemMethod != null && _butcheringEnumValue != null)
                         {
-                            global::Player.localPlayer.CmdUseItem(i, actionIndex);
-                            return; // Wykonujemy jedną akcję na cykl pętli
+                            // CmdInventoryItemAction(slot, ItemActionType.Butchering, 0)
+                            _actionItemMethod.Invoke(player, new object[] { i, _butcheringEnumValue, 0 });
+                            return;
+                        }
+                        // Fallback: Jeśli nie znaleźliśmy metody akcji, próbujemy zwykłego Use
+                        else if (_useItemMethod != null)
+                        {
+                            InvokeUseItem(player, i, 0);
+                            return;
+                        }
+                    }
+
+                    // JEŚLI ITEM MA ZDEFINIOWANE AKCJE (np. Narzędzia rzeźnickie)
+                    var actionsField = itemData.GetType().GetField("actions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
+                    if (actionsField != null)
+                    {
+                        var actionsList = actionsField.GetValue(itemData) as System.Collections.IList;
+                        if (actionsList != null)
+                        {
+                            for (int actionIndex = 0; actionIndex < actionsList.Count; actionIndex++)
+                            {
+                                var actionObj = actionsList[actionIndex];
+                                var typeField = actionObj.GetType().GetField("type");
+                                if (typeField != null)
+                                {
+                                    string typeName = typeField.GetValue(actionObj).ToString();
+                                    if (typeName.IndexOf("Butcher", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                        typeName.IndexOf("Skinning", StringComparison.OrdinalIgnoreCase) >= 0)
+                                    {
+                                        InvokeUseItem(player, i, actionIndex);
+                                        return;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+            }
+        }
+
+        private void InvokeUseItem(object player, int slotIndex, int actionIndex)
+        {
+            if (_useItemMethod != null)
+            {
+                var pars = _useItemMethod.GetParameters();
+                if (pars.Length == 2)
+                    _useItemMethod.Invoke(player, new object[] { slotIndex, actionIndex });
+                else if (pars.Length == 1)
+                    _useItemMethod.Invoke(player, new object[] { slotIndex });
             }
         }
     }
