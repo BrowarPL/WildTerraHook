@@ -190,7 +190,6 @@ namespace WildTerraHook
             _miscModule.DrawMenu();
             GUILayout.Space(10);
             // Dodałem menu sterowania Persistent World tutaj
-            GUILayout.Label("<b>Persistent World</b>", GUI.skin.box);
             if (_persistentModule != null) _persistentModule.DrawMenu();
             GUILayout.Space(10);
             GUILayout.Label("<b>" + Localization.Get("MISC_UI_HEADER") + "</b>", GUI.skin.box);

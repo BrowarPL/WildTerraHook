@@ -7,9 +7,7 @@ namespace WildTerraHook
 {
     public class ResourceEspModule
     {
-        // Referencja do modułu pamięci świata
         private PersistentWorldModule _persistentModule;
-
         private bool _showColorMenu = false;
 
         // Toggle Lists
@@ -23,7 +21,7 @@ namespace WildTerraHook
 
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
-        private float _scanInterval = 0.5f; // Szybsze odświeżanie
+        private float _scanInterval = 0.5f;
 
         private Dictionary<int, int> _maxHealthCache = new Dictionary<int, int>();
         private Material _xrayMaterial;
@@ -47,7 +45,7 @@ namespace WildTerraHook
             public float Height;
             public bool ShouldGlow;
             public Renderer[] Renderers;
-            public bool IsGhost; // Flaga dla duchów
+            public bool IsGhost;
         }
 
         public ResourceEspModule()
@@ -57,7 +55,6 @@ namespace WildTerraHook
             CreateXRayMaterial();
         }
 
-        // Metoda do podpięcia PersistentModule z MainHack
         public void SetPersistentModule(PersistentWorldModule module)
         {
             _persistentModule = module;
@@ -118,17 +115,8 @@ namespace WildTerraHook
 
         public void Update()
         {
-            if (!ConfigManager.Esp_Enabled)
-            {
-                ClearAllXRay();
-                return;
-            }
-
-            if (Time.time - _lastScanTime > _scanInterval)
-            {
-                ScanObjects();
-                _lastScanTime = Time.time;
-            }
+            if (!ConfigManager.Esp_Enabled) { ClearAllXRay(); return; }
+            if (Time.time - _lastScanTime > _scanInterval) { ScanObjects(); _lastScanTime = Time.time; }
         }
 
         private void ScanObjects()
@@ -151,30 +139,38 @@ namespace WildTerraHook
                     List<string> activeGodsend = GetActiveKeys(_godsendToggles);
                     List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
 
-                    // 1. Skanowanie normalnych obiektów (Real)
+                    // 1. Live Objects
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
                     foreach (var obj in objects)
                     {
                         if (obj == null) continue;
                         if ((obj.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
-
-                        string name = obj.name;
-                        if (IsIgnored(name)) continue;
-
-                        ProcessResource(obj.gameObject, name, obj.transform.position, obj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, false);
+                        if (IsIgnored(obj.name)) continue;
+                        ProcessResource(obj.gameObject, obj.name, obj.transform.position, obj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, false);
                     }
 
-                    // 2. Skanowanie DUCHÓW (Ghosts) z PersistentModule
-                    if (_persistentModule != null && _persistentModule.Ghosts.Count > 0)
+                    // 2. Persistent Ghosts (Zasoby + Moby z cache)
+                    if (_persistentModule != null && _persistentModule.Enabled && _persistentModule.Ghosts.Count > 0)
                     {
                         foreach (var ghost in _persistentModule.Ghosts.Values)
                         {
-                            // Jeśli duch jest aktywny (czyli oryginał zniknął), dodajemy go do ESP
                             if (ghost.VisualObj != null && ghost.VisualObj.activeSelf)
                             {
                                 if ((ghost.Position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
 
-                                ProcessResource(ghost.VisualObj, ghost.Name, ghost.Position, ghost.VisualObj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, true);
+                                if (ghost.IsMob)
+                                {
+                                    // Obsługa mobów z cache
+                                    if (ConfigManager.Esp_ShowMobs)
+                                    {
+                                        ProcessGhostMob(ghost, newCache);
+                                    }
+                                }
+                                else
+                                {
+                                    // Obsługa zasobów z cache
+                                    ProcessResource(ghost.VisualObj, ghost.Name, ghost.Position, ghost.VisualObj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, true);
+                                }
                             }
                         }
                     }
@@ -196,7 +192,6 @@ namespace WildTerraHook
             }
             catch { }
 
-            // Czyszczenie starego cache HP
             List<int> toRemoveHP = new List<int>();
             foreach (var key in _maxHealthCache.Keys) if (!activeMobIds.Contains(key)) toRemoveHP.Add(key);
             foreach (var k in toRemoveHP) _maxHealthCache.Remove(k);
@@ -222,24 +217,68 @@ namespace WildTerraHook
                     else RestoreOriginal(item.Renderers);
                 }
             }
-            else
-            {
-                ClearAllXRay();
-            }
+            else ClearAllXRay();
 
             _cachedObjects = newCache;
         }
 
+        // Metoda pomocnicza do określania koloru moba na podstawie nazwy
+        private void GetMobInfo(string name, out Color color, out string label, out bool show)
+        {
+            bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep") || name.Contains("Crow") || name.Contains("Seagull");
+            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge")) || name.Contains("Horse") || name.Contains("Goat") || (name.Contains("Boar") && !name.Contains("ZombieBoar"));
+
+            color = ConfigManager.Colors.MobAggressive;
+            label = name;
+            show = false;
+
+            if (isPassive) { if (ConfigManager.Esp_Mob_Passive) { color = ConfigManager.Colors.MobPassive; show = true; } }
+            else if (isRetal) { if (ConfigManager.Esp_Mob_Retal) { color = ConfigManager.Colors.MobFleeing; show = true; } }
+            else { if (ConfigManager.Esp_Mob_Aggro) { color = ConfigManager.Colors.MobAggressive; label = "[!] " + name; show = true; } }
+        }
+
+        private void ProcessMob(global::WTMob mob, List<CachedObject> cache)
+        {
+            int hp = mob.health;
+            int id = mob.GetInstanceID();
+            if (!_maxHealthCache.ContainsKey(id)) _maxHealthCache[id] = hp;
+            else if (hp > _maxHealthCache[id]) _maxHealthCache[id] = hp;
+            int maxHp = _maxHealthCache[id];
+            string hpStr = $" [HP: {hp}/{maxHp}]";
+
+            float height = 1.8f;
+            try { var col = mob.GetComponent<Collider>(); if (col != null) height = col.bounds.size.y; } catch { }
+
+            GetMobInfo(mob.name, out Color col, out string label, out bool show);
+
+            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, col, hpStr, true, height, true, false);
+        }
+
+        private void ProcessGhostMob(PersistentWorldModule.WorldGhost ghost, List<CachedObject> cache)
+        {
+            // Dla ducha nie mamy aktualnego HP live, więc bierzemy to co zapamiętaliśmy
+            string hpStr = $" [HP: {ghost.Hp}/{ghost.MaxHp}] (Last Known)";
+
+            GetMobInfo(ghost.Name, out Color col, out string label, out bool show);
+
+            if (show)
+            {
+                // Lekko przyciemniamy ducha
+                Color ghostCol = col;
+                ghostCol.a = 0.6f;
+                AddToCache(cache, ghost.VisualObj, ghost.Position, ghost.VisualObj.transform, "[C] " + label, ghostCol, hpStr, true, 1.8f, true, true);
+            }
+        }
+
         private void ProcessResource(GameObject go, string name, Vector3 pos, Transform tr, List<string> mining, List<string> gather, List<string> lumber, List<string> godsend, List<string> dungeons, List<CachedObject> cache, bool isGhost)
         {
+            string prefix = isGhost ? "[C] " : "";
             bool matched = false;
-            string labelPrefix = isGhost ? "[C] " : ""; // [C] = Cached
-
-            if (ConfigManager.Esp_Cat_Mining && CheckList(name, mining, go, pos, tr, ConfigManager.Colors.ResMining, cache, false, labelPrefix)) matched = true;
-            else if (ConfigManager.Esp_Cat_Gather && CheckList(name, gather, go, pos, tr, ConfigManager.Colors.ResGather, cache, false, labelPrefix)) matched = true;
-            else if (ConfigManager.Esp_Cat_Lumber && CheckList(name, lumber, go, pos, tr, ConfigManager.Colors.ResLumber, cache, false, labelPrefix)) matched = true;
-            else if (ConfigManager.Esp_Cat_Godsend && CheckList(name, godsend, go, pos, tr, new Color(0.8f, 0f, 1f), cache, false, labelPrefix)) matched = true;
-            else if (ConfigManager.Esp_Cat_Dungeons && CheckList(name, dungeons, go, pos, tr, new Color(1f, 0.5f, 0f), cache, false, labelPrefix)) matched = true;
+            if (ConfigManager.Esp_Cat_Mining && CheckList(name, mining, go, pos, tr, ConfigManager.Colors.ResMining, cache, false, prefix)) matched = true;
+            else if (ConfigManager.Esp_Cat_Gather && CheckList(name, gather, go, pos, tr, ConfigManager.Colors.ResGather, cache, false, prefix)) matched = true;
+            else if (ConfigManager.Esp_Cat_Lumber && CheckList(name, lumber, go, pos, tr, ConfigManager.Colors.ResLumber, cache, false, prefix)) matched = true;
+            else if (ConfigManager.Esp_Cat_Godsend && CheckList(name, godsend, go, pos, tr, new Color(0.8f, 0f, 1f), cache, false, prefix)) matched = true;
+            else if (ConfigManager.Esp_Cat_Dungeons && CheckList(name, dungeons, go, pos, tr, new Color(1f, 0.5f, 0f), cache, false, prefix)) matched = true;
 
             if (!matched && ConfigManager.Esp_Cat_Others && !name.Contains("Player") && !name.Contains("Character") && !isGhost)
             {
@@ -254,10 +293,8 @@ namespace WildTerraHook
             {
                 if (objName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    // Jeśli to duch, lekko przyciemniamy kolor, żeby było widać różnicę (opcjonalne)
                     Color finalColor = color;
                     if (prefix != "") finalColor.a = 0.7f;
-
                     AddToCache(cache, go, pos, tr, prefix + key, finalColor, "", isMob, 0f, true, prefix != "");
                     return true;
                 }
@@ -284,39 +321,6 @@ namespace WildTerraHook
             });
         }
 
-        // Reszta metod bez zmian (ProcessMob, ApplyXRay, DrawESP itd.)
-        // Tylko skopiuj je z poprzedniej wersji lub upewnij się, że są w klasie.
-        // Poniżej skrócone, aby kod był kompletny do wklejenia.
-
-        private void ProcessMob(global::WTMob mob, List<CachedObject> cache)
-        {
-            string name = mob.name;
-            int hp = mob.health;
-            int id = mob.GetInstanceID();
-
-            if (!_maxHealthCache.ContainsKey(id)) _maxHealthCache[id] = hp;
-            else if (hp > _maxHealthCache[id]) _maxHealthCache[id] = hp;
-
-            int maxHp = _maxHealthCache[id];
-            string hpStr = $" [HP: {hp}/{maxHp}]";
-
-            float height = 1.8f;
-            try { var col = mob.GetComponent<Collider>(); if (col != null) height = col.bounds.size.y; } catch { }
-
-            bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep") || name.Contains("Crow") || name.Contains("Seagull");
-            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge")) || name.Contains("Horse") || name.Contains("Goat") || (name.Contains("Boar") && !name.Contains("ZombieBoar"));
-
-            Color textColor = ConfigManager.Colors.MobAggressive;
-            string label = name;
-            bool show = false;
-
-            if (isPassive) { if (ConfigManager.Esp_Mob_Passive) { textColor = ConfigManager.Colors.MobPassive; show = true; } }
-            else if (isRetal) { if (ConfigManager.Esp_Mob_Retal) { textColor = ConfigManager.Colors.MobFleeing; show = true; } }
-            else { if (ConfigManager.Esp_Mob_Aggro) { textColor = ConfigManager.Colors.MobAggressive; label = "[!] " + name; show = true; } }
-
-            if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, textColor, hpStr, true, height, true, false);
-        }
-
         private void ApplyXRay(Renderer[] renderers, Color color)
         {
             if (renderers == null || _xrayMaterial == null) return;
@@ -324,7 +328,6 @@ namespace WildTerraHook
             {
                 if (r == null || r is ParticleSystemRenderer) continue;
                 if (!_originalMaterials.ContainsKey(r)) _originalMaterials[r] = r.sharedMaterials;
-
                 var currentMats = r.materials;
                 bool hasXRay = false;
                 if (currentMats.Length > 0 && currentMats[currentMats.Length - 1].shader.name == _xrayMaterial.shader.name)
@@ -333,7 +336,6 @@ namespace WildTerraHook
                     if (currentMats[currentMats.Length - 1].color != targetColor) currentMats[currentMats.Length - 1].color = targetColor;
                     hasXRay = true;
                 }
-
                 if (!hasXRay)
                 {
                     Material[] newMats = new Material[currentMats.Length + 1];
@@ -509,7 +511,6 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
-                // Live update pozycji jeśli obiekt istnieje, w przeciwnym razie pozycja z cache
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
