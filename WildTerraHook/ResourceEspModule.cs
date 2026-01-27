@@ -66,7 +66,7 @@ namespace WildTerraHook
             foreach (var s in mining) _miningToggles[s] = false;
 
             // POPRAWKA: Mountain sage -> MountainSagePlant
-            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "Swamp thorn", "MountainSagePlant", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
+            string[] gathering = { "Wild root", "Boletus", "Chanterelles", "Morels", "MushroomRussulas", "MushroomAmanitaGrey", "MushroomAmanitaRed", "WoodPile", "Stone pile", "Wild cereals", "Blueberry", "Nest", "NettlePlant", "Clay", "Hazel", "Greenary", "Lingonberry", "Beehive", "SwampThornRootPlant", "MountainSagePlant", "Wolf berries", "Chelidonium", "Sand", "Strawberry" };
             foreach (var s in gathering) _gatheringToggles[s] = false;
 
             // POPRAWKA: Apple tree -> AppleTree
