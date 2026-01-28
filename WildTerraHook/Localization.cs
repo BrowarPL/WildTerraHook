@@ -72,8 +72,6 @@ namespace WildTerraHook
                 if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
                 var parts = line.Split(new[] { '=' }, 2);
                 string key = parts[0].Trim();
-                // Dodajemy tylko brakujące klucze, ale MENU_TITLE zostanie nadpisane tylko jeśli plik nie istnieje lub usuniemy go ręcznie.
-                // W przypadku developmentu możesz usunąć pliki txt z AppData/WildTerraHook.
                 if (!_currentDict.ContainsKey(key) && parts.Length == 2)
                 {
                     _currentDict[key] = parts[1].Trim();
@@ -103,6 +101,19 @@ MENU_TAB_LOOT=Auto Loot
 MENU_TAB_DROP=Auto Drop
 MENU_TAB_MISC=Misc
 MENU_TAB_CONSOLE=CONSOLE
+MENU_TAB_COMBAT=Combat
+
+COMBAT_HEADER=Combat Settings
+COMBAT_NOCD=No Cooldown
+COMBAT_FAST_ATTACK=Fast Attack (Animation)
+COMBAT_ATTACK_SPEED=Anim Speed
+
+HEAL_HEADER=Auto Heal (Item)
+HEAL_ENABLE=Enable Auto Heal
+HEAL_ITEM_NAME=Item Name (e.g. Bandage):
+HEAL_HP_PERCENT=Heal at HP %
+HEAL_COMBAT_ONLY=Only in Combat
+HEAL_COOLDOWN=Cooldown (s)
 
 MISC_TITLE=Misc Options
 MISC_ETERNAL_DAY=Eternal Day (12:00)
@@ -250,6 +261,19 @@ MENU_TAB_LOOT=Auto Loot
 MENU_TAB_DROP=Auto Drop
 MENU_TAB_MISC=Inne
 MENU_TAB_CONSOLE=KONSOLA
+MENU_TAB_COMBAT=Walka
+
+COMBAT_HEADER=Ustawienia Walki
+COMBAT_NOCD=No Cooldown (Brak odnowienia)
+COMBAT_FAST_ATTACK=Szybki Atak (Animacja)
+COMBAT_ATTACK_SPEED=Prędkość Animacji
+
+HEAL_HEADER=Auto Leczenie (Przedmiot)
+HEAL_ENABLE=Włącz Auto Leczenie
+HEAL_ITEM_NAME=Nazwa Przedmiotu (np. Linen bandage):
+HEAL_HP_PERCENT=Lecz przy HP %
+HEAL_COMBAT_ONLY=Tylko podczas Walki
+HEAL_COOLDOWN=Odnowienie (s)
 
 MISC_TITLE=Różne Opcje (Misc)
 MISC_ETERNAL_DAY=Wieczny Dzień (12:00)

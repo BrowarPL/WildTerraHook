@@ -11,7 +11,8 @@ namespace WildTerraHook
         private ColorFishingModule _colorFishModule;
         private FishBotModule _memFishModule;
         private DebugConsoleModule _consoleModule;
-        private PersistentWorldModule _persistentModule; // NOWY MODUŁ
+        private PersistentWorldModule _persistentModule;
+        private AutoHealModule _healModule; // NOWY MODUŁ
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -37,7 +38,8 @@ namespace WildTerraHook
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
-            _persistentModule = new PersistentWorldModule(); // Inicjalizacja
+            _persistentModule = new PersistentWorldModule();
+            _healModule = new AutoHealModule(); // Inicjalizacja
 
             // Łączymy ESP z Pamięcią Świata
             _espModule.SetPersistentModule(_persistentModule);
@@ -56,10 +58,8 @@ namespace WildTerraHook
             if (_espModule != null)
             {
                 bool wasEnabled = ConfigManager.Esp_Enabled;
-                // Wymuszamy wyłączenie w configu i aktualizujemy moduł, aby posprzątał shadery
                 ConfigManager.Esp_Enabled = false;
                 _espModule.Update();
-                // Przywracamy stan configu dla nowej instancji
                 ConfigManager.Esp_Enabled = wasEnabled;
             }
 
@@ -69,13 +69,11 @@ namespace WildTerraHook
                 bool wasBright = ConfigManager.Misc_BrightPlayer;
                 bool wasFull = ConfigManager.Misc_Fullbright;
 
-                // Wyłączamy opcje, aby Update() posprzątał obiekty/ustawienia
-                ConfigManager.Misc_BrightPlayer = false; // Usuwa _lightObject
-                ConfigManager.Misc_Fullbright = false;   // Przywraca cienie
+                ConfigManager.Misc_BrightPlayer = false;
+                ConfigManager.Misc_Fullbright = false;
 
                 _miscModule.Update();
 
-                // Przywracamy konfigurację
                 ConfigManager.Misc_BrightPlayer = wasBright;
                 ConfigManager.Misc_Fullbright = wasFull;
             }
@@ -111,8 +109,11 @@ namespace WildTerraHook
             _dropModule.Update();
             _miscModule.Update();
             _colorFishModule.Update();
-            _persistentModule.Update(); // Aktualizacja duchów
+            _persistentModule.Update();
+            _healModule.Update(); // Aktualizacja auto heala
         }
+
+
 
         private void BlockInputIfOverWindow()
         {
@@ -167,12 +168,13 @@ namespace WildTerraHook
                 Localization.Get("MENU_TAB_LOOT"),
                 Localization.Get("MENU_TAB_DROP"),
                 Localization.Get("MENU_TAB_MISC"),
+                Localization.Get("MENU_TAB_COMBAT"),
                 Localization.Get("MENU_TAB_CONSOLE")
             };
 
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            int newTab = GUILayout.Toolbar(_currentTab, tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.95f));
+            int newTab = GUILayout.Toolbar(_currentTab, tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.98f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -191,7 +193,8 @@ namespace WildTerraHook
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: _dropModule.DrawMenu(); break;
                 case 4: DrawMiscTab(); break;
-                case 5: _consoleModule.DrawMenu(); break;
+                case 5: DrawCombatTab(); break; // Zmiana na funkcję łączącą Combat i Heal
+                case 6: _consoleModule.DrawMenu(); break;
             }
 
             GUILayout.Space(10);
@@ -200,6 +203,14 @@ namespace WildTerraHook
             DrawResizer();
             GUI.DragWindow(new Rect(0, 0, 10000, 20));
             if (GUI.changed || Input.GetMouseButtonUp(0)) SaveWindowConfig();
+        }
+
+        private void DrawCombatTab()
+        {
+            GUILayout.Space(10);
+            GUILayout.Label("___________________________________________________");
+            GUILayout.Space(10);
+            _healModule.DrawMenu();
         }
 
         private void DrawFishingTab()
@@ -229,7 +240,6 @@ namespace WildTerraHook
         {
             _miscModule.DrawMenu();
             GUILayout.Space(10);
-            // Dodałem menu sterowania Persistent World tutaj
             if (_persistentModule != null) _persistentModule.DrawMenu();
             GUILayout.Space(10);
             GUILayout.Label("<b>" + Localization.Get("MISC_UI_HEADER") + "</b>", GUI.skin.box);

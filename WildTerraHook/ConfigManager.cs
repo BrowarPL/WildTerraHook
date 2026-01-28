@@ -28,8 +28,20 @@ namespace WildTerraHook
             public static Color ResDungeon = Color.magenta;
         }
 
-        // --- PERSISTENT WORLD (NOWOŚĆ) ---
+        // --- PERSISTENT WORLD ---
         public static bool Persistent_Enabled = true;
+
+        // --- COMBAT ---
+        public static bool Combat_NoCooldown = false;
+        public static bool Combat_FastAttack = false;
+        public static float Combat_AttackSpeed = 1.5f;
+
+        // --- AUTO HEAL ---
+        public static bool Heal_Enabled = false;
+        public static string Heal_ItemName = "Linen bandage";
+        public static int Heal_Percent = 60;
+        public static bool Heal_CombatOnly = true;
+        public static float Heal_Cooldown = 20.0f; // Nowy Timer (domyślnie 20s dla bandaży)
 
         // --- AUTO LOOT ---
         public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>>();
@@ -85,7 +97,7 @@ namespace WildTerraHook
         public static bool Esp_Cat_Gather = false;
         public static bool Esp_Cat_Lumber = false;
         public static bool Esp_Cat_Godsend = false;
-        public static bool Esp_Cat_Dungeons = false; // Dodane do zapisu
+        public static bool Esp_Cat_Dungeons = false;
         public static bool Esp_Cat_Others = false;
         public static bool Esp_Mob_Aggro = false;
         public static bool Esp_Mob_Retal = false;
@@ -95,7 +107,7 @@ namespace WildTerraHook
         public static string Esp_List_Gather = "";
         public static string Esp_List_Lumber = "";
         public static string Esp_List_Godsend = "";
-        public static string Esp_List_Dungeons = ""; // Dodane do zapisu
+        public static string Esp_List_Dungeons = "";
 
         // --- CONSOLE ---
         public static bool Console_AutoScroll = true;
@@ -155,8 +167,20 @@ namespace WildTerraHook
                     sw.WriteLine($"Menu_Tab={Menu_Tab}");
                     sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
 
-                    // Persistent World
+                    // Persistent
                     sw.WriteLine($"Persistent_Enabled={Persistent_Enabled}");
+
+                    // Combat
+                    sw.WriteLine($"Combat_NoCooldown={Combat_NoCooldown}");
+                    sw.WriteLine($"Combat_FastAttack={Combat_FastAttack}");
+                    sw.WriteLine($"Combat_AttackSpeed={Combat_AttackSpeed.ToString(CultureInfo.InvariantCulture)}");
+
+                    // Auto Heal
+                    sw.WriteLine($"Heal_Enabled={Heal_Enabled}");
+                    sw.WriteLine($"Heal_ItemName={Heal_ItemName}");
+                    sw.WriteLine($"Heal_Percent={Heal_Percent}");
+                    sw.WriteLine($"Heal_CombatOnly={Heal_CombatOnly}");
+                    sw.WriteLine($"Heal_Cooldown={Heal_Cooldown.ToString(CultureInfo.InvariantCulture)}");
 
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
@@ -169,6 +193,10 @@ namespace WildTerraHook
                     sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
                     sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
 
+                    // Bots, Misc, ESP lines omitted for brevity but should be here...
+                    // (Zachowaj resztę pliku bez zmian, wklejam kluczowe zmiany powyżej)
+
+                    // --- RESZTA PLIKU POZOSTAJE BEZ ZMIAN (Aby zmieścić się w limicie, ale w Twoim pliku zachowaj wszystko poniżej) ---
                     // Bots
                     sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
                     sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
@@ -198,31 +226,24 @@ namespace WildTerraHook
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
-
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
                     sw.WriteLine($"Esp_ShowXRay={Esp_ShowXRay}");
                     sw.WriteLine($"Esp_ShowResources={Esp_ShowResources}");
                     sw.WriteLine($"Esp_ShowMobs={Esp_ShowMobs}");
-
-                    // Kategorie
                     sw.WriteLine($"Esp_Cat_Mining={Esp_Cat_Mining}");
                     sw.WriteLine($"Esp_Cat_Gather={Esp_Cat_Gather}");
                     sw.WriteLine($"Esp_Cat_Lumber={Esp_Cat_Lumber}");
                     sw.WriteLine($"Esp_Cat_Godsend={Esp_Cat_Godsend}");
-                    sw.WriteLine($"Esp_Cat_Dungeons={Esp_Cat_Dungeons}"); // BYŁO BRAKUJĄCE
+                    sw.WriteLine($"Esp_Cat_Dungeons={Esp_Cat_Dungeons}");
                     sw.WriteLine($"Esp_Cat_Others={Esp_Cat_Others}");
-
-                    // Moby
                     sw.WriteLine($"Esp_Mob_Aggro={Esp_Mob_Aggro}");
                     sw.WriteLine($"Esp_Mob_Retal={Esp_Mob_Retal}");
                     sw.WriteLine($"Esp_Mob_Passive={Esp_Mob_Passive}");
-
-                    // Listy
                     sw.WriteLine($"Esp_List_Mining={Esp_List_Mining}");
                     sw.WriteLine($"Esp_List_Gather={Esp_List_Gather}");
                     sw.WriteLine($"Esp_List_Lumber={Esp_List_Lumber}");
                     sw.WriteLine($"Esp_List_Godsend={Esp_List_Godsend}");
-                    sw.WriteLine($"Esp_List_Dungeons={Esp_List_Dungeons}"); // BYŁO BRAKUJĄCE
+                    sw.WriteLine($"Esp_List_Dungeons={Esp_List_Dungeons}");
 
                     sw.WriteLine($"MobAggressive={ColorToString(Colors.MobAggressive)}");
                     sw.WriteLine($"MobPassive={ColorToString(Colors.MobPassive)}");
@@ -233,7 +254,6 @@ namespace WildTerraHook
                     sw.WriteLine($"ResGodsend={ColorToString(Colors.ResGodsend)}");
                     sw.WriteLine($"ResDungeon={ColorToString(Colors.ResDungeon)}");
 
-                    // Console
                     sw.WriteLine($"Console_AutoScroll={Console_AutoScroll}");
                     sw.WriteLine($"Console_ShowInfo={Console_ShowInfo}");
                     sw.WriteLine($"Console_ShowWarnings={Console_ShowWarnings}");
@@ -272,6 +292,20 @@ namespace WildTerraHook
 
                     if (key == "Language") Language = val;
                     else if (key == "Persistent_Enabled") bool.TryParse(val, out Persistent_Enabled);
+
+                    // Combat
+                    else if (key == "Combat_NoCooldown") bool.TryParse(val, out Combat_NoCooldown);
+                    else if (key == "Combat_FastAttack") bool.TryParse(val, out Combat_FastAttack);
+                    else if (key == "Combat_AttackSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Combat_AttackSpeed);
+
+                    // Auto Heal
+                    else if (key == "Heal_Enabled") bool.TryParse(val, out Heal_Enabled);
+                    else if (key == "Heal_ItemName") Heal_ItemName = val;
+                    else if (key == "Heal_Percent") int.TryParse(val, out Heal_Percent);
+                    else if (key == "Heal_CombatOnly") bool.TryParse(val, out Heal_CombatOnly);
+                    else if (key == "Heal_Cooldown") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Heal_Cooldown);
+
+                    // --- RESZTA OPCJI BEZ ZMIAN (Menu, Loot, Drop, Bots, Misc, ESP, Console...) ---
                     else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
                     else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
                     else if (key == "Menu_Rect")
@@ -325,7 +359,6 @@ namespace WildTerraHook
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
-
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
                     else if (key == "Esp_ShowXRay") bool.TryParse(val, out Esp_ShowXRay);
                     else if (key == "Esp_ShowResources") bool.TryParse(val, out Esp_ShowResources);
@@ -352,7 +385,6 @@ namespace WildTerraHook
                     else if (key == "ResGather") Colors.ResGather = StringToColor(val);
                     else if (key == "ResGodsend") Colors.ResGodsend = StringToColor(val);
                     else if (key == "ResDungeon") Colors.ResDungeon = StringToColor(val);
-                    // Console
                     else if (key == "Console_AutoScroll") bool.TryParse(val, out Console_AutoScroll);
                     else if (key == "Console_ShowInfo") bool.TryParse(val, out Console_ShowInfo);
                     else if (key == "Console_ShowWarnings") bool.TryParse(val, out Console_ShowWarnings);
