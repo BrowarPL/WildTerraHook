@@ -247,7 +247,11 @@ namespace WildTerraHook
             string hpStr = $" [HP: {hp}/{maxHp}]";
 
             float height = 1.8f;
-            try { var col = mob.GetComponent<Collider>(); if (col != null) height = col.bounds.size.y; } catch { }
+
+            // --- NAPRAWA BŁĘDU CS0136 ---
+            // Zmieniono nazwę zmiennej lokalnej z 'col' na 'mobCol',
+            // aby nie kolidowała ze zmienną 'out Color col' poniżej.
+            try { var mobCol = mob.GetComponent<Collider>(); if (mobCol != null) height = mobCol.bounds.size.y; } catch { }
 
             GetMobInfo(mob.name, out Color col, out string label, out bool show);
 
@@ -511,6 +515,7 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
+                // Live update pozycji jeśli obiekt istnieje, w przeciwnym razie pozycja z cache
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
