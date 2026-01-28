@@ -6,18 +6,16 @@ namespace WildTerraHook
 {
     public class PersistentWorldModule
     {
-        // Korzystamy teraz z globalnego ustawienia
-        // public bool Enabled = true; <- USUNIĘTE
+        // Rozdzielamy przechowywanie - Surowce są statyczne (klucz=pozycja), Moby dynamiczne (lista)
+        public Dictionary<Vector3, WorldGhost> ResourceGhosts = new Dictionary<Vector3, WorldGhost>();
+        public List<WorldGhost> MobGhosts = new List<WorldGhost>();
 
-        public Dictionary<Vector3, WorldGhost> Ghosts = new Dictionary<Vector3, WorldGhost>();
-
-        private float _scanInterval = 0.25f;
+        private float _scanInterval = 0.1f; // Bardzo szybkie skanowanie dla płynności mobów
         private float _lastScanTime = 0f;
 
-        // Czarna lista dla śmieci wizualnych
-        private string[] _blackList = { "FX_", "Particle", "LightSource", "Sound", "Audio" };
+        private string[] _blackList = { "FX_", "Particle", "LightSource", "Sound", "Audio", "Arrow", "Projectile" };
 
-        public struct WorldGhost
+        public class WorldGhost // Zmieniono na klasę dla łatwiejszej edycji referencji
         {
             public GameObject VisualObj;
             public GameObject RealObj;
@@ -26,20 +24,21 @@ namespace WildTerraHook
             public bool IsMob;
             public int Hp;
             public int MaxHp;
+            public int RealInstanceID; // Do śledzenia unikalności żywych obiektów
         }
 
         public void Update()
         {
-            // Sprawdzamy ustawienie z ConfigManager
             if (!ConfigManager.Persistent_Enabled)
             {
-                if (Ghosts.Count > 0) ClearCache();
+                if (ResourceGhosts.Count > 0 || MobGhosts.Count > 0) ClearCache();
                 return;
             }
 
             if (Time.time - _lastScanTime > _scanInterval)
             {
-                RefreshWorld();
+                RefreshResources();
+                RefreshMobs();
                 _lastScanTime = Time.time;
             }
 
@@ -48,14 +47,15 @@ namespace WildTerraHook
 
         public void ClearCache()
         {
-            foreach (var g in Ghosts.Values)
-            {
-                if (g.VisualObj) UnityEngine.Object.Destroy(g.VisualObj);
-            }
-            Ghosts.Clear();
+            foreach (var g in ResourceGhosts.Values) if (g.VisualObj) UnityEngine.Object.Destroy(g.VisualObj);
+            ResourceGhosts.Clear();
+
+            foreach (var g in MobGhosts) if (g.VisualObj) UnityEngine.Object.Destroy(g.VisualObj);
+            MobGhosts.Clear();
         }
 
-        private void RefreshWorld()
+        // --- ZASOBY (STATYCZNE) ---
+        private void RefreshResources()
         {
             var currentObjects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
             foreach (var realObj in currentObjects)
@@ -64,69 +64,141 @@ namespace WildTerraHook
                 if (IsBlacklisted(realObj.name)) continue;
 
                 Vector3 pos = RoundVector(realObj.transform.position);
-                UpdateOrAddGhost(realObj.gameObject, realObj.name, pos, false, 0, 0);
-            }
 
-            var currentMobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
-            foreach (var mob in currentMobs)
-            {
-                if (mob == null || mob.health <= 0) continue;
-                Vector3 pos = RoundVector(mob.transform.position);
-                UpdateOrAddGhost(mob.gameObject, mob.name, pos, true, mob.health, mob.healthMax);
-            }
-        }
-
-        private void UpdateOrAddGhost(GameObject realGo, string name, Vector3 pos, bool isMob, int hp, int maxHp)
-        {
-            if (!Ghosts.ContainsKey(pos))
-            {
-                CreateGhost(realGo, name, pos, isMob, hp, maxHp);
-            }
-            else
-            {
-                var ghost = Ghosts[pos];
-                string cleanReal = name.Replace("(Clone)", "").Trim();
-                string cleanGhost = ghost.Name.Replace("(Clone)", "").Trim();
-
-                if (cleanGhost != cleanReal)
+                if (!ResourceGhosts.ContainsKey(pos))
                 {
-                    if (ghost.VisualObj) UnityEngine.Object.Destroy(ghost.VisualObj);
-                    Ghosts.Remove(pos);
-                    CreateGhost(realGo, name, pos, isMob, hp, maxHp);
+                    // Nowy zasób
+                    CreateResourceGhost(realObj, pos);
                 }
                 else
                 {
-                    ghost.RealObj = realGo;
-                    ghost.Hp = hp;
-                    Ghosts[pos] = ghost;
+                    // Istniejący zasób - aktualizuj referencję
+                    var ghost = ResourceGhosts[pos];
+                    string cleanReal = realObj.name.Replace("(Clone)", "").Trim();
+                    string cleanGhost = ghost.Name.Replace("(Clone)", "").Trim();
+
+                    // Jeśli zmienił się typ (np. drzewo -> pień), przerysuj
+                    if (cleanGhost != cleanReal)
+                    {
+                        if (ghost.VisualObj) UnityEngine.Object.Destroy(ghost.VisualObj);
+                        ResourceGhosts.Remove(pos);
+                        CreateResourceGhost(realObj, pos);
+                    }
+                    else
+                    {
+                        ghost.RealObj = realObj.gameObject;
+                    }
                 }
             }
         }
 
-        private void CreateGhost(GameObject original, string name, Vector3 pos, bool isMob, int hp, int maxHp)
+        private void CreateResourceGhost(global::WTObject original, Vector3 pos)
         {
-            GameObject ghostGo = new GameObject($"[CACHE] {name}");
+            GameObject ghostGo = new GameObject($"[CACHE_RES] {original.name}");
             ghostGo.transform.position = original.transform.position;
             ghostGo.transform.rotation = original.transform.rotation;
             ghostGo.transform.localScale = original.transform.localScale;
 
             CopyVisuals(original.transform, ghostGo.transform);
-
             ghostGo.SetActive(false);
 
             WorldGhost wg = new WorldGhost
             {
                 VisualObj = ghostGo,
-                RealObj = original,
-                Name = name,
+                RealObj = original.gameObject,
+                Name = original.name,
                 Position = pos,
-                IsMob = isMob,
-                Hp = hp,
-                MaxHp = maxHp
+                IsMob = false
             };
-
-            Ghosts[pos] = wg;
+            ResourceGhosts[pos] = wg;
         }
+
+        // --- MOBY (DYNAMICZNE) ---
+        private void RefreshMobs()
+        {
+            var currentMobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
+
+            foreach (var mob in currentMobs)
+            {
+                if (mob == null || mob.health <= 0) continue;
+
+                int currentId = mob.gameObject.GetInstanceID();
+
+                // 1. Sprawdź czy już śledzimy tego konkretnego moba (po InstanceID)
+                var existingGhost = MobGhosts.FirstOrDefault(g => g.RealInstanceID == currentId);
+
+                if (existingGhost != null)
+                {
+                    // Aktualizujemy pozycję i HP istniejącego ducha
+                    existingGhost.Position = mob.transform.position;
+                    existingGhost.Hp = mob.health;
+                    existingGhost.MaxHp = mob.healthMax;
+
+                    if (existingGhost.VisualObj)
+                    {
+                        existingGhost.VisualObj.transform.position = mob.transform.position;
+                        existingGhost.VisualObj.transform.rotation = mob.transform.rotation;
+                    }
+                    existingGhost.RealObj = mob.gameObject; // Odśwież referencję
+                }
+                else
+                {
+                    // 2. To nowy obiekt (dla silnika Unity). Sprawdźmy czy mamy "osieroconego" ducha w pobliżu
+                    // który pasuje nazwą (np. gracz wrócił w to miejsce i serwer zespawnował moba na nowo)
+                    var orphan = MobGhosts.FirstOrDefault(g =>
+                        g.RealObj == null && // Duch bez właściciela
+                        Vector3.Distance(g.Position, mob.transform.position) < 5.0f && // Blisko (5m tolerancji)
+                        g.Name == mob.name // Ta sama nazwa
+                    );
+
+                    if (orphan != null)
+                    {
+                        // Znaleziono ducha! Podpinamy go pod nowego moba
+                        orphan.RealObj = mob.gameObject;
+                        orphan.RealInstanceID = currentId;
+                        orphan.Hp = mob.health;
+
+                        // Przesuwamy ducha na aktualną pozycję
+                        if (orphan.VisualObj)
+                        {
+                            orphan.VisualObj.transform.position = mob.transform.position;
+                            orphan.VisualObj.transform.rotation = mob.transform.rotation;
+                        }
+                    }
+                    else
+                    {
+                        // 3. Nie znaleziono ani ID, ani pasującego ducha. Tworzymy nowego.
+                        CreateMobGhost(mob);
+                    }
+                }
+            }
+        }
+
+        private void CreateMobGhost(global::WTMob mob)
+        {
+            GameObject ghostGo = new GameObject($"[CACHE_MOB] {mob.name}");
+            ghostGo.transform.position = mob.transform.position;
+            ghostGo.transform.rotation = mob.transform.rotation;
+            ghostGo.transform.localScale = mob.transform.localScale;
+
+            CopyVisuals(mob.transform, ghostGo.transform);
+            ghostGo.SetActive(false);
+
+            WorldGhost wg = new WorldGhost
+            {
+                VisualObj = ghostGo,
+                RealObj = mob.gameObject,
+                RealInstanceID = mob.gameObject.GetInstanceID(),
+                Name = mob.name,
+                Position = mob.transform.position,
+                IsMob = true,
+                Hp = mob.health,
+                MaxHp = mob.healthMax
+            };
+            MobGhosts.Add(wg);
+        }
+
+        // --- WSPÓLNE ---
 
         private void CopyVisuals(Transform source, Transform dest)
         {
@@ -135,34 +207,27 @@ namespace WildTerraHook
                 if (IsBlacklisted(child.name) || child.GetComponent<Light>() || child.GetComponent<ParticleSystem>())
                     continue;
 
+                // MeshFilter
                 MeshFilter sourceMF = child.GetComponent<MeshFilter>();
                 MeshRenderer sourceMR = child.GetComponent<MeshRenderer>();
-
                 if (sourceMF != null && sourceMR != null)
                 {
                     GameObject copy = new GameObject(child.name);
                     copy.transform.SetParent(dest);
                     CopyTransform(child, copy.transform);
-
-                    MeshFilter mf = copy.AddComponent<MeshFilter>();
-                    mf.sharedMesh = sourceMF.sharedMesh;
-
-                    MeshRenderer mr = copy.AddComponent<MeshRenderer>();
-                    mr.sharedMaterials = sourceMR.sharedMaterials;
+                    var mf = copy.AddComponent<MeshFilter>(); mf.sharedMesh = sourceMF.sharedMesh;
+                    var mr = copy.AddComponent<MeshRenderer>(); mr.sharedMaterials = sourceMR.sharedMaterials;
                 }
 
+                // SkinnedMesh (Moby) -> Zamiana na statyczny Mesh dla ducha
                 SkinnedMeshRenderer smr = child.GetComponent<SkinnedMeshRenderer>();
                 if (smr != null)
                 {
                     GameObject copy = new GameObject(child.name);
                     copy.transform.SetParent(dest);
                     CopyTransform(child, copy.transform);
-
-                    MeshFilter mf = copy.AddComponent<MeshFilter>();
-                    mf.sharedMesh = smr.sharedMesh;
-
-                    MeshRenderer mr = copy.AddComponent<MeshRenderer>();
-                    mr.sharedMaterials = smr.sharedMaterials;
+                    var mf = copy.AddComponent<MeshFilter>(); mf.sharedMesh = smr.sharedMesh;
+                    var mr = copy.AddComponent<MeshRenderer>(); mr.sharedMaterials = smr.sharedMaterials;
                 }
 
                 if (child.childCount > 0)
@@ -189,31 +254,35 @@ namespace WildTerraHook
 
         private void UpdateVisibility()
         {
-            List<Vector3> toRemove = new List<Vector3>();
-
-            foreach (var kvp in Ghosts)
+            // Zasoby
+            List<Vector3> resToRemove = new List<Vector3>();
+            foreach (var kvp in ResourceGhosts)
             {
                 var ghost = kvp.Value;
-
-                if (ghost.VisualObj == null)
-                {
-                    toRemove.Add(kvp.Key);
-                    continue;
-                }
+                if (ghost.VisualObj == null) { resToRemove.Add(kvp.Key); continue; }
 
                 bool realIsAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
+                ghost.VisualObj.SetActive(!realIsAlive);
+            }
+            foreach (var k in resToRemove) ResourceGhosts.Remove(k);
 
-                if (realIsAlive)
+            // Moby
+            for (int i = MobGhosts.Count - 1; i >= 0; i--)
+            {
+                var ghost = MobGhosts[i];
+                if (ghost.VisualObj == null) { MobGhosts.RemoveAt(i); continue; }
+
+                // Jeśli referencja jest null (Destroyed) lub nieaktywna (Culling/Disable) -> Pokaż Ducha
+                bool realIsAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
+
+                ghost.VisualObj.SetActive(!realIsAlive);
+
+                // Jeśli duch jest aktywny (brak oryginału), upewnij się, że ma pozycję ostatnio widzianą
+                if (!realIsAlive)
                 {
-                    if (ghost.VisualObj.activeSelf) ghost.VisualObj.SetActive(false);
-                }
-                else
-                {
-                    if (!ghost.VisualObj.activeSelf) ghost.VisualObj.SetActive(true);
+                    ghost.VisualObj.transform.position = ghost.Position;
                 }
             }
-
-            foreach (var k in toRemove) Ghosts.Remove(k);
         }
 
         private bool IsBlacklisted(string name)
@@ -234,24 +303,23 @@ namespace WildTerraHook
             GUILayout.BeginVertical(GUI.skin.box);
             GUILayout.Label($"<b>Persistent World</b>");
 
-            // TICK BOX WYŁĄCZENIA - Korzysta z ConfigManager
             bool newEnabled = GUILayout.Toggle(ConfigManager.Persistent_Enabled, " Enable Persistent Cache");
             if (newEnabled != ConfigManager.Persistent_Enabled)
             {
                 ConfigManager.Persistent_Enabled = newEnabled;
-                ConfigManager.Save(); // Zapis do pliku od razu po zmianie
-
+                ConfigManager.Save();
                 if (!ConfigManager.Persistent_Enabled) ClearCache();
             }
 
             if (ConfigManager.Persistent_Enabled)
             {
-                GUILayout.Label($"Cached Objects: {Ghosts.Count}");
-                if (GUILayout.Button("Clear Cache Manually")) ClearCache();
+                GUILayout.Label($"Resources: {ResourceGhosts.Count}");
+                GUILayout.Label($"Mobs: {MobGhosts.Count}");
+                if (GUILayout.Button("Clear Cache")) ClearCache();
             }
             else
             {
-                GUILayout.Label("<color=grey>Module Disabled (Saving RAM)</color>");
+                GUILayout.Label("<color=grey>Module Disabled</color>");
             }
             GUILayout.EndVertical();
         }

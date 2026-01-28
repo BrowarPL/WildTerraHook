@@ -131,15 +131,15 @@ namespace WildTerraHook
 
             try
             {
+                List<string> activeMining = GetActiveKeys(_miningToggles);
+                List<string> activeGather = GetActiveKeys(_gatheringToggles);
+                List<string> activeLumber = GetActiveKeys(_lumberToggles);
+                List<string> activeGodsend = GetActiveKeys(_godsendToggles);
+                List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
+
+                // --- LIVE OBJECTS ---
                 if (ConfigManager.Esp_ShowResources)
                 {
-                    List<string> activeMining = GetActiveKeys(_miningToggles);
-                    List<string> activeGather = GetActiveKeys(_gatheringToggles);
-                    List<string> activeLumber = GetActiveKeys(_lumberToggles);
-                    List<string> activeGodsend = GetActiveKeys(_godsendToggles);
-                    List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
-
-                    // 1. Live Objects
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
                     foreach (var obj in objects)
                     {
@@ -147,32 +147,6 @@ namespace WildTerraHook
                         if ((obj.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
                         if (IsIgnored(obj.name)) continue;
                         ProcessResource(obj.gameObject, obj.name, obj.transform.position, obj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, false);
-                    }
-
-                    // 2. Persistent Ghosts (Zasoby + Moby z cache)
-                    if (_persistentModule != null && _persistentModule.Enabled && _persistentModule.Ghosts.Count > 0)
-                    {
-                        foreach (var ghost in _persistentModule.Ghosts.Values)
-                        {
-                            if (ghost.VisualObj != null && ghost.VisualObj.activeSelf)
-                            {
-                                if ((ghost.Position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
-
-                                if (ghost.IsMob)
-                                {
-                                    // Obsługa mobów z cache
-                                    if (ConfigManager.Esp_ShowMobs)
-                                    {
-                                        ProcessGhostMob(ghost, newCache);
-                                    }
-                                }
-                                else
-                                {
-                                    // Obsługa zasobów z cache
-                                    ProcessResource(ghost.VisualObj, ghost.Name, ghost.Position, ghost.VisualObj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, true);
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -189,13 +163,45 @@ namespace WildTerraHook
                         }
                     }
                 }
+
+                // --- PERSISTENT GHOSTS ---
+                if (_persistentModule != null && ConfigManager.Persistent_Enabled)
+                {
+                    // 1. Duchy Zasobów
+                    if (ConfigManager.Esp_ShowResources && _persistentModule.ResourceGhosts.Count > 0)
+                    {
+                        foreach (var ghost in _persistentModule.ResourceGhosts.Values)
+                        {
+                            if (ghost.VisualObj != null && ghost.VisualObj.activeSelf)
+                            {
+                                if ((ghost.Position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
+                                ProcessResource(ghost.VisualObj, ghost.Name, ghost.Position, ghost.VisualObj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, true);
+                            }
+                        }
+                    }
+
+                    // 2. Duchy Mobów
+                    if (ConfigManager.Esp_ShowMobs && _persistentModule.MobGhosts.Count > 0)
+                    {
+                        foreach (var ghost in _persistentModule.MobGhosts)
+                        {
+                            if (ghost.VisualObj != null && ghost.VisualObj.activeSelf)
+                            {
+                                if ((ghost.Position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
+                                ProcessGhostMob(ghost, newCache);
+                            }
+                        }
+                    }
+                }
             }
             catch { }
 
+            // Cleanup HP cache
             List<int> toRemoveHP = new List<int>();
             foreach (var key in _maxHealthCache.Keys) if (!activeMobIds.Contains(key)) toRemoveHP.Add(key);
             foreach (var k in toRemoveHP) _maxHealthCache.Remove(k);
 
+            // Cleanup Renderers
             foreach (var item in newCache) if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
 
             List<Renderer> toRemove = new List<Renderer>();
@@ -209,6 +215,7 @@ namespace WildTerraHook
             }
             foreach (var r in toRemove) _originalMaterials.Remove(r);
 
+            // XRay
             if (ConfigManager.Esp_ShowXRay)
             {
                 foreach (var item in newCache)
@@ -222,7 +229,6 @@ namespace WildTerraHook
             _cachedObjects = newCache;
         }
 
-        // Metoda pomocnicza do określania koloru moba na podstawie nazwy
         private void GetMobInfo(string name, out Color color, out string label, out bool show)
         {
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep") || name.Contains("Crow") || name.Contains("Seagull");
@@ -247,10 +253,6 @@ namespace WildTerraHook
             string hpStr = $" [HP: {hp}/{maxHp}]";
 
             float height = 1.8f;
-
-            // --- NAPRAWA BŁĘDU CS0136 ---
-            // Zmieniono nazwę zmiennej lokalnej z 'col' na 'mobCol',
-            // aby nie kolidowała ze zmienną 'out Color col' poniżej.
             try { var mobCol = mob.GetComponent<Collider>(); if (mobCol != null) height = mobCol.bounds.size.y; } catch { }
 
             GetMobInfo(mob.name, out Color col, out string label, out bool show);
@@ -260,14 +262,10 @@ namespace WildTerraHook
 
         private void ProcessGhostMob(PersistentWorldModule.WorldGhost ghost, List<CachedObject> cache)
         {
-            // Dla ducha nie mamy aktualnego HP live, więc bierzemy to co zapamiętaliśmy
-            string hpStr = $" [HP: {ghost.Hp}/{ghost.MaxHp}] (Last Known)";
-
+            string hpStr = $" [HP: {ghost.Hp}/{ghost.MaxHp}] (Cached)";
             GetMobInfo(ghost.Name, out Color col, out string label, out bool show);
-
             if (show)
             {
-                // Lekko przyciemniamy ducha
                 Color ghostCol = col;
                 ghostCol.a = 0.6f;
                 AddToCache(cache, ghost.VisualObj, ghost.Position, ghost.VisualObj.transform, "[C] " + label, ghostCol, hpStr, true, 1.8f, true, true);
@@ -515,7 +513,6 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
-                // Live update pozycji jeśli obiekt istnieje, w przeciwnym razie pozycja z cache
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
