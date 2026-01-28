@@ -52,11 +52,24 @@ namespace WildTerraHook
 
         private void RefreshResources()
         {
+            Vector3 playerPos = Vector3.zero;
+            if (global::Player.localPlayer != null) playerPos = global::Player.localPlayer.transform.position;
+            else if (Camera.main != null) playerPos = Camera.main.transform.position;
+
             // Szukamy tylko obiektów statycznych
             var currentObjects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
             foreach (var realObj in currentObjects)
             {
                 if (realObj == null) continue;
+
+                // --- NAPRAWIONO: USUNIĘTO BŁĘDNY WARUNEK is WTMob ---
+                // Ponieważ WTObject nie jest klasą bazową WTMob, ten kod był zbędny i powodował warning.
+                // Teraz po prostu ignorujemy to filtrowanie, bo FindObjectsOfType<WTObject> 
+                // i tak nie powinno zwrócić mobów (jeśli struktura gry jest poprawna).
+                // Jeśli jednak moby są zwracane jako WTObject, dodaj filtr po nazwie lub komponencie:
+                if (realObj.GetComponent<global::WTMob>() != null) continue; // Bezpieczny filtr
+                // -------------------------
+
                 if (IsBlacklisted(realObj.name)) continue;
 
                 Vector3 pos = RoundVector(realObj.transform.position);
@@ -68,12 +81,27 @@ namespace WildTerraHook
                 else
                 {
                     var ghost = ResourceGhosts[pos];
+
+                    // --- CLEANUP LOGIC: CZYSZCZENIE ZEBRANYCH ---
+                    // Jeśli duch istnieje, ale realny obiekt zniknął (jest null)
+                    if (ghost.RealObj == null)
+                    {
+                        float dist = Vector3.Distance(playerPos, ghost.Position);
+                        // Jeśli jesteśmy BLISKO (np. < 20m) i obiektu nie ma -> Został zebrany -> Usuń ducha
+                        if (dist < ConfigManager.Persistent_CleanupRange)
+                        {
+                            if (ghost.VisualObj) UnityEngine.Object.Destroy(ghost.VisualObj);
+                            ResourceGhosts.Remove(pos);
+                            continue;
+                        }
+                        // Jeśli jesteśmy DALEKO -> Zostaw ducha (Culling)
+                    }
+
                     if (ghost.VisualObj == null) { ResourceGhosts.Remove(pos); continue; }
 
                     string cleanReal = realObj.name.Replace("(Clone)", "").Trim();
                     string cleanGhost = ghost.Name.Replace("(Clone)", "").Trim();
 
-                    // Jeśli obiekt zmienił stan (np. Drzewo -> Pniak), odświeżamy
                     if (cleanGhost != cleanReal)
                     {
                         UnityEngine.Object.Destroy(ghost.VisualObj);
@@ -86,6 +114,23 @@ namespace WildTerraHook
                     }
                 }
             }
+
+            // Dodatkowe czyszczenie dla duchów, których RealObj zniknął (a pętla wyżej ich nie złapała)
+            List<Vector3> toClean = new List<Vector3>();
+            foreach (var kvp in ResourceGhosts)
+            {
+                var ghost = kvp.Value;
+                if (ghost.RealObj == null) // Obiekt zniknął z gry
+                {
+                    float dist = Vector3.Distance(playerPos, ghost.Position);
+                    if (dist < ConfigManager.Persistent_CleanupRange)
+                    {
+                        if (ghost.VisualObj) UnityEngine.Object.Destroy(ghost.VisualObj);
+                        toClean.Add(kvp.Key);
+                    }
+                }
+            }
+            foreach (var k in toClean) ResourceGhosts.Remove(k);
         }
 
         private void CreateResourceGhost(global::WTObject original, Vector3 pos)
@@ -116,7 +161,6 @@ namespace WildTerraHook
                 if (IsBlacklisted(child.name) || child.GetComponent<Light>() || child.GetComponent<ParticleSystem>())
                     continue;
 
-                // Kopiujemy MeshFilter (tylko statyczne, żadnych SkinnedMesh)
                 MeshFilter sourceMF = child.GetComponent<MeshFilter>();
                 MeshRenderer sourceMR = child.GetComponent<MeshRenderer>();
 
@@ -127,7 +171,7 @@ namespace WildTerraHook
                     CopyTransform(child, copy.transform);
 
                     var mf = copy.AddComponent<MeshFilter>();
-                    mf.sharedMesh = sourceMF.sharedMesh; // Współdzielimy mesh z gry
+                    mf.sharedMesh = sourceMF.sharedMesh;
 
                     var mr = copy.AddComponent<MeshRenderer>();
                     mr.sharedMaterials = sourceMR.sharedMaterials;
@@ -189,7 +233,6 @@ namespace WildTerraHook
         public void DrawMenu()
         {
             GUILayout.BeginVertical(GUI.skin.box);
-            // Tłumaczenie tytułu
             GUILayout.Label($"<b>{Localization.Get("PERSISTENT_TITLE")}</b>");
 
             bool newEnabled = GUILayout.Toggle(ConfigManager.Persistent_Enabled, " " + Localization.Get("PERSISTENT_ENABLE"));
@@ -202,13 +245,23 @@ namespace WildTerraHook
 
             if (ConfigManager.Persistent_Enabled)
             {
-                // Tłumaczenie licznika i przycisku
                 GUILayout.Label($"{Localization.Get("PERSISTENT_COUNT")}: {ResourceGhosts.Count}");
+
+                // --- SUWAK ZASIĘGU CZYSZCZENIA ---
+                GUILayout.Space(5);
+                GUILayout.Label($"{Localization.Get("PERSISTENT_CLEANUP")}: {ConfigManager.Persistent_CleanupRange:F0}m");
+                float newRange = GUILayout.HorizontalSlider(ConfigManager.Persistent_CleanupRange, 5.0f, 50.0f);
+                if (Mathf.Abs(newRange - ConfigManager.Persistent_CleanupRange) > 1.0f)
+                {
+                    ConfigManager.Persistent_CleanupRange = newRange;
+                    ConfigManager.Save();
+                }
+                // ---------------------------------
+
                 if (GUILayout.Button(Localization.Get("PERSISTENT_CLEAR"))) ClearCache();
             }
             else
             {
-                // Tłumaczenie statusu wyłączenia
                 GUILayout.Label($"<color=grey>{Localization.Get("PERSISTENT_DISABLED")}</color>");
             }
             GUILayout.EndVertical();
