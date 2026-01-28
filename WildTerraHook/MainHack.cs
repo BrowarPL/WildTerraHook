@@ -50,7 +50,47 @@ namespace WildTerraHook
 
         public void OnDestroy()
         {
-            if (_consoleModule != null) _consoleModule.Shutdown();
+            // --- CLEANUP (Obsługa Reloadu) ---
+
+            // 1. ESP: Czyścimy X-Ray (przywracamy oryginalne materiały)
+            if (_espModule != null)
+            {
+                bool wasEnabled = ConfigManager.Esp_Enabled;
+                // Wymuszamy wyłączenie w configu i aktualizujemy moduł, aby posprzątał shadery
+                ConfigManager.Esp_Enabled = false;
+                _espModule.Update();
+                // Przywracamy stan configu dla nowej instancji
+                ConfigManager.Esp_Enabled = wasEnabled;
+            }
+
+            // 2. MISC: Czyścimy światło i cienie
+            if (_miscModule != null)
+            {
+                bool wasBright = ConfigManager.Misc_BrightPlayer;
+                bool wasFull = ConfigManager.Misc_Fullbright;
+
+                // Wyłączamy opcje, aby Update() posprzątał obiekty/ustawienia
+                ConfigManager.Misc_BrightPlayer = false; // Usuwa _lightObject
+                ConfigManager.Misc_Fullbright = false;   // Przywraca cienie
+
+                _miscModule.Update();
+
+                // Przywracamy konfigurację
+                ConfigManager.Misc_BrightPlayer = wasBright;
+                ConfigManager.Misc_Fullbright = wasFull;
+            }
+
+            // 3. Persistent World: Usuwamy wizualne kopie obiektów (duchy)
+            if (_persistentModule != null)
+            {
+                _persistentModule.ClearCache();
+            }
+
+            // 4. Konsola: Odpinamy eventy Unity
+            if (_consoleModule != null)
+            {
+                _consoleModule.Shutdown();
+            }
         }
 
         public void Update()

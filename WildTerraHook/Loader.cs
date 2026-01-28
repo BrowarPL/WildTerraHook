@@ -9,10 +9,18 @@ namespace WildTerraHook
         // Tę metodę musi wywołać Injector!
         public static void Init()
         {
-            // Zabezpieczenie przed podwójnym załadowaniem
-            if (GameObject.Find("WildTerraHook_Loader") != null) return;
+            // Zabezpieczenie i obsługa RELOADU
+            // Sprawdzamy, czy w scenie istnieje już załadowany hack
+            GameObject existing = GameObject.Find("WildTerraHook_Loader");
+            if (existing != null)
+            {
+                // Zmieniamy nazwę, aby nie kolidowała z nowym obiektem
+                existing.name = "WildTerraHook_Loader_Old";
+                // Niszczymy stary obiekt - to wywoła OnDestroy w MainHack i posprząta moduły
+                UnityEngine.Object.Destroy(existing);
+            }
 
-            // 1. Tworzymy pusty obiekt w grze
+            // 1. Tworzymy nowy pusty obiekt w grze
             _loadObject = new GameObject();
             _loadObject.name = "WildTerraHook_Loader";
 
