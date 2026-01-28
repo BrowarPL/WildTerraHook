@@ -137,7 +137,7 @@ namespace WildTerraHook
                 List<string> activeGodsend = GetActiveKeys(_godsendToggles);
                 List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
 
-                // --- LIVE OBJECTS ---
+                // --- 1. LIVE OBJECTS (Zasoby) ---
                 if (ConfigManager.Esp_ShowResources)
                 {
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
@@ -150,24 +150,25 @@ namespace WildTerraHook
                     }
                 }
 
+                // --- 2. LIVE MOBS (Moby) ---
                 if (ConfigManager.Esp_ShowMobs)
                 {
+                    // Używamy FindObjectsOfType<WTMob> aby złapać wszystko co żywe
                     var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
                     foreach (var mob in mobs)
                     {
-                        if (mob != null && mob.health > 0)
-                        {
-                            if ((mob.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
-                            ProcessMob(mob, newCache);
-                            activeMobIds.Add(mob.GetInstanceID());
-                        }
+                        if (mob == null || mob.health <= 0) continue;
+                        if ((mob.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
+
+                        ProcessMob(mob, newCache);
+                        activeMobIds.Add(mob.GetInstanceID());
                     }
                 }
 
-                // --- PERSISTENT GHOSTS ---
+                // --- 3. PERSISTENT GHOSTS (Duchy z pamięci) ---
                 if (_persistentModule != null && ConfigManager.Persistent_Enabled)
                 {
-                    // 1. Duchy Zasobów
+                    // 3a. Duchy Zasobów
                     if (ConfigManager.Esp_ShowResources && _persistentModule.ResourceGhosts.Count > 0)
                     {
                         foreach (var ghost in _persistentModule.ResourceGhosts.Values)
@@ -180,10 +181,11 @@ namespace WildTerraHook
                         }
                     }
 
-                    // 2. Duchy Mobów
+                    // 3b. Duchy Mobów
                     if (ConfigManager.Esp_ShowMobs && _persistentModule.MobGhosts.Count > 0)
                     {
-                        foreach (var ghost in _persistentModule.MobGhosts)
+                        // MobGhosts jest teraz Słownikiem, iterujemy po Values
+                        foreach (var ghost in _persistentModule.MobGhosts.Values)
                         {
                             if (ghost.VisualObj != null && ghost.VisualObj.activeSelf)
                             {
@@ -196,12 +198,10 @@ namespace WildTerraHook
             }
             catch { }
 
-            // Cleanup HP cache
             List<int> toRemoveHP = new List<int>();
             foreach (var key in _maxHealthCache.Keys) if (!activeMobIds.Contains(key)) toRemoveHP.Add(key);
             foreach (var k in toRemoveHP) _maxHealthCache.Remove(k);
 
-            // Cleanup Renderers
             foreach (var item in newCache) if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
 
             List<Renderer> toRemove = new List<Renderer>();
@@ -215,7 +215,6 @@ namespace WildTerraHook
             }
             foreach (var r in toRemove) _originalMaterials.Remove(r);
 
-            // XRay
             if (ConfigManager.Esp_ShowXRay)
             {
                 foreach (var item in newCache)
@@ -513,6 +512,7 @@ namespace WildTerraHook
 
             foreach (var obj in _cachedObjects)
             {
+                // Live update pozycji jeśli obiekt istnieje, w przeciwnym razie pozycja z cache
                 Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
                 float dist = Vector3.Distance(originPos, currentPos);
                 if (dist > ConfigManager.Esp_Distance) continue;
