@@ -12,7 +12,7 @@ namespace WildTerraHook
         private FishBotModule _memFishModule;
         private DebugConsoleModule _consoleModule;
         private PersistentWorldModule _persistentModule;
-        private AutoHealModule _healModule; // NOWY MODUŁ
+        private AutoHealModule _healModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -25,12 +25,20 @@ namespace WildTerraHook
             Localization.Init();
             ConfigManager.Load();
 
-            _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, ConfigManager.Menu_W, ConfigManager.Menu_H);
-
-            if (_windowRect.width < 450) _windowRect.width = 500;
-            if (_windowRect.height < 300) _windowRect.height = 400;
-
             _currentTab = ConfigManager.Menu_Tab;
+
+            if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
+            {
+                float w = ConfigManager.TabWidths[_currentTab];
+                float h = ConfigManager.TabHeights[_currentTab];
+                if (w < 250) w = 250;
+                if (h < 200) h = 200;
+                _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, w, h);
+            }
+            else
+            {
+                _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, 400, 300);
+            }
 
             _espModule = new ResourceEspModule();
             _lootModule = new AutoLootModule();
@@ -39,11 +47,9 @@ namespace WildTerraHook
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
             _persistentModule = new PersistentWorldModule();
-            _healModule = new AutoHealModule(); // Inicjalizacja
+            _healModule = new AutoHealModule();
 
-            // Łączymy ESP z Pamięcią Świata
             _espModule.SetPersistentModule(_persistentModule);
-
             _consoleModule = new DebugConsoleModule();
             Debug.Log("[MainHack] Hook załadowany pomyślnie.");
 
@@ -52,9 +58,6 @@ namespace WildTerraHook
 
         public void OnDestroy()
         {
-            // --- CLEANUP (Obsługa Reloadu) ---
-
-            // 1. ESP: Czyścimy X-Ray (przywracamy oryginalne materiały)
             if (_espModule != null)
             {
                 bool wasEnabled = ConfigManager.Esp_Enabled;
@@ -62,33 +65,18 @@ namespace WildTerraHook
                 _espModule.Update();
                 ConfigManager.Esp_Enabled = wasEnabled;
             }
-
-            // 2. MISC: Czyścimy światło i cienie
             if (_miscModule != null)
             {
                 bool wasBright = ConfigManager.Misc_BrightPlayer;
                 bool wasFull = ConfigManager.Misc_Fullbright;
-
                 ConfigManager.Misc_BrightPlayer = false;
                 ConfigManager.Misc_Fullbright = false;
-
                 _miscModule.Update();
-
                 ConfigManager.Misc_BrightPlayer = wasBright;
                 ConfigManager.Misc_Fullbright = wasFull;
             }
-
-            // 3. Persistent World: Usuwamy wizualne kopie obiektów (duchy)
-            if (_persistentModule != null)
-            {
-                _persistentModule.ClearCache();
-            }
-
-            // 4. Konsola: Odpinamy eventy Unity
-            if (_consoleModule != null)
-            {
-                _consoleModule.Shutdown();
-            }
+            if (_persistentModule != null) _persistentModule.ClearCache();
+            if (_consoleModule != null) _consoleModule.Shutdown();
         }
 
         public void Update()
@@ -110,10 +98,8 @@ namespace WildTerraHook
             _miscModule.Update();
             _colorFishModule.Update();
             _persistentModule.Update();
-            _healModule.Update(); // Aktualizacja auto heala
+            _healModule.Update();
         }
-
-
 
         private void BlockInputIfOverWindow()
         {
@@ -139,6 +125,10 @@ namespace WildTerraHook
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
 
+            // --- FIX: Usunięto wywołanie _persistentModule.DrawESP(), bo ResourceEspModule to robi ---
+            // if (_persistentModule != null) _persistentModule.DrawESP(); 
+            // -----------------------------------------------------------------------------------------
+
             if (_showMenu)
             {
                 Matrix4x4 oldMatrix = GUI.matrix;
@@ -147,10 +137,7 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                ConfigManager.Menu_W = _windowRect.width;
-                ConfigManager.Menu_H = _windowRect.height;
-
-                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(450), GUILayout.MinHeight(300));
+                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(250), GUILayout.MinHeight(200));
 
                 GUI.matrix = oldMatrix;
             }
@@ -174,14 +161,30 @@ namespace WildTerraHook
 
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            int newTab = GUILayout.Toolbar(_currentTab, tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.98f));
+            int newTab = GUILayout.Toolbar(_currentTab, tabNames, GUILayout.Height(30), GUILayout.Width(_windowRect.width * 0.96f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
             if (newTab != _currentTab)
             {
+                if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
+                {
+                    ConfigManager.TabWidths[_currentTab] = _windowRect.width;
+                    ConfigManager.TabHeights[_currentTab] = _windowRect.height;
+                }
+
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
+
+                if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
+                {
+                    float w = ConfigManager.TabWidths[_currentTab];
+                    float h = ConfigManager.TabHeights[_currentTab];
+                    if (w < 250) w = 350;
+                    if (h < 200) h = 300;
+                    _windowRect.width = w;
+                    _windowRect.height = h;
+                }
             }
 
             GUILayout.Space(10);
@@ -193,7 +196,7 @@ namespace WildTerraHook
                 case 2: _lootModule.DrawMenu(); break;
                 case 3: _dropModule.DrawMenu(); break;
                 case 4: DrawMiscTab(); break;
-                case 5: DrawCombatTab(); break; // Zmiana na funkcję łączącą Combat i Heal
+                case 5: DrawCombatTab(); break;
                 case 6: _consoleModule.DrawMenu(); break;
             }
 
@@ -202,7 +205,11 @@ namespace WildTerraHook
 
             DrawResizer();
             GUI.DragWindow(new Rect(0, 0, 10000, 20));
-            if (GUI.changed || Input.GetMouseButtonUp(0)) SaveWindowConfig();
+
+            if (GUI.changed || Input.GetMouseButtonUp(0))
+            {
+                SaveWindowConfig();
+            }
         }
 
         private void DrawCombatTab()
@@ -262,8 +269,8 @@ namespace WildTerraHook
             {
                 _windowRect.width += e.delta.x;
                 _windowRect.height += e.delta.y;
-                if (_windowRect.width < 450) _windowRect.width = 450;
-                if (_windowRect.height < 300) _windowRect.height = 300;
+                if (_windowRect.width < 250) _windowRect.width = 250;
+                if (_windowRect.height < 200) _windowRect.height = 200;
                 e.Use();
             }
         }
@@ -274,6 +281,12 @@ namespace WildTerraHook
             ConfigManager.Menu_Y = _windowRect.y;
             ConfigManager.Menu_W = _windowRect.width;
             ConfigManager.Menu_H = _windowRect.height;
+
+            if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
+            {
+                ConfigManager.TabWidths[_currentTab] = _windowRect.width;
+                ConfigManager.TabHeights[_currentTab] = _windowRect.height;
+            }
         }
 
         private GUIStyle CenteredLabel()
