@@ -35,7 +35,6 @@ namespace WildTerraHook
 
         private GUIStyle _styleLabel;
         private GUIStyle _styleBackground;
-        private Texture2D _bgTexture;
         private Texture2D _boxTexture;
 
         // --- FIX: Dodano zmienną do obsługi suwaka ---
