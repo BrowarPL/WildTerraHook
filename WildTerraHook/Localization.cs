@@ -229,6 +229,12 @@ CONSOLE_AUTOSCROLL=Auto-Scroll
 CONSOLE_INFO=Info
 CONSOLE_WARN=Warn
 CONSOLE_ERROR=Error
+
+PERSISTENT_TITLE=Persistent World
+PERSISTENT_ENABLE=Enable Persistent Cache
+PERSISTENT_COUNT=Cached Objects
+PERSISTENT_CLEAR=Clear Cache
+PERSISTENT_DISABLED=Module Disabled (RAM Saving)
 ".Trim();
         }
 
@@ -370,6 +376,12 @@ CONSOLE_AUTOSCROLL=Auto-Scroll
 CONSOLE_INFO=Info
 CONSOLE_WARN=Ostrz
 CONSOLE_ERROR=Błędy
+
+PERSISTENT_TITLE=Pamięć Świata (Persistent)
+PERSISTENT_ENABLE=Włącz Pamięć Świata
+PERSISTENT_COUNT=Zapisane Obiekty
+PERSISTENT_CLEAR=Wyczyść Pamięć
+PERSISTENT_DISABLED=Moduł Wyłączony (Oszczędzanie RAM)
 ".Trim();
         }
     }

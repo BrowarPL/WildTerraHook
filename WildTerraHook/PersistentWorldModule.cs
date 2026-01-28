@@ -7,26 +7,25 @@ namespace WildTerraHook
 {
     public class PersistentWorldModule
     {
-        // Tylko zasoby i obiekty statyczne
+        // TYLKO ZASOBY (Statyczne)
         public Dictionary<Vector3, WorldGhost> ResourceGhosts = new Dictionary<Vector3, WorldGhost>();
 
         private float _scanInterval = 0.25f;
         private float _lastScanTime = 0f;
 
-        // Filtrowanie śmieci
-        private string[] _blackList = { "FX_", "Particle", "LightSource", "Sound", "Audio", "Arrow", "Projectile", "Footstep", "UI" };
+        // Czarna lista śmieci (efekty, dźwięki)
+        private string[] _blackList = { "FX_", "Particle", "LightSource", "Sound", "Audio", "Arrow", "Projectile", "Footstep", "UI", "Canvas" };
 
         public class WorldGhost
         {
-            public GameObject VisualObj; // Kopia wizualna
-            public GameObject RealObj;   // Oryginał
+            public GameObject VisualObj;
+            public GameObject RealObj;
             public string Name;
             public Vector3 Position;
         }
 
         public void Update()
         {
-            // Globalny wyłącznik z ConfigManager
             if (!ConfigManager.Persistent_Enabled)
             {
                 if (ResourceGhosts.Count > 0) ClearCache();
@@ -44,20 +43,22 @@ namespace WildTerraHook
 
         public void ClearCache()
         {
-            foreach (var g in ResourceGhosts.Values) if (g.VisualObj) UnityEngine.Object.Destroy(g.VisualObj);
+            foreach (var g in ResourceGhosts.Values)
+            {
+                if (g.VisualObj) UnityEngine.Object.Destroy(g.VisualObj);
+            }
             ResourceGhosts.Clear();
         }
 
-        // --- ZASOBY (STATYCZNE) ---
         private void RefreshResources()
         {
+            // Szukamy tylko obiektów statycznych
             var currentObjects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
             foreach (var realObj in currentObjects)
             {
                 if (realObj == null) continue;
                 if (IsBlacklisted(realObj.name)) continue;
 
-                // Dla obiektów statycznych pozycja jest najlepszym kluczem
                 Vector3 pos = RoundVector(realObj.transform.position);
 
                 if (!ResourceGhosts.ContainsKey(pos))
@@ -69,20 +70,18 @@ namespace WildTerraHook
                     var ghost = ResourceGhosts[pos];
                     if (ghost.VisualObj == null) { ResourceGhosts.Remove(pos); continue; }
 
-                    // Obsługa zmiany stanu (np. Drzewo -> Pniak)
                     string cleanReal = realObj.name.Replace("(Clone)", "").Trim();
                     string cleanGhost = ghost.Name.Replace("(Clone)", "").Trim();
 
+                    // Jeśli obiekt zmienił stan (np. Drzewo -> Pniak), odświeżamy
                     if (cleanGhost != cleanReal)
                     {
-                        // Nazwa się zmieniła, przerysowujemy ducha
                         UnityEngine.Object.Destroy(ghost.VisualObj);
                         ResourceGhosts.Remove(pos);
                         CreateResourceGhost(realObj, pos);
                     }
                     else
                     {
-                        // Aktualizujemy referencję do żywego obiektu
                         ghost.RealObj = realObj.gameObject;
                     }
                 }
@@ -96,10 +95,8 @@ namespace WildTerraHook
             ghostGo.transform.rotation = original.transform.rotation;
             ghostGo.transform.localScale = original.transform.localScale;
 
-            // Kopiujemy tylko statyczne meshe
             CopyVisuals(original.transform, ghostGo.transform);
 
-            // Domyślnie ukryty, bo oryginał jest obok
             ghostGo.SetActive(false);
 
             WorldGhost wg = new WorldGhost
@@ -119,7 +116,7 @@ namespace WildTerraHook
                 if (IsBlacklisted(child.name) || child.GetComponent<Light>() || child.GetComponent<ParticleSystem>())
                     continue;
 
-                // Kopiujemy MeshFilter (Zasoby/Budynki)
+                // Kopiujemy MeshFilter (tylko statyczne, żadnych SkinnedMesh)
                 MeshFilter sourceMF = child.GetComponent<MeshFilter>();
                 MeshRenderer sourceMR = child.GetComponent<MeshRenderer>();
 
@@ -130,13 +127,11 @@ namespace WildTerraHook
                     CopyTransform(child, copy.transform);
 
                     var mf = copy.AddComponent<MeshFilter>();
-                    mf.sharedMesh = sourceMF.sharedMesh; // Oszczędność RAM
+                    mf.sharedMesh = sourceMF.sharedMesh; // Współdzielimy mesh z gry
 
                     var mr = copy.AddComponent<MeshRenderer>();
                     mr.sharedMaterials = sourceMR.sharedMaterials;
                 }
-
-                // Usunięto obsługę SkinnedMeshRenderer (Moby), aby nie powodować błędów
 
                 if (child.childCount > 0)
                 {
@@ -171,7 +166,6 @@ namespace WildTerraHook
 
                 bool realIsAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
 
-                // Prosta logika: Jest oryginał -> ukryj ducha. Nie ma -> pokaż ducha.
                 if (ghost.VisualObj.activeSelf == realIsAlive)
                     ghost.VisualObj.SetActive(!realIsAlive);
             }
@@ -195,9 +189,10 @@ namespace WildTerraHook
         public void DrawMenu()
         {
             GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"<b>Persistent World (Resources Only)</b>");
+            // Tłumaczenie tytułu
+            GUILayout.Label($"<b>{Localization.Get("PERSISTENT_TITLE")}</b>");
 
-            bool newEnabled = GUILayout.Toggle(ConfigManager.Persistent_Enabled, " Enable Persistent Cache");
+            bool newEnabled = GUILayout.Toggle(ConfigManager.Persistent_Enabled, " " + Localization.Get("PERSISTENT_ENABLE"));
             if (newEnabled != ConfigManager.Persistent_Enabled)
             {
                 ConfigManager.Persistent_Enabled = newEnabled;
@@ -207,12 +202,14 @@ namespace WildTerraHook
 
             if (ConfigManager.Persistent_Enabled)
             {
-                GUILayout.Label($"Cached Objects: {ResourceGhosts.Count}");
-                if (GUILayout.Button("Clear Cache")) ClearCache();
+                // Tłumaczenie licznika i przycisku
+                GUILayout.Label($"{Localization.Get("PERSISTENT_COUNT")}: {ResourceGhosts.Count}");
+                if (GUILayout.Button(Localization.Get("PERSISTENT_CLEAR"))) ClearCache();
             }
             else
             {
-                GUILayout.Label("<color=grey>Module Disabled</color>");
+                // Tłumaczenie statusu wyłączenia
+                GUILayout.Label($"<color=grey>{Localization.Get("PERSISTENT_DISABLED")}</color>");
             }
             GUILayout.EndVertical();
         }
