@@ -64,6 +64,7 @@ namespace WildTerraHook
             ParseData(data);
         }
 
+        // --- NAPRAWIONO: Dodano brakującą metodę LoadFallback ---
         private static void LoadFallback(string lang)
         {
             string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn();
@@ -246,6 +247,7 @@ PERSISTENT_ENABLE=Enable Persistent Cache
 PERSISTENT_COUNT=Cached Objects
 PERSISTENT_CLEAR=Clear Cache
 PERSISTENT_DISABLED=Module Disabled (RAM Saving)
+PERSISTENT_CLEANUP=Cleanup Range (Collected)
 ".Trim();
         }
 
@@ -406,6 +408,7 @@ PERSISTENT_ENABLE=Włącz Pamięć Świata
 PERSISTENT_COUNT=Zapisane Obiekty
 PERSISTENT_CLEAR=Wyczyść Pamięć
 PERSISTENT_DISABLED=Moduł Wyłączony (Oszczędzanie RAM)
+PERSISTENT_CLEANUP=Zasięg Czyszczenia (Zebrane)
 ".Trim();
         }
     }

@@ -30,6 +30,7 @@ namespace WildTerraHook
 
         // --- PERSISTENT WORLD ---
         public static bool Persistent_Enabled = true;
+        public static float Persistent_CleanupRange = 20.0f; // Nowe ustawienie (Cleanup)
 
         // --- COMBAT ---
         public static bool Combat_NoCooldown = false;
@@ -41,7 +42,7 @@ namespace WildTerraHook
         public static string Heal_ItemName = "Linen bandage";
         public static int Heal_Percent = 60;
         public static bool Heal_CombatOnly = true;
-        public static float Heal_Cooldown = 20.0f; // Nowy Timer (domyślnie 20s dla bandaży)
+        public static float Heal_Cooldown = 20.0f;
 
         // --- AUTO LOOT ---
         public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>>();
@@ -169,6 +170,7 @@ namespace WildTerraHook
 
                     // Persistent
                     sw.WriteLine($"Persistent_Enabled={Persistent_Enabled}");
+                    sw.WriteLine($"Persistent_CleanupRange={Persistent_CleanupRange.ToString(CultureInfo.InvariantCulture)}");
 
                     // Combat
                     sw.WriteLine($"Combat_NoCooldown={Combat_NoCooldown}");
@@ -182,6 +184,7 @@ namespace WildTerraHook
                     sw.WriteLine($"Heal_CombatOnly={Heal_CombatOnly}");
                     sw.WriteLine($"Heal_Cooldown={Heal_Cooldown.ToString(CultureInfo.InvariantCulture)}");
 
+                    // Loot & Drop
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Loot_Debug={Loot_Debug}");
@@ -193,10 +196,6 @@ namespace WildTerraHook
                     sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
                     sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
 
-                    // Bots, Misc, ESP lines omitted for brevity but should be here...
-                    // (Zachowaj resztę pliku bez zmian, wklejam kluczowe zmiany powyżej)
-
-                    // --- RESZTA PLIKU POZOSTAJE BEZ ZMIAN (Aby zmieścić się w limicie, ale w Twoim pliku zachowaj wszystko poniżej) ---
                     // Bots
                     sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
                     sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
@@ -292,6 +291,7 @@ namespace WildTerraHook
 
                     if (key == "Language") Language = val;
                     else if (key == "Persistent_Enabled") bool.TryParse(val, out Persistent_Enabled);
+                    else if (key == "Persistent_CleanupRange") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Persistent_CleanupRange);
 
                     // Combat
                     else if (key == "Combat_NoCooldown") bool.TryParse(val, out Combat_NoCooldown);
@@ -305,7 +305,7 @@ namespace WildTerraHook
                     else if (key == "Heal_CombatOnly") bool.TryParse(val, out Heal_CombatOnly);
                     else if (key == "Heal_Cooldown") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Heal_Cooldown);
 
-                    // --- RESZTA OPCJI BEZ ZMIAN (Menu, Loot, Drop, Bots, Misc, ESP, Console...) ---
+                    // --- OTHER ---
                     else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
                     else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
                     else if (key == "Menu_Rect")
