@@ -131,15 +131,15 @@ namespace WildTerraHook
 
             try
             {
-                List<string> activeMining = GetActiveKeys(_miningToggles);
-                List<string> activeGather = GetActiveKeys(_gatheringToggles);
-                List<string> activeLumber = GetActiveKeys(_lumberToggles);
-                List<string> activeGodsend = GetActiveKeys(_godsendToggles);
-                List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
-
-                // --- 1. LIVE OBJECTS (Zasoby) ---
                 if (ConfigManager.Esp_ShowResources)
                 {
+                    List<string> activeMining = GetActiveKeys(_miningToggles);
+                    List<string> activeGather = GetActiveKeys(_gatheringToggles);
+                    List<string> activeLumber = GetActiveKeys(_lumberToggles);
+                    List<string> activeGodsend = GetActiveKeys(_godsendToggles);
+                    List<string> activeDungeons = GetActiveKeys(_dungeonsToggles);
+
+                    // 1. LIVE OBJECTS (Zasoby)
                     var objects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
                     foreach (var obj in objects)
                     {
@@ -148,28 +148,9 @@ namespace WildTerraHook
                         if (IsIgnored(obj.name)) continue;
                         ProcessResource(obj.gameObject, obj.name, obj.transform.position, obj.transform, activeMining, activeGather, activeLumber, activeGodsend, activeDungeons, newCache, false);
                     }
-                }
 
-                // --- 2. LIVE MOBS (Moby) ---
-                if (ConfigManager.Esp_ShowMobs)
-                {
-                    // Używamy FindObjectsOfType<WTMob> aby złapać wszystko co żywe
-                    var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
-                    foreach (var mob in mobs)
-                    {
-                        if (mob == null || mob.health <= 0) continue;
-                        if ((mob.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
-
-                        ProcessMob(mob, newCache);
-                        activeMobIds.Add(mob.GetInstanceID());
-                    }
-                }
-
-                // --- 3. PERSISTENT GHOSTS (Duchy z pamięci) ---
-                if (_persistentModule != null && ConfigManager.Persistent_Enabled)
-                {
-                    // 3a. Duchy Zasobów
-                    if (ConfigManager.Esp_ShowResources && _persistentModule.ResourceGhosts.Count > 0)
+                    // 2. PERSISTENT GHOSTS (Tylko zasoby)
+                    if (_persistentModule != null && ConfigManager.Persistent_Enabled && _persistentModule.ResourceGhosts.Count > 0)
                     {
                         foreach (var ghost in _persistentModule.ResourceGhosts.Values)
                         {
@@ -180,33 +161,30 @@ namespace WildTerraHook
                             }
                         }
                     }
+                }
 
-                    // 3b. Duchy Mobów
-                    if (ConfigManager.Esp_ShowMobs && _persistentModule.MobGhosts.Count > 0)
+                if (ConfigManager.Esp_ShowMobs)
+                {
+                    var mobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
+                    foreach (var mob in mobs)
                     {
-                        // Używamy zwykłej pętli for dla bezpieczeństwa przy modyfikacji listy
-                        for (int i = 0; i < _persistentModule.MobGhosts.Count; i++)
+                        if (mob != null && mob.health > 0)
                         {
-                            var ghost = _persistentModule.MobGhosts[i];
-
-                            // Null check - kluczowe dla uniknięcia błędów
-                            if (ghost == null || ghost.VisualObj == null) continue;
-
-                            if (ghost.VisualObj.activeSelf)
-                            {
-                                if ((ghost.Position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
-                                ProcessGhostMob(ghost, newCache);
-                            }
+                            if ((mob.transform.position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
+                            ProcessMob(mob, newCache);
+                            activeMobIds.Add(mob.GetInstanceID());
                         }
                     }
                 }
             }
             catch { }
 
+            // Cleanup HP cache
             List<int> toRemoveHP = new List<int>();
             foreach (var key in _maxHealthCache.Keys) if (!activeMobIds.Contains(key)) toRemoveHP.Add(key);
             foreach (var k in toRemoveHP) _maxHealthCache.Remove(k);
 
+            // Cleanup Renderers
             foreach (var item in newCache) if (item.Renderers != null) foreach (var r in item.Renderers) currentRenderers.Add(r);
 
             List<Renderer> toRemove = new List<Renderer>();
@@ -262,18 +240,6 @@ namespace WildTerraHook
             GetMobInfo(mob.name, out Color col, out string label, out bool show);
 
             if (show) AddToCache(cache, mob.gameObject, mob.transform.position, mob.transform, label, col, hpStr, true, height, true, false);
-        }
-
-        private void ProcessGhostMob(PersistentWorldModule.WorldGhost ghost, List<CachedObject> cache)
-        {
-            string hpStr = $" [HP: {ghost.Hp}/{ghost.MaxHp}] (Cached)";
-            GetMobInfo(ghost.Name, out Color col, out string label, out bool show);
-            if (show)
-            {
-                Color ghostCol = col;
-                ghostCol.a = 0.6f;
-                AddToCache(cache, ghost.VisualObj, ghost.Position, ghost.VisualObj.transform, "[C] " + label, ghostCol, hpStr, true, 1.8f, true, true);
-            }
         }
 
         private void ProcessResource(GameObject go, string name, Vector3 pos, Transform tr, List<string> mining, List<string> gather, List<string> lumber, List<string> godsend, List<string> dungeons, List<CachedObject> cache, bool isGhost)
