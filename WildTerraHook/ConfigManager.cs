@@ -30,7 +30,7 @@ namespace WildTerraHook
 
         // --- PERSISTENT WORLD ---
         public static bool Persistent_Enabled = true;
-        public static float Persistent_CleanupRange = 20.0f; // Nowe ustawienie (Cleanup)
+        public static float Persistent_CleanupRange = 20.0f;
 
         // --- COMBAT ---
         public static bool Combat_NoCooldown = false;
@@ -116,18 +116,25 @@ namespace WildTerraHook
         public static bool Console_ShowWarnings = true;
         public static bool Console_ShowErrors = true;
 
-        // --- MENU ---
+        // --- MENU & SIZES ---
         public static float Menu_Scale = 1.0f;
         public static float Menu_X = 20f;
         public static float Menu_Y = 20f;
-        public static float Menu_W = 450f;
-        public static float Menu_H = 0f;
+        public static float Menu_W = 350f; // Domyślnie mniejsza
+        public static float Menu_H = 300f;
         public static int Menu_Tab = 0;
+
+        // NOWE: Tablice do przechowywania rozmiarów okien dla każdej zakładki (0-10)
+        public static float[] TabWidths = new float[10];
+        public static float[] TabHeights = new float[10];
 
         static ConfigManager()
         {
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
             _filePath = Path.Combine(_folderPath, "config.txt");
+
+            // Inicjalizacja domyślnych rozmiarów zakładek
+            for (int i = 0; i < 10; i++) { TabWidths[i] = 400f; TabHeights[i] = 300f; }
 
             if (LootProfiles.Count == 0) { LootProfiles["Default"] = new List<string>(); ActiveProfiles.Add("Default"); }
             if (DropProfiles.Count == 0) { DropProfiles["Default"] = new List<string>(); ActiveDropProfiles.Add("Default"); }
@@ -168,6 +175,12 @@ namespace WildTerraHook
                     sw.WriteLine($"Menu_Tab={Menu_Tab}");
                     sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
 
+                    // Zapisujemy rozmiary zakładek
+                    string wStr = string.Join(",", TabWidths.Select(f => f.ToString(CultureInfo.InvariantCulture)));
+                    string hStr = string.Join(",", TabHeights.Select(f => f.ToString(CultureInfo.InvariantCulture)));
+                    sw.WriteLine($"TabWidths={wStr}");
+                    sw.WriteLine($"TabHeights={hStr}");
+
                     // Persistent
                     sw.WriteLine($"Persistent_Enabled={Persistent_Enabled}");
                     sw.WriteLine($"Persistent_CleanupRange={Persistent_CleanupRange.ToString(CultureInfo.InvariantCulture)}");
@@ -184,7 +197,6 @@ namespace WildTerraHook
                     sw.WriteLine($"Heal_CombatOnly={Heal_CombatOnly}");
                     sw.WriteLine($"Heal_Cooldown={Heal_Cooldown.ToString(CultureInfo.InvariantCulture)}");
 
-                    // Loot & Drop
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Loot_Debug={Loot_Debug}");
@@ -196,7 +208,6 @@ namespace WildTerraHook
                     sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
                     sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
 
-                    // Bots
                     sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
                     sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
                     sw.WriteLine($"ColorFish_ReactionTime={ColorFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
@@ -208,7 +219,6 @@ namespace WildTerraHook
                     sw.WriteLine($"MemFish_ReactionTime={MemFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"MemFish_ShowESP={MemFish_ShowESP}");
 
-                    // Misc
                     sw.WriteLine($"Misc_EternalDay={Misc_EternalDay}");
                     sw.WriteLine($"Misc_NoFog={Misc_NoFog}");
                     sw.WriteLine($"Misc_Fullbright={Misc_Fullbright}");
@@ -222,7 +232,6 @@ namespace WildTerraHook
                     sw.WriteLine($"Misc_Fov={Misc_Fov.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Misc_RenderDistance={Misc_RenderDistance.ToString(CultureInfo.InvariantCulture)}");
 
-                    // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
@@ -293,6 +302,20 @@ namespace WildTerraHook
                     else if (key == "Persistent_Enabled") bool.TryParse(val, out Persistent_Enabled);
                     else if (key == "Persistent_CleanupRange") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Persistent_CleanupRange);
 
+                    // Loading Tab Sizes
+                    else if (key == "TabWidths")
+                    {
+                        string[] split = val.Split(',');
+                        for (int i = 0; i < split.Length && i < 10; i++)
+                            float.TryParse(split[i], NumberStyles.Any, CultureInfo.InvariantCulture, out TabWidths[i]);
+                    }
+                    else if (key == "TabHeights")
+                    {
+                        string[] split = val.Split(',');
+                        for (int i = 0; i < split.Length && i < 10; i++)
+                            float.TryParse(split[i], NumberStyles.Any, CultureInfo.InvariantCulture, out TabHeights[i]);
+                    }
+
                     // Combat
                     else if (key == "Combat_NoCooldown") bool.TryParse(val, out Combat_NoCooldown);
                     else if (key == "Combat_FastAttack") bool.TryParse(val, out Combat_FastAttack);
@@ -305,7 +328,6 @@ namespace WildTerraHook
                     else if (key == "Heal_CombatOnly") bool.TryParse(val, out Heal_CombatOnly);
                     else if (key == "Heal_Cooldown") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Heal_Cooldown);
 
-                    // --- OTHER ---
                     else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
                     else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
                     else if (key == "Menu_Rect")

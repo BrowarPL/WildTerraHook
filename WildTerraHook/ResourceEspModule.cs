@@ -17,7 +17,13 @@ namespace WildTerraHook
         private Dictionary<string, bool> _godsendToggles = new Dictionary<string, bool>();
         private Dictionary<string, bool> _dungeonsToggles = new Dictionary<string, bool>();
 
-        private string[] _ignoreKeywords = { "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace", "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence", "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign", "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam", "Stairs", "Foundation", "Road", "Path", "Walkway" };
+        private string[] _ignoreKeywords = {
+            "Anvil", "Table", "Bench", "Rack", "Stove", "Kiln", "Furnace",
+            "Chair", "Bed", "Chest", "Box", "Crate", "Basket", "Fence",
+            "Wall", "Floor", "Roof", "Window", "Door", "Gate", "Sign",
+            "Decor", "Torch", "Lamp", "Rug", "Carpet", "Pillar", "Beam",
+            "Stairs", "Foundation", "Road", "Path", "Walkway"
+        };
 
         private List<CachedObject> _cachedObjects = new List<CachedObject>();
         private float _lastScanTime = 0f;
@@ -31,6 +37,8 @@ namespace WildTerraHook
         private GUIStyle _styleBackground;
         private Texture2D _bgTexture;
         private Texture2D _boxTexture;
+
+        // --- FIX: Dodano zmienną do obsługi suwaka ---
         private Vector2 _scrollPos;
 
         private struct CachedObject
@@ -53,6 +61,19 @@ namespace WildTerraHook
             InitializeLists();
             LoadFromConfig();
             CreateXRayMaterial();
+
+            _boxTexture = new Texture2D(1, 1);
+            _boxTexture.SetPixel(0, 0, Color.white);
+            _boxTexture.Apply();
+
+            _styleLabel = new GUIStyle();
+            _styleLabel.normal.textColor = Color.white;
+            _styleLabel.fontSize = 12;
+            _styleLabel.alignment = TextAnchor.MiddleCenter;
+            _styleLabel.fontStyle = FontStyle.Bold;
+
+            _styleBackground = new GUIStyle();
+            _styleBackground.normal.background = _boxTexture;
         }
 
         public void SetPersistentModule(PersistentWorldModule module)
@@ -331,7 +352,8 @@ namespace WildTerraHook
             if (renderers == null) return;
             foreach (var r in renderers)
             {
-                if (r != null && _originalMaterials.ContainsKey(r))
+                if (r == null) continue;
+                if (_originalMaterials.ContainsKey(r))
                 {
                     r.materials = _originalMaterials[r];
                     _originalMaterials.Remove(r);
@@ -341,206 +363,61 @@ namespace WildTerraHook
 
         private bool IsIgnored(string name)
         {
-            if (name.Length < 3) return true;
-            foreach (var ignore in _ignoreKeywords)
-                if (name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            for (int i = 0; i < _ignoreKeywords.Length; i++)
+            {
+                if (name.IndexOf(_ignoreKeywords[i], StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
             return false;
         }
 
         private List<string> GetActiveKeys(Dictionary<string, bool> dict)
         {
-            List<string> active = new List<string>();
-            foreach (var kvp in dict) if (kvp.Value) active.Add(kvp.Key);
-            return active;
-        }
-
-        private void CreateStyles()
-        {
-            if (_bgTexture == null) { _bgTexture = new Texture2D(1, 1); _bgTexture.SetPixel(0, 0, new Color(0, 0, 0, 0.75f)); _bgTexture.Apply(); }
-            if (_boxTexture == null) { _boxTexture = new Texture2D(1, 1); _boxTexture.SetPixel(0, 0, Color.white); _boxTexture.Apply(); }
-            if (_styleBackground == null) { _styleBackground = new GUIStyle(); _styleBackground.normal.background = _bgTexture; }
-            if (_styleLabel == null) { _styleLabel = new GUIStyle(); _styleLabel.normal.textColor = Color.white; _styleLabel.alignment = TextAnchor.MiddleCenter; _styleLabel.fontSize = 11; _styleLabel.fontStyle = FontStyle.Bold; }
-        }
-
-        public void DrawMenu()
-        {
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(450));
-            bool newVal; float newFloat;
-            newVal = GUILayout.Toggle(ConfigManager.Esp_Enabled, $"<b>{Localization.Get("ESP_MAIN_BTN")}</b>");
-            if (newVal != ConfigManager.Esp_Enabled) { ConfigManager.Esp_Enabled = newVal; ConfigManager.Save(); }
-            GUILayout.Space(5);
-            if (ConfigManager.Esp_Enabled)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("ESP_DIST")}: {ConfigManager.Esp_Distance:F0}m", GUILayout.Width(100));
-                newFloat = GUILayout.HorizontalSlider(ConfigManager.Esp_Distance, 20f, 300f);
-                if (Math.Abs(newFloat - ConfigManager.Esp_Distance) > 0.1f) { ConfigManager.Esp_Distance = newFloat; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-                GUILayout.BeginHorizontal();
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, Localization.Get("ESP_BOX"));
-                if (newVal != ConfigManager.Esp_ShowBoxes) { ConfigManager.Esp_ShowBoxes = newVal; ConfigManager.Save(); }
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowXRay, Localization.Get("ESP_XRAY"));
-                if (newVal != ConfigManager.Esp_ShowXRay) { ConfigManager.Esp_ShowXRay = newVal; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-                GUILayout.Space(10);
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowResources, $"<b>{Localization.Get("ESP_RES_TITLE")}</b>");
-                if (newVal != ConfigManager.Esp_ShowResources) { ConfigManager.Esp_ShowResources = newVal; ConfigManager.Save(); }
-                if (ConfigManager.Esp_ShowResources)
-                {
-                    GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Mining, Localization.Get("ESP_CAT_MINING"));
-                    if (newVal != ConfigManager.Esp_Cat_Mining) { ConfigManager.Esp_Cat_Mining = newVal; ConfigManager.Save(); }
-                    if (ConfigManager.Esp_Cat_Mining) DrawDictionary(_miningToggles);
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Gather, Localization.Get("ESP_CAT_GATHER"));
-                    if (newVal != ConfigManager.Esp_Cat_Gather) { ConfigManager.Esp_Cat_Gather = newVal; ConfigManager.Save(); }
-                    if (ConfigManager.Esp_Cat_Gather) DrawDictionary(_gatheringToggles);
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Lumber, Localization.Get("ESP_CAT_LUMBER"));
-                    if (newVal != ConfigManager.Esp_Cat_Lumber) { ConfigManager.Esp_Cat_Lumber = newVal; ConfigManager.Save(); }
-                    if (ConfigManager.Esp_Cat_Lumber) DrawDictionary(_lumberToggles);
-                    GUILayout.Space(5);
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Godsend, Localization.Get("ESP_CAT_GODSEND"));
-                    if (newVal != ConfigManager.Esp_Cat_Godsend) { ConfigManager.Esp_Cat_Godsend = newVal; ConfigManager.Save(); }
-                    if (ConfigManager.Esp_Cat_Godsend) DrawDictionary(_godsendToggles);
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Dungeons, Localization.Get("ESP_CAT_DUNGEONS"));
-                    if (newVal != ConfigManager.Esp_Cat_Dungeons) { ConfigManager.Esp_Cat_Dungeons = newVal; ConfigManager.Save(); }
-                    if (ConfigManager.Esp_Cat_Dungeons) DrawDictionary(_dungeonsToggles);
-                    GUILayout.Space(5);
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Cat_Others, Localization.Get("ESP_CAT_OTHERS"));
-                    if (newVal != ConfigManager.Esp_Cat_Others) { ConfigManager.Esp_Cat_Others = newVal; ConfigManager.Save(); }
-                    GUILayout.EndVertical(); GUILayout.EndHorizontal();
-                }
-                GUILayout.Space(10);
-                newVal = GUILayout.Toggle(ConfigManager.Esp_ShowMobs, $"<b>{Localization.Get("ESP_MOB_TITLE")}</b>");
-                if (newVal != ConfigManager.Esp_ShowMobs) { ConfigManager.Esp_ShowMobs = newVal; ConfigManager.Save(); }
-                if (ConfigManager.Esp_ShowMobs)
-                {
-                    GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Mob_Aggro, Localization.Get("ESP_MOB_AGGRO"));
-                    if (newVal != ConfigManager.Esp_Mob_Aggro) { ConfigManager.Esp_Mob_Aggro = newVal; ConfigManager.Save(); }
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Mob_Retal, Localization.Get("ESP_MOB_RETAL"));
-                    if (newVal != ConfigManager.Esp_Mob_Retal) { ConfigManager.Esp_Mob_Retal = newVal; ConfigManager.Save(); }
-                    newVal = GUILayout.Toggle(ConfigManager.Esp_Mob_Passive, Localization.Get("ESP_MOB_PASSIVE"));
-                    if (newVal != ConfigManager.Esp_Mob_Passive) { ConfigManager.Esp_Mob_Passive = newVal; ConfigManager.Save(); }
-                    GUILayout.EndVertical(); GUILayout.EndHorizontal();
-                }
-                GUILayout.Space(15);
-                if (GUILayout.Button(_showColorMenu ? Localization.Get("ESP_HIDE_COLORS") : Localization.Get("ESP_EDIT_COLORS"))) _showColorMenu = !_showColorMenu;
-                if (_showColorMenu) DrawColorSettings();
-            }
-            GUILayout.EndScrollView();
-        }
-
-        private void DrawColorSettings()
-        {
-            GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("ESP_EDIT_COLORS")}</b>");
-            DrawColorPicker(Localization.Get("COLOR_MOB_AGGRO"), ref ConfigManager.Colors.MobAggressive);
-            DrawColorPicker(Localization.Get("COLOR_MOB_PASSIVE"), ref ConfigManager.Colors.MobPassive);
-            DrawColorPicker(Localization.Get("COLOR_MOB_FLEE"), ref ConfigManager.Colors.MobFleeing);
-            GUILayout.Space(5);
-            DrawColorPicker(Localization.Get("COLOR_RES_MINE"), ref ConfigManager.Colors.ResMining);
-            DrawColorPicker(Localization.Get("COLOR_RES_GATHER"), ref ConfigManager.Colors.ResGather);
-            DrawColorPicker(Localization.Get("COLOR_RES_LUMB"), ref ConfigManager.Colors.ResLumber);
-            DrawColorPicker(Localization.Get("COLOR_RES_GODSEND"), ref ConfigManager.Colors.ResGodsend);
-            DrawColorPicker(Localization.Get("COLOR_RES_DUNG"), ref ConfigManager.Colors.ResDungeon);
-            if (GUILayout.Button(Localization.Get("ESP_SAVE_COLORS"))) ConfigManager.Save();
-            GUILayout.EndVertical();
-        }
-
-        private void DrawColorPicker(string label, ref Color col)
-        {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(120));
-            GUI.color = col; GUILayout.Label("█", GUILayout.Width(20)); GUI.color = Color.white;
-            GUILayout.BeginVertical();
-            col.r = GUILayout.HorizontalSlider(col.r, 0f, 1f);
-            col.g = GUILayout.HorizontalSlider(col.g, 0f, 1f);
-            col.b = GUILayout.HorizontalSlider(col.b, 0f, 1f);
-            GUILayout.EndVertical();
-            GUILayout.EndHorizontal();
-        }
-
-        private void DrawDictionary(Dictionary<string, bool> dict)
-        {
-            GUILayout.BeginHorizontal(); GUILayout.Space(10); GUILayout.BeginVertical();
-            var keys = new List<string>(dict.Keys);
-            bool changed = false;
-            foreach (var key in keys) { bool v = GUILayout.Toggle(dict[key], key); if (v != dict[key]) { dict[key] = v; changed = true; } }
-            if (changed) SyncToConfig();
-            GUILayout.EndVertical(); GUILayout.EndHorizontal();
+            List<string> list = new List<string>();
+            foreach (var kvp in dict) if (kvp.Value) list.Add(kvp.Key);
+            return list;
         }
 
         public void DrawESP()
         {
             if (!ConfigManager.Esp_Enabled) return;
+
             Camera cam = Camera.main;
             if (cam == null) return;
-            CreateStyles();
-            Vector3 originPos = cam.transform.position;
-            if (global::Player.localPlayer != null) originPos = global::Player.localPlayer.transform.position;
-            float screenW = Screen.width;
-            float screenH = Screen.height;
 
-            foreach (var obj in _cachedObjects)
+            foreach (var item in _cachedObjects)
             {
-                // Live update pozycji jeśli obiekt istnieje, w przeciwnym razie pozycja z cache
-                Vector3 currentPos = (obj.Transform != null) ? obj.Transform.position : obj.Position;
-                float dist = Vector3.Distance(originPos, currentPos);
-                if (dist > ConfigManager.Esp_Distance) continue;
-
-                Vector3 screenHead = cam.WorldToScreenPoint(currentPos + Vector3.up * obj.Height);
-                Vector3 screenFeet = cam.WorldToScreenPoint(currentPos);
-                bool isBehind = screenHead.z < 0;
-                bool isOffScreen = isBehind || screenHead.x < 0 || screenHead.x > screenW || screenHead.y < 0 || screenHead.y > screenH;
-
-                if (isOffScreen)
+                Vector3 screenPos = cam.WorldToScreenPoint(item.Position + Vector3.up * item.Height);
+                if (screenPos.z > 0)
                 {
-                    Vector3 screenPos = screenHead;
-                    if (isBehind) { screenPos.x *= -1; screenPos.y *= -1; }
-                    Vector3 screenCenter = new Vector3(screenW / 2, screenH / 2, 0);
-                    screenPos -= screenCenter;
-                    float angle = Mathf.Atan2(screenPos.y, screenPos.x);
-                    angle -= 90 * Mathf.Deg2Rad;
-                    float cos = Mathf.Cos(angle); float sin = -Mathf.Sin(angle);
-                    float m = cos / sin;
-                    Vector3 screenBounds = screenCenter; screenBounds.x -= 20; screenBounds.y -= 20;
-                    if (cos > 0) screenPos = new Vector3(screenBounds.y / m, screenBounds.y, 0);
-                    else screenPos = new Vector3(-screenBounds.y / m, -screenBounds.y, 0);
-                    if (screenPos.x > screenBounds.x) screenPos = new Vector3(screenBounds.x, screenBounds.x * m, 0);
-                    else if (screenPos.x < -screenBounds.x) screenPos = new Vector3(-screenBounds.x, -screenBounds.x * m, 0);
-                    screenPos += screenCenter;
-                    screenPos.y = screenH - screenPos.y;
-                    DrawLabelWithBackground(screenPos, obj.Label, obj.Color);
-                }
-                else
-                {
-                    float feetY = screenH - screenFeet.y;
-                    float headY = screenH - screenHead.y;
-                    if (obj.IsMob && ConfigManager.Esp_ShowBoxes)
-                    {
-                        float boxHeight = Mathf.Abs(feetY - headY);
-                        if (boxHeight < 5) boxHeight = 5;
-                        float boxWidth = boxHeight * 0.6f;
-                        float boxX = screenFeet.x - boxWidth / 2;
-                        float boxY = headY;
-                        DrawBoxOutline(new Rect(boxX, boxY, boxWidth, boxHeight), obj.Color, 2f);
-                    }
-                    string text = $"{obj.Label} [{dist:F0}m]{obj.HpText}";
-                    Vector2 textPos = new Vector2(screenHead.x, headY - 15);
-                    DrawLabelWithBackground(textPos, text, obj.Color);
+                    float dist = Vector3.Distance(cam.transform.position, item.Position);
+                    DrawESPLabel(screenPos, item.Label + item.HpText, dist, item.Color, item.IsMob, item.Height, item.Position, cam);
                 }
             }
         }
 
-        private void DrawLabelWithBackground(Vector2 centerBottomPos, string text, Color color)
+        private void DrawESPLabel(Vector3 screenPos, string text, float dist, Color color, bool isMob, float height, Vector3 worldPos, Camera cam)
         {
-            GUIContent content = new GUIContent(text);
+            string fullText = $"{text} [{dist:F0}m]";
+            GUIContent content = new GUIContent(fullText);
             Vector2 size = _styleLabel.CalcSize(content);
-            Rect r = new Rect(centerBottomPos.x - size.x / 2, centerBottomPos.y - size.y, size.x, size.y);
+
+            Vector2 centerBottomPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
+
+            if (ConfigManager.Esp_ShowBoxes)
+            {
+                // Boxy 2D
+                float boxHeight = (1.8f / dist) * Screen.height; // Przybliżona skala
+                if (boxHeight < 20) boxHeight = 20;
+                float boxWidth = boxHeight * 0.6f;
+                Rect boxRect = new Rect(centerBottomPos.x - boxWidth / 2, centerBottomPos.y - boxHeight, boxWidth, boxHeight);
+                DrawBoxOutline(boxRect, color, 1f);
+            }
+
+            Rect r = new Rect(centerBottomPos.x - size.x / 2, centerBottomPos.y - size.y - (ConfigManager.Esp_ShowBoxes ? 10 : 0), size.x, size.y);
             Rect bgRect = new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4);
             GUI.Box(bgRect, GUIContent.none, _styleBackground);
             _styleLabel.normal.textColor = color;
-            GUI.Label(r, text, _styleLabel);
+            GUI.Label(r, fullText, _styleLabel);
         }
 
         private void DrawBoxOutline(Rect r, Color color, float thickness)
@@ -556,11 +433,95 @@ namespace WildTerraHook
             if (_boxTexture == null) return;
             float angle = Mathf.Rad2Deg * Mathf.Atan2(pointB.y - pointA.y, pointB.x - pointA.x);
             float length = Vector2.Distance(pointA, pointB);
+            Matrix4x4 matrix = GUI.matrix;
             GUIUtility.RotateAroundPivot(angle, pointA);
             GUI.color = color;
             GUI.DrawTexture(new Rect(pointA.x, pointA.y, length, width), _boxTexture);
+            GUI.matrix = matrix;
             GUI.color = Color.white;
-            GUIUtility.RotateAroundPivot(-angle, pointA);
+        }
+
+        public void DrawMenu()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<b>RESOURCE ESP</b>", GUILayout.Width(150));
+            if (GUILayout.Button(ConfigManager.Esp_Enabled ? "ENABLED" : "DISABLED"))
+            {
+                ConfigManager.Esp_Enabled = !ConfigManager.Esp_Enabled;
+                ConfigManager.Save();
+            }
+            GUILayout.EndHorizontal();
+
+            if (!ConfigManager.Esp_Enabled) return;
+
+            GUILayout.Space(5);
+            GUILayout.Label($"{Localization.Get("ESP_DIST")}: {ConfigManager.Esp_Distance:F0}m");
+            float newDist = GUILayout.HorizontalSlider(ConfigManager.Esp_Distance, 50f, 500f);
+            if (Mathf.Abs(newDist - ConfigManager.Esp_Distance) > 1f) { ConfigManager.Esp_Distance = newDist; ConfigManager.Save(); }
+
+            GUILayout.Space(5);
+            ConfigManager.Esp_ShowBoxes = GUILayout.Toggle(ConfigManager.Esp_ShowBoxes, " Show Boxes");
+
+            GUILayout.Space(5);
+            DrawCategoryToggle("Mining", ref ConfigManager.Esp_Cat_Mining, _miningToggles);
+            DrawCategoryToggle("Gathering", ref ConfigManager.Esp_Cat_Gather, _gatheringToggles);
+            DrawCategoryToggle("Lumber", ref ConfigManager.Esp_Cat_Lumber, _lumberToggles);
+            DrawCategoryToggle("Godsend", ref ConfigManager.Esp_Cat_Godsend, _godsendToggles);
+            DrawCategoryToggle("Dungeons", ref ConfigManager.Esp_Cat_Dungeons, _dungeonsToggles);
+
+            bool others = GUILayout.Toggle(ConfigManager.Esp_Cat_Others, " Show Others");
+            if (others != ConfigManager.Esp_Cat_Others) { ConfigManager.Esp_Cat_Others = others; ConfigManager.Save(); }
+
+            GUILayout.Space(5);
+            bool showMobs = GUILayout.Toggle(ConfigManager.Esp_ShowMobs, " Show Mobs");
+            if (showMobs != ConfigManager.Esp_ShowMobs) { ConfigManager.Esp_ShowMobs = showMobs; ConfigManager.Save(); }
+
+            GUILayout.Space(10);
+            if (GUILayout.Button(_showColorMenu ? "Hide Item Lists" : "Edit Item Lists"))
+            {
+                _showColorMenu = !_showColorMenu;
+            }
+
+            if (_showColorMenu)
+            {
+                // --- FIX: SCROLL VIEW ZAMIAST ROZSZERZANIA OKNA ---
+                _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(300));
+
+                DrawFilterList("Mining Items", _miningToggles);
+                DrawFilterList("Gather Items", _gatheringToggles);
+                DrawFilterList("Lumber Items", _lumberToggles);
+                DrawFilterList("Godsend Items", _godsendToggles);
+                DrawFilterList("Dungeon Items", _dungeonsToggles);
+
+                GUILayout.EndScrollView();
+                // --------------------------------------------------
+
+                if (GUI.changed) SyncToConfig();
+            }
+        }
+
+        private void DrawCategoryToggle(string title, ref bool toggle, Dictionary<string, bool> list)
+        {
+            bool newVal = GUILayout.Toggle(toggle, $" {title} ({list.Count})");
+            if (newVal != toggle)
+            {
+                toggle = newVal;
+                ConfigManager.Save();
+            }
+        }
+
+        private void DrawFilterList(string title, Dictionary<string, bool> list)
+        {
+            if (list.Count == 0) return;
+            GUILayout.Label($"<b>{title}</b>");
+            var keys = new List<string>(list.Keys);
+            foreach (var key in keys)
+            {
+                bool val = list[key];
+                bool set = GUILayout.Toggle(val, " " + key);
+                if (set != val) list[key] = set;
+            }
+            GUILayout.Space(5);
         }
     }
 }
