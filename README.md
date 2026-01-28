@@ -15,6 +15,7 @@ Features:
 - Zoom Hack
 - FOV hack
 - Persistent World
+- Auto Heal
   
 Languages supported: English, Polish
 
