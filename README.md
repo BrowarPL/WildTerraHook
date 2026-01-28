@@ -14,6 +14,7 @@ Features:
 - Flashlight
 - Zoom Hack
 - FOV hack
+- Persistent World
   
 Languages supported: English, Polish
 
