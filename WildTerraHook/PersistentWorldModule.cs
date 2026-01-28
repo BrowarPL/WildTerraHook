@@ -6,8 +6,8 @@ namespace WildTerraHook
 {
     public class PersistentWorldModule
     {
-        // Główny przełącznik modułu (Tick box)
-        public bool Enabled = true;
+        // Korzystamy teraz z globalnego ustawienia
+        // public bool Enabled = true; <- USUNIĘTE
 
         public Dictionary<Vector3, WorldGhost> Ghosts = new Dictionary<Vector3, WorldGhost>();
 
@@ -20,11 +20,9 @@ namespace WildTerraHook
         public struct WorldGhost
         {
             public GameObject VisualObj;
-            public GameObject RealObj; // Może być WTObject lub WTMob (GameObject)
+            public GameObject RealObj;
             public string Name;
             public Vector3 Position;
-
-            // Dane specyficzne dla Mobów
             public bool IsMob;
             public int Hp;
             public int MaxHp;
@@ -32,8 +30,8 @@ namespace WildTerraHook
 
         public void Update()
         {
-            // Jeśli moduł wyłączony, czyścimy cache i nie robimy nic
-            if (!Enabled)
+            // Sprawdzamy ustawienie z ConfigManager
+            if (!ConfigManager.Persistent_Enabled)
             {
                 if (Ghosts.Count > 0) ClearCache();
                 return;
@@ -59,7 +57,6 @@ namespace WildTerraHook
 
         private void RefreshWorld()
         {
-            // 1. Skanowanie ZASOBÓW (WTObject)
             var currentObjects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
             foreach (var realObj in currentObjects)
             {
@@ -70,17 +67,10 @@ namespace WildTerraHook
                 UpdateOrAddGhost(realObj.gameObject, realObj.name, pos, false, 0, 0);
             }
 
-            // 2. Skanowanie MOBÓW (WTMob)
             var currentMobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
             foreach (var mob in currentMobs)
             {
                 if (mob == null || mob.health <= 0) continue;
-
-                // Dla mobów pozycja też jest kluczem, ale moby się ruszają.
-                // Logika: Jeśli mob jest żywy (widziany), aktualizujemy jego ducha w nowej pozycji
-                // i usuwamy starego ducha z poprzedniej pozycji (jeśli istniał).
-                // Tutaj upraszczamy: Tworzymy ducha tam gdzie mob stoi TERAZ.
-
                 Vector3 pos = RoundVector(mob.transform.position);
                 UpdateOrAddGhost(mob.gameObject, mob.name, pos, true, mob.health, mob.healthMax);
             }
@@ -95,23 +85,19 @@ namespace WildTerraHook
             else
             {
                 var ghost = Ghosts[pos];
-
-                // Sprawdzamy czy to ten sam obiekt (nazwa)
                 string cleanReal = name.Replace("(Clone)", "").Trim();
                 string cleanGhost = ghost.Name.Replace("(Clone)", "").Trim();
 
                 if (cleanGhost != cleanReal)
                 {
-                    // Coś innego stoi w tym miejscu (np. ścięte drzewo), podmieniamy
                     if (ghost.VisualObj) UnityEngine.Object.Destroy(ghost.VisualObj);
                     Ghosts.Remove(pos);
                     CreateGhost(realGo, name, pos, isMob, hp, maxHp);
                 }
                 else
                 {
-                    // Aktualizujemy dane istniejącego ducha
                     ghost.RealObj = realGo;
-                    ghost.Hp = hp; // Aktualizacja HP dla mobów
+                    ghost.Hp = hp;
                     Ghosts[pos] = ghost;
                 }
             }
@@ -124,7 +110,6 @@ namespace WildTerraHook
             ghostGo.transform.rotation = original.transform.rotation;
             ghostGo.transform.localScale = original.transform.localScale;
 
-            // Kopiowanie wyglądu
             CopyVisuals(original.transform, ghostGo.transform);
 
             ghostGo.SetActive(false);
@@ -150,7 +135,6 @@ namespace WildTerraHook
                 if (IsBlacklisted(child.name) || child.GetComponent<Light>() || child.GetComponent<ParticleSystem>())
                     continue;
 
-                // Obsługa MeshFilter (statyczne obiekty)
                 MeshFilter sourceMF = child.GetComponent<MeshFilter>();
                 MeshRenderer sourceMR = child.GetComponent<MeshRenderer>();
 
@@ -167,8 +151,6 @@ namespace WildTerraHook
                     mr.sharedMaterials = sourceMR.sharedMaterials;
                 }
 
-                // Obsługa SkinnedMeshRenderer (Moby)
-                // Konwertujemy SkinnedMesh na zwykły MeshRenderer, aby zaoszczędzić wydajność (będzie w T-Pose, ale widoczny)
                 SkinnedMeshRenderer smr = child.GetComponent<SkinnedMeshRenderer>();
                 if (smr != null)
                 {
@@ -177,7 +159,7 @@ namespace WildTerraHook
                     CopyTransform(child, copy.transform);
 
                     MeshFilter mf = copy.AddComponent<MeshFilter>();
-                    mf.sharedMesh = smr.sharedMesh; // Używamy sharedMesh (T-Pose) - oszczędność RAM vs BakeMesh
+                    mf.sharedMesh = smr.sharedMesh;
 
                     MeshRenderer mr = copy.AddComponent<MeshRenderer>();
                     mr.sharedMaterials = smr.sharedMaterials;
@@ -219,7 +201,6 @@ namespace WildTerraHook
                     continue;
                 }
 
-                // Sprawdzamy czy prawdziwy obiekt wciąż istnieje i jest aktywny
                 bool realIsAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
 
                 if (realIsAlive)
@@ -228,7 +209,6 @@ namespace WildTerraHook
                 }
                 else
                 {
-                    // Oryginał zniknął -> pokazujemy ducha
                     if (!ghost.VisualObj.activeSelf) ghost.VisualObj.SetActive(true);
                 }
             }
@@ -254,15 +234,17 @@ namespace WildTerraHook
             GUILayout.BeginVertical(GUI.skin.box);
             GUILayout.Label($"<b>Persistent World</b>");
 
-            // TICK BOX WYŁĄCZENIA
-            bool newEnabled = GUILayout.Toggle(Enabled, " Enable Persistent Cache");
-            if (newEnabled != Enabled)
+            // TICK BOX WYŁĄCZENIA - Korzysta z ConfigManager
+            bool newEnabled = GUILayout.Toggle(ConfigManager.Persistent_Enabled, " Enable Persistent Cache");
+            if (newEnabled != ConfigManager.Persistent_Enabled)
             {
-                Enabled = newEnabled;
-                if (!Enabled) ClearCache(); // Czyść RAM od razu po wyłączeniu
+                ConfigManager.Persistent_Enabled = newEnabled;
+                ConfigManager.Save(); // Zapis do pliku od razu po zmianie
+
+                if (!ConfigManager.Persistent_Enabled) ClearCache();
             }
 
-            if (Enabled)
+            if (ConfigManager.Persistent_Enabled)
             {
                 GUILayout.Label($"Cached Objects: {Ghosts.Count}");
                 if (GUILayout.Button("Clear Cache Manually")) ClearCache();
