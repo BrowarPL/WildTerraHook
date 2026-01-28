@@ -11,6 +11,7 @@ namespace WildTerraHook
         private ColorFishingModule _colorFishModule;
         private FishBotModule _memFishModule;
         private DebugConsoleModule _consoleModule;
+        private PersistentWorldModule _persistentModule; // NOWY MODUŁ
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -36,6 +37,10 @@ namespace WildTerraHook
             _miscModule = new MiscModule();
             _colorFishModule = new ColorFishingModule();
             _memFishModule = new FishBotModule();
+            _persistentModule = new PersistentWorldModule(); // Inicjalizacja
+
+            // Łączymy ESP z Pamięcią Świata
+            _espModule.SetPersistentModule(_persistentModule);
 
             _consoleModule = new DebugConsoleModule();
             Debug.Log("[MainHack] Hook załadowany pomyślnie.");
@@ -50,9 +55,7 @@ namespace WildTerraHook
 
         public void Update()
         {
-            // --- BLOKADA INPUTU GRY GDY MYSZ JEST NAD OKNEM ---
             if (_showMenu) BlockInputIfOverWindow();
-            // --------------------------------------------------
 
             if (Input.GetKeyDown(KeyCode.Insert)) _showMenu = !_showMenu;
             if (Input.GetKeyDown(KeyCode.Delete))
@@ -68,22 +71,18 @@ namespace WildTerraHook
             _dropModule.Update();
             _miscModule.Update();
             _colorFishModule.Update();
-            // _memFishModule.Update(); // UKRYTE: Memory Bot wyłączony do czasu znalezienia zmiennych
+            _persistentModule.Update(); // Aktualizacja duchów
         }
 
         private void BlockInputIfOverWindow()
         {
             if (ConfigManager.Menu_Scale <= 0) return;
-
-            // Przeliczamy pozycję myszy z ekranu na współrzędne GUI (uwzględniając skalę i odwrócone Y)
             Vector2 mousePos = Input.mousePosition;
-            mousePos.y = Screen.height - mousePos.y; // Odwracamy Y (Input ma 0 na dole, GUI na górze)
-            mousePos /= ConfigManager.Menu_Scale;    // Skalujemy pozycję, by pasowała do rect'a okna
+            mousePos.y = Screen.height - mousePos.y;
+            mousePos /= ConfigManager.Menu_Scale;
 
             if (_windowRect.Contains(mousePos))
             {
-                // Jeśli użytkownik klika, resetujemy osie wejścia gry, aby postać się nie ruszyła
-                // Resetujemy tylko w przypadku kliknięcia, aby nie blokować ruchu klawiaturą, jeśli myszka tylko przelatuje
                 if (Input.GetMouseButton(0) || Input.GetMouseButtonDown(0) || Input.GetMouseButtonUp(0) ||
                     Input.GetMouseButton(1) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonUp(1))
                 {
@@ -98,7 +97,6 @@ namespace WildTerraHook
 
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
-            // _memFishModule.DrawESP(); // UKRYTE
 
             if (_showMenu)
             {
@@ -182,7 +180,6 @@ namespace WildTerraHook
             }
             else
             {
-                // UKRYTE: Memory Bot wyłączony z menu.
                 GUILayout.Label("<i>Memory Bot disabled (Work in Progress)</i>", CenteredLabel());
             }
             GUILayout.EndVertical();
@@ -191,6 +188,9 @@ namespace WildTerraHook
         private void DrawMiscTab()
         {
             _miscModule.DrawMenu();
+            GUILayout.Space(10);
+            // Dodałem menu sterowania Persistent World tutaj
+            if (_persistentModule != null) _persistentModule.DrawMenu();
             GUILayout.Space(10);
             GUILayout.Label("<b>" + Localization.Get("MISC_UI_HEADER") + "</b>", GUI.skin.box);
             GUILayout.BeginHorizontal();
