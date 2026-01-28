@@ -184,9 +184,10 @@ namespace WildTerraHook
                     // 3b. Duchy Mobów
                     if (ConfigManager.Esp_ShowMobs && _persistentModule.MobGhosts.Count > 0)
                     {
-                        // MobGhosts jest teraz Słownikiem, iterujemy po Values
-                        foreach (var ghost in _persistentModule.MobGhosts.Values)
+                        // MobGhosts jest teraz LISTĄ
+                        for (int i = 0; i < _persistentModule.MobGhosts.Count; i++)
                         {
+                            var ghost = _persistentModule.MobGhosts[i];
                             if (ghost.VisualObj != null && ghost.VisualObj.activeSelf)
                             {
                                 if ((ghost.Position - playerPos).sqrMagnitude > (ConfigManager.Esp_Distance * ConfigManager.Esp_Distance)) continue;
