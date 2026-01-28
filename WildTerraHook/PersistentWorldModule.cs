@@ -1,40 +1,36 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using Mirror;
 
 namespace WildTerraHook
 {
     public class PersistentWorldModule
     {
-        // Używamy Listy dla mobów, aby móc szukać po dystansie, a nie tylko po ID
+        // Listy obiektów
         public List<WorldGhost> MobGhosts = new List<WorldGhost>();
-
-        // Dla surowców Dictionary jest OK (są statyczne)
         public Dictionary<Vector3, WorldGhost> ResourceGhosts = new Dictionary<Vector3, WorldGhost>();
 
-        private float _scanInterval = 0.15f;
+        private float _scanInterval = 0.1f;
+        private float _cleanupInterval = 1.0f;
         private float _lastScanTime = 0f;
+        private float _lastCleanupTime = 0f;
 
-        // Dystans, przy którym uznajemy, że duch i nowy mob to to samo (np. mob przeszedł kawałek)
-        private const float MERGE_DISTANCE = 10.0f;
+        // Dystans, w jakim duch "rozpoznaje" swojego właściciela po powrocie
+        // Zwiększono do 20m, aby złapać moby, które się przesunęły/zrespawnowały kawałek dalej
+        private const float REATTACH_DISTANCE = 20.0f;
 
-        // Dystans Fail-Safe: Jeśli gracz jest blisko ducha, a nie ma tam moba -> zostaw.
-        // Ale jeśli jest mob -> usuń ducha.
-        private const float FAILSAFE_CHECK_DIST = 50.0f;
-
-        private string[] _blackList = { "FX_", "Particle", "LightSource", "Sound", "Audio", "Arrow", "Projectile", "Footstep" };
+        private string[] _blackList = { "FX_", "Particle", "LightSource", "Sound", "Audio", "Arrow", "Projectile", "Footstep", "UI" };
 
         public class WorldGhost
         {
-            public GameObject VisualObj;
-            public GameObject RealObj;
+            public GameObject VisualObj; // Nasza kopia wizualna
+            public GameObject RealObj;   // Oryginał (może być null, jeśli zniknął)
             public string Name;
-            public Vector3 Position;
+            public Vector3 Position;     // Ostatnia znana pozycja
             public bool IsMob;
             public int Hp;
             public int MaxHp;
-            // Time to live dla duchów mobów - jeśli mob nie był widziany przez X czasu, usuń ducha (żeby nie zaśmiecać mapy starymi pozycjami)
-            public float LastSeenTime;
         }
 
         public void Update()
@@ -45,15 +41,22 @@ namespace WildTerraHook
                 return;
             }
 
+            // Częste skanowanie świata (Update referencji)
             if (Time.time - _lastScanTime > _scanInterval)
             {
                 RefreshResources();
-                RefreshMobs();
-                CleanupOldGhosts(); // Nowa funkcja czyszcząca
+                RefreshMobs(); // Tu jest główna naprawa ghostingu
                 _lastScanTime = Time.time;
             }
 
-            UpdateVisibilityAndFailSafe();
+            // Rzadsze czyszczenie śmieci (Fail-Safe)
+            if (Time.time - _lastCleanupTime > _cleanupInterval)
+            {
+                RemoveDuplicates();
+                _lastCleanupTime = Time.time;
+            }
+
+            UpdateVisibilityAndPosition();
         }
 
         public void ClearCache()
@@ -65,7 +68,7 @@ namespace WildTerraHook
             MobGhosts.Clear();
         }
 
-        // --- ZASOBY (STATYCZNE) ---
+        // --- ZASOBY (Prosta logika, bo stoją w miejscu) ---
         private void RefreshResources()
         {
             var currentObjects = UnityEngine.Object.FindObjectsOfType<global::WTObject>();
@@ -85,6 +88,7 @@ namespace WildTerraHook
                     var ghost = ResourceGhosts[pos];
                     if (ghost.VisualObj == null) { ResourceGhosts.Remove(pos); continue; }
 
+                    // Jeśli w tym samym miejscu zmienił się obiekt (np. Drzewo -> Pniak)
                     string cleanReal = realObj.name.Replace("(Clone)", "").Trim();
                     string cleanGhost = ghost.Name.Replace("(Clone)", "").Trim();
 
@@ -104,7 +108,7 @@ namespace WildTerraHook
 
         private void CreateResourceGhost(global::WTObject original, Vector3 pos)
         {
-            GameObject ghostGo = new GameObject($"[CACHE_RES] {original.name}");
+            GameObject ghostGo = new GameObject($"[G_RES] {original.name}");
             ghostGo.transform.position = original.transform.position;
             ghostGo.transform.rotation = original.transform.rotation;
             ghostGo.transform.localScale = original.transform.localScale;
@@ -123,7 +127,7 @@ namespace WildTerraHook
             ResourceGhosts[pos] = wg;
         }
 
-        // --- MOBY (DYNAMICZNE + FAIL SAFE) ---
+        // --- MOBY (Logika Snajperska v2 - Reattach) ---
         private void RefreshMobs()
         {
             var currentMobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
@@ -132,44 +136,51 @@ namespace WildTerraHook
             {
                 if (mob == null || mob.health <= 0) continue;
 
-                string mobName = mob.name;
-                Vector3 mobPos = mob.transform.position;
+                // Szukamy, czy ten mob jest już śledzony (po GameObject)
+                var trackedGhost = MobGhosts.FirstOrDefault(g => g.RealObj == mob.gameObject);
 
-                // 1. Szukamy ducha tego moba w pobliżu
-                // Szukamy ducha o tej samej nazwie w promieniu MERGE_DISTANCE
-                var existingGhost = MobGhosts.FirstOrDefault(g =>
-                    g.Name == mobName &&
-                    Vector3.Distance(g.Position, mobPos) < MERGE_DISTANCE
-                );
-
-                if (existingGhost != null)
+                if (trackedGhost != null)
                 {
-                    // ZNALEZIONO DUCHA -> AKTUALIZUJEMY GO
-                    existingGhost.Position = mobPos;
-                    existingGhost.Hp = mob.health;
-                    existingGhost.MaxHp = mob.healthMax;
-                    existingGhost.RealObj = mob.gameObject;
-                    existingGhost.LastSeenTime = Time.time;
-
-                    // Przesuwamy ducha na pozycję moba i ukrywamy go (bo mob jest widoczny)
-                    if (existingGhost.VisualObj)
-                    {
-                        existingGhost.VisualObj.transform.position = mobPos;
-                        existingGhost.VisualObj.transform.rotation = mob.transform.rotation;
-                        if (existingGhost.VisualObj.activeSelf) existingGhost.VisualObj.SetActive(false);
-                    }
+                    // 1. Już go mamy - aktualizujemy HP
+                    trackedGhost.Hp = mob.health;
+                    trackedGhost.MaxHp = mob.healthMax;
                 }
                 else
                 {
-                    // NIE ZNALEZIONO -> TWORZYMY NOWEGO
-                    CreateMobGhost(mob);
+                    // 2. To "nowy" obiekt dla Unity. Sprawdźmy, czy mamy "wolnego" ducha w pobliżu.
+                    // To jest klucz do eliminacji ghostingu przy powrocie do strefy.
+                    var orphanGhost = MobGhosts.FirstOrDefault(g =>
+                        (g.RealObj == null || !g.RealObj.activeInHierarchy) && // Duch nie ma aktywnego właściciela
+                        g.Name == mob.name && // Ta sama nazwa
+                        Vector3.Distance(g.Position, mob.transform.position) < REATTACH_DISTANCE // Jest blisko
+                    );
+
+                    if (orphanGhost != null)
+                    {
+                        // ZNALEZIONO STAREGO DUCHA! Podpinamy go pod nowego moba.
+                        orphanGhost.RealObj = mob.gameObject;
+                        orphanGhost.Hp = mob.health;
+                        orphanGhost.MaxHp = mob.healthMax;
+
+                        // Przesuwamy ducha na pozycję moba
+                        if (orphanGhost.VisualObj)
+                        {
+                            orphanGhost.VisualObj.transform.position = mob.transform.position;
+                            orphanGhost.VisualObj.transform.rotation = mob.transform.rotation;
+                        }
+                    }
+                    else
+                    {
+                        // Nie znaleziono pasującego ducha -> dopiero teraz tworzymy nowego
+                        CreateMobGhost(mob);
+                    }
                 }
             }
         }
 
         private void CreateMobGhost(global::WTMob mob)
         {
-            GameObject ghostGo = new GameObject($"[CACHE_MOB] {mob.name}");
+            GameObject ghostGo = new GameObject($"[G_MOB] {mob.name}");
             ghostGo.transform.position = mob.transform.position;
             ghostGo.transform.rotation = mob.transform.rotation;
             ghostGo.transform.localScale = mob.transform.localScale;
@@ -185,96 +196,82 @@ namespace WildTerraHook
                 Position = mob.transform.position,
                 IsMob = true,
                 Hp = mob.health,
-                MaxHp = mob.healthMax,
-                LastSeenTime = Time.time
+                MaxHp = mob.healthMax
             };
             MobGhosts.Add(wg);
         }
 
-        private void UpdateVisibilityAndFailSafe()
+        // --- ZARZĄDZANIE WIDOCZNOŚCIĄ I POZYCJĄ ---
+        private void UpdateVisibilityAndPosition()
         {
-            Vector3 playerPos = Vector3.zero;
-            if (Camera.main) playerPos = Camera.main.transform.position;
-            else if (global::Player.localPlayer) playerPos = global::Player.localPlayer.transform.position;
-
-            // --- ZASOBY ---
+            // Zasoby (Proste on/off)
             foreach (var ghost in ResourceGhosts.Values)
             {
                 if (!ghost.VisualObj) continue;
-                bool realAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
-                ghost.VisualObj.SetActive(!realAlive);
+                bool realIsAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
+                if (ghost.VisualObj.activeSelf == realIsAlive) ghost.VisualObj.SetActive(!realIsAlive);
             }
 
-            // --- MOBY (FAIL SAFE) ---
+            // Moby (Synchronizacja pozycji)
             for (int i = MobGhosts.Count - 1; i >= 0; i--)
             {
                 var ghost = MobGhosts[i];
-                if (ghost.VisualObj == null)
-                {
-                    MobGhosts.RemoveAt(i);
-                    continue;
-                }
+                if (ghost.VisualObj == null) { MobGhosts.RemoveAt(i); continue; }
 
                 bool realIsAlive = (ghost.RealObj != null && ghost.RealObj.activeInHierarchy);
 
                 if (realIsAlive)
                 {
-                    // Jeśli oryginał żyje -> ukryj ducha, zaktualizuj pozycję
+                    // JEŚLI MOB ŻYJE:
+                    // 1. Ukryj ducha.
                     if (ghost.VisualObj.activeSelf) ghost.VisualObj.SetActive(false);
+
+                    // 2. CRITICAL: Duch musi PODĄŻAĆ za mobem, nawet jak jest ukryty.
+                    // Dzięki temu, gdy mob zniknie (Culling), duch będzie idealnie w tym miejscu.
                     ghost.VisualObj.transform.position = ghost.RealObj.transform.position;
-                    ghost.Position = ghost.RealObj.transform.position;
+                    ghost.VisualObj.transform.rotation = ghost.RealObj.transform.rotation;
+                    ghost.Position = ghost.RealObj.transform.position; // Zapisz pozycję w danych
                 }
                 else
                 {
-                    // Oryginał NIE żyje (lub jest poza siecią).
-
-                    // FAIL SAFE: Sprawdźmy, czy gracz jest blisko ducha
-                    float distToPlayer = Vector3.Distance(playerPos, ghost.Position);
-
-                    if (distToPlayer < FAILSAFE_CHECK_DIST)
-                    {
-                        // Jesteśmy blisko miejsca, gdzie powinien być duch.
-                        // Jeśli w pobliżu jest JAKIKOLWIEK żywy mob o tej samej nazwie, to znaczy, 
-                        // że nasz duch jest błędem (duplikatem) i należy go usunąć.
-
-                        bool duplicateDetected = false;
-                        var nearbyMobs = UnityEngine.Object.FindObjectsOfType<global::WTMob>();
-                        foreach (var m in nearbyMobs)
-                        {
-                            if (m.name == ghost.Name && Vector3.Distance(m.transform.position, ghost.Position) < MERGE_DISTANCE)
-                            {
-                                duplicateDetected = true;
-                                break;
-                            }
-                        }
-
-                        if (duplicateDetected)
-                        {
-                            // Wykryto żywego moba obok ducha -> usuwamy ducha
-                            UnityEngine.Object.Destroy(ghost.VisualObj);
-                            MobGhosts.RemoveAt(i);
-                            continue;
-                        }
-                    }
-
-                    // Jeśli nie ma duplikatu, pokazujemy ducha (ostatnia znana pozycja)
+                    // JEŚLI MOB ZNIKNĄŁ:
+                    // Pokaż ducha w ostatniej znanej pozycji.
                     if (!ghost.VisualObj.activeSelf) ghost.VisualObj.SetActive(true);
                 }
             }
         }
 
-        private void CleanupOldGhosts()
+        // --- FAIL-SAFE: USUWANIE DUPLIKATÓW ---
+        private void RemoveDuplicates()
         {
-            // Opcjonalne: Usuwanie duchów mobów, których nie widzieliśmy od np. 5 minut
-            // Moby wędrują, więc duch sprzed 10 minut jest mylący.
-            float expireTime = 300f; // 5 minut
-            for (int i = MobGhosts.Count - 1; i >= 0; i--)
+            // Jeśli mamy więcej niż 1 ducha o tej samej nazwie w promieniu 1 metra -> usuń
+            // To naprawia sytuację, gdy mechanizm Reattach zawiedzie.
+
+            HashSet<WorldGhost> toDelete = new HashSet<WorldGhost>();
+
+            for (int i = 0; i < MobGhosts.Count; i++)
             {
-                if (Time.time - MobGhosts[i].LastSeenTime > expireTime)
+                var g1 = MobGhosts[i];
+                if (toDelete.Contains(g1)) continue;
+
+                for (int j = i + 1; j < MobGhosts.Count; j++)
                 {
-                    if (MobGhosts[i].VisualObj) UnityEngine.Object.Destroy(MobGhosts[i].VisualObj);
-                    MobGhosts.RemoveAt(i);
+                    var g2 = MobGhosts[j];
+                    if (toDelete.Contains(g2)) continue;
+
+                    if (g1.Name == g2.Name && Vector3.Distance(g1.Position, g2.Position) < 2.0f)
+                    {
+                        // Duplikat wykryty! Usuwamy ten, który nie ma RealObj (lub dowolny)
+                        if (g1.RealObj == null) toDelete.Add(g1);
+                        else toDelete.Add(g2);
+                    }
                 }
+            }
+
+            foreach (var g in toDelete)
+            {
+                if (g.VisualObj) UnityEngine.Object.Destroy(g.VisualObj);
+                MobGhosts.Remove(g);
             }
         }
 
@@ -285,7 +282,7 @@ namespace WildTerraHook
                 if (IsBlacklisted(child.name) || child.GetComponent<Light>() || child.GetComponent<ParticleSystem>())
                     continue;
 
-                // Kopiujemy MeshFilter (Zasoby)
+                // Standardowy Mesh
                 MeshFilter sourceMF = child.GetComponent<MeshFilter>();
                 MeshRenderer sourceMR = child.GetComponent<MeshRenderer>();
                 if (sourceMF != null && sourceMR != null)
@@ -297,8 +294,7 @@ namespace WildTerraHook
                     var mr = copy.AddComponent<MeshRenderer>(); mr.sharedMaterials = sourceMR.sharedMaterials;
                 }
 
-                // Kopiujemy SkinnedMesh (Moby) -> Konwersja na statyczny Mesh
-                // To naprawia problem "dziwnych shaderów" i chamsów, bo renderujemy statyczną klatkę
+                // Skinned Mesh (Moby) -> Konwersja na statyczny Mesh
                 SkinnedMeshRenderer smr = child.GetComponent<SkinnedMeshRenderer>();
                 if (smr != null)
                 {
@@ -306,11 +302,8 @@ namespace WildTerraHook
                     copy.transform.SetParent(dest);
                     CopyTransform(child, copy.transform);
 
-                    // Zamiast SkinnedMeshRenderer, dodajemy zwykły MeshFilter+Renderer
-                    // Używamy sharedMesh, który jest w T-Pose (pozycja domyślna).
-                    // Nie robimy BakeMesh(), bo to zjada FPS. T-Pose wystarczy do zaznaczenia pozycji.
                     var mf = copy.AddComponent<MeshFilter>();
-                    mf.sharedMesh = smr.sharedMesh;
+                    mf.sharedMesh = smr.sharedMesh; // T-Pose mesh (najbezpieczniejszy)
 
                     var mr = copy.AddComponent<MeshRenderer>();
                     mr.sharedMaterials = smr.sharedMaterials;
@@ -354,7 +347,7 @@ namespace WildTerraHook
         public void DrawMenu()
         {
             GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"<b>Persistent World (Fail-Safe Active)</b>");
+            GUILayout.Label($"<b>Persistent World (V3)</b>");
 
             bool newEnabled = GUILayout.Toggle(ConfigManager.Persistent_Enabled, " Enable Persistent Cache");
             if (newEnabled != ConfigManager.Persistent_Enabled)
@@ -367,7 +360,8 @@ namespace WildTerraHook
             if (ConfigManager.Persistent_Enabled)
             {
                 GUILayout.Label($"Resources: {ResourceGhosts.Count}");
-                GUILayout.Label($"Mobs Ghosts: {MobGhosts.Count}");
+                GUILayout.Label($"Mobs: {MobGhosts.Count}");
+                if (GUILayout.Button("Force Cleanup Duplicates")) RemoveDuplicates();
                 if (GUILayout.Button("Clear Cache")) ClearCache();
             }
             else
