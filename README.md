@@ -1,4 +1,4 @@
-Hack for Wild Terra 2 by BrowaR
+Hack for Wild Terra 2 by BrowaR (only for educational purposes)
 
 Features:
 
