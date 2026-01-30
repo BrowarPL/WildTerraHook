@@ -108,6 +108,7 @@
     <Compile Include="MiscModule.cs" />
     <Compile Include="PersistentWorldModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="QuickStackModule.cs" />
     <Compile Include="ResourceEspModule.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
