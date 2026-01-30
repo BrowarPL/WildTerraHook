@@ -44,6 +44,10 @@ namespace WildTerraHook
         public static bool Heal_CombatOnly = true;
         public static float Heal_Cooldown = 20.0f;
 
+        // --- QUICK STACK (Nowe) ---
+        public static bool QuickStack_Enabled = true;
+        public static float QuickStack_Delay = 0.2f;
+
         // --- AUTO LOOT ---
         public static Dictionary<string, List<string>> LootProfiles = new Dictionary<string, List<string>>();
         public static HashSet<string> ActiveProfiles = new HashSet<string>();
@@ -120,11 +124,11 @@ namespace WildTerraHook
         public static float Menu_Scale = 1.0f;
         public static float Menu_X = 20f;
         public static float Menu_Y = 20f;
-        public static float Menu_W = 350f; // Domyślnie mniejsza
+        public static float Menu_W = 350f;
         public static float Menu_H = 300f;
         public static int Menu_Tab = 0;
 
-        // NOWE: Tablice do przechowywania rozmiarów okien dla każdej zakładki (0-10)
+        // Tablice rozmiarów (0-9)
         public static float[] TabWidths = new float[10];
         public static float[] TabHeights = new float[10];
 
@@ -133,7 +137,7 @@ namespace WildTerraHook
             _folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
             _filePath = Path.Combine(_folderPath, "config.txt");
 
-            // Inicjalizacja domyślnych rozmiarów zakładek
+            // Init defaults
             for (int i = 0; i < 10; i++) { TabWidths[i] = 400f; TabHeights[i] = 300f; }
 
             if (LootProfiles.Count == 0) { LootProfiles["Default"] = new List<string>(); ActiveProfiles.Add("Default"); }
@@ -175,7 +179,7 @@ namespace WildTerraHook
                     sw.WriteLine($"Menu_Tab={Menu_Tab}");
                     sw.WriteLine($"Menu_Rect={Menu_X.ToString(CultureInfo.InvariantCulture)},{Menu_Y.ToString(CultureInfo.InvariantCulture)},{Menu_W.ToString(CultureInfo.InvariantCulture)},{Menu_H.ToString(CultureInfo.InvariantCulture)}");
 
-                    // Zapisujemy rozmiary zakładek
+                    // Tab Sizes
                     string wStr = string.Join(",", TabWidths.Select(f => f.ToString(CultureInfo.InvariantCulture)));
                     string hStr = string.Join(",", TabHeights.Select(f => f.ToString(CultureInfo.InvariantCulture)));
                     sw.WriteLine($"TabWidths={wStr}");
@@ -190,24 +194,31 @@ namespace WildTerraHook
                     sw.WriteLine($"Combat_FastAttack={Combat_FastAttack}");
                     sw.WriteLine($"Combat_AttackSpeed={Combat_AttackSpeed.ToString(CultureInfo.InvariantCulture)}");
 
-                    // Auto Heal
+                    // Heal
                     sw.WriteLine($"Heal_Enabled={Heal_Enabled}");
                     sw.WriteLine($"Heal_ItemName={Heal_ItemName}");
                     sw.WriteLine($"Heal_Percent={Heal_Percent}");
                     sw.WriteLine($"Heal_CombatOnly={Heal_CombatOnly}");
                     sw.WriteLine($"Heal_Cooldown={Heal_Cooldown.ToString(CultureInfo.InvariantCulture)}");
 
+                    // Quick Stack
+                    sw.WriteLine($"QuickStack_Enabled={QuickStack_Enabled}");
+                    sw.WriteLine($"QuickStack_Delay={QuickStack_Delay.ToString(CultureInfo.InvariantCulture)}");
+
+                    // Loot
                     sw.WriteLine($"Loot_Enabled={Loot_Enabled}");
                     sw.WriteLine($"Loot_Delay={Loot_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Loot_Debug={Loot_Debug}");
                     sw.WriteLine($"ActiveProfiles={string.Join(",", ActiveProfiles)}");
 
+                    // Drop
                     sw.WriteLine($"Drop_Enabled={Drop_Enabled}");
                     sw.WriteLine($"Drop_Delay={Drop_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Drop_Debug={Drop_Debug}");
                     sw.WriteLine($"Drop_OverrideMethod={Drop_OverrideMethod}");
                     sw.WriteLine($"ActiveDropProfiles={string.Join(",", ActiveDropProfiles)}");
 
+                    // Bots
                     sw.WriteLine($"ColorFish_Enabled={ColorFish_Enabled}");
                     sw.WriteLine($"ColorFish_AutoPress={ColorFish_AutoPress}");
                     sw.WriteLine($"ColorFish_ReactionTime={ColorFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
@@ -219,6 +230,7 @@ namespace WildTerraHook
                     sw.WriteLine($"MemFish_ReactionTime={MemFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"MemFish_ShowESP={MemFish_ShowESP}");
 
+                    // Misc
                     sw.WriteLine($"Misc_EternalDay={Misc_EternalDay}");
                     sw.WriteLine($"Misc_NoFog={Misc_NoFog}");
                     sw.WriteLine($"Misc_Fullbright={Misc_Fullbright}");
@@ -231,7 +243,9 @@ namespace WildTerraHook
                     sw.WriteLine($"Misc_ZoomSpeed={Misc_ZoomSpeed.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Misc_Fov={Misc_Fov.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Misc_RenderDistance={Misc_RenderDistance.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"Misc_AutoButcher={Misc_AutoButcher}");
 
+                    // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
                     sw.WriteLine($"Esp_Distance={Esp_Distance.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Esp_ShowBoxes={Esp_ShowBoxes}");
@@ -302,7 +316,7 @@ namespace WildTerraHook
                     else if (key == "Persistent_Enabled") bool.TryParse(val, out Persistent_Enabled);
                     else if (key == "Persistent_CleanupRange") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Persistent_CleanupRange);
 
-                    // Loading Tab Sizes
+                    // Tab Sizes
                     else if (key == "TabWidths")
                     {
                         string[] split = val.Split(',');
@@ -321,26 +335,18 @@ namespace WildTerraHook
                     else if (key == "Combat_FastAttack") bool.TryParse(val, out Combat_FastAttack);
                     else if (key == "Combat_AttackSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Combat_AttackSpeed);
 
-                    // Auto Heal
+                    // Heal
                     else if (key == "Heal_Enabled") bool.TryParse(val, out Heal_Enabled);
                     else if (key == "Heal_ItemName") Heal_ItemName = val;
                     else if (key == "Heal_Percent") int.TryParse(val, out Heal_Percent);
                     else if (key == "Heal_CombatOnly") bool.TryParse(val, out Heal_CombatOnly);
                     else if (key == "Heal_Cooldown") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Heal_Cooldown);
 
-                    else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
-                    else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
-                    else if (key == "Menu_Rect")
-                    {
-                        string[] r = val.Split(',');
-                        if (r.Length == 4)
-                        {
-                            float.TryParse(r[0], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_X);
-                            float.TryParse(r[1], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Y);
-                            float.TryParse(r[2], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_W);
-                            float.TryParse(r[3], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_H);
-                        }
-                    }
+                    // Quick Stack
+                    else if (key == "QuickStack_Enabled") bool.TryParse(val, out QuickStack_Enabled);
+                    else if (key == "QuickStack_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out QuickStack_Delay);
+
+                    // Loot
                     else if (key == "Loot_Enabled") bool.TryParse(val, out Loot_Enabled);
                     else if (key == "Loot_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Loot_Delay);
                     else if (key == "Loot_Debug") bool.TryParse(val, out Loot_Debug);
@@ -349,6 +355,8 @@ namespace WildTerraHook
                         ActiveProfiles.Clear();
                         foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveProfiles.Add(p);
                     }
+
+                    // Drop
                     else if (key == "Drop_Enabled") bool.TryParse(val, out Drop_Enabled);
                     else if (key == "Drop_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Drop_Delay);
                     else if (key == "Drop_Debug") bool.TryParse(val, out Drop_Debug);
@@ -358,6 +366,8 @@ namespace WildTerraHook
                         ActiveDropProfiles.Clear();
                         foreach (var p in val.Split(',')) if (!string.IsNullOrEmpty(p)) ActiveDropProfiles.Add(p);
                     }
+
+                    // Bots
                     else if (key == "ColorFish_Enabled") bool.TryParse(val, out ColorFish_Enabled);
                     else if (key == "ColorFish_AutoPress") bool.TryParse(val, out ColorFish_AutoPress);
                     else if (key == "ColorFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ReactionTime);
@@ -367,6 +377,8 @@ namespace WildTerraHook
                     else if (key == "MemFish_AutoPress") bool.TryParse(val, out MemFish_AutoPress);
                     else if (key == "MemFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out MemFish_ReactionTime);
                     else if (key == "MemFish_ShowESP") bool.TryParse(val, out MemFish_ShowESP);
+
+                    // Misc
                     else if (key == "Misc_EternalDay") bool.TryParse(val, out Misc_EternalDay);
                     else if (key == "Misc_NoFog") bool.TryParse(val, out Misc_NoFog);
                     else if (key == "Misc_Fullbright") bool.TryParse(val, out Misc_Fullbright);
@@ -379,6 +391,9 @@ namespace WildTerraHook
                     else if (key == "Misc_ZoomSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_ZoomSpeed);
                     else if (key == "Misc_Fov") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_Fov);
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
+                    else if (key == "Misc_AutoButcher") bool.TryParse(val, out Misc_AutoButcher);
+
+                    // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
                     else if (key == "Esp_Distance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Esp_Distance);
                     else if (key == "Esp_ShowBoxes") bool.TryParse(val, out Esp_ShowBoxes);
@@ -412,6 +427,20 @@ namespace WildTerraHook
                     else if (key == "Console_ShowWarnings") bool.TryParse(val, out Console_ShowWarnings);
                     else if (key == "Console_ShowErrors") bool.TryParse(val, out Console_ShowErrors);
 
+                    // Other
+                    else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
+                    else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
+                    else if (key == "Menu_Rect")
+                    {
+                        string[] r = val.Split(',');
+                        if (r.Length == 4)
+                        {
+                            float.TryParse(r[0], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_X);
+                            float.TryParse(r[1], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Y);
+                            float.TryParse(r[2], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_W);
+                            float.TryParse(r[3], NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_H);
+                        }
+                    }
                     else if (key.StartsWith("Profile:"))
                     {
                         if (!profilesLoaded) { LootProfiles.Clear(); profilesLoaded = true; }
@@ -436,49 +465,9 @@ namespace WildTerraHook
             catch { }
         }
 
-        private static string ColorToString(Color c)
-        {
-            return $"{c.r.ToString(CultureInfo.InvariantCulture)},{c.g.ToString(CultureInfo.InvariantCulture)},{c.b.ToString(CultureInfo.InvariantCulture)},{c.a.ToString(CultureInfo.InvariantCulture)}";
-        }
-
-        private static Color StringToColor(string s)
-        {
-            try
-            {
-                string[] split = s.Split(',');
-                if (split.Length >= 3)
-                {
-                    float r = float.Parse(split[0], CultureInfo.InvariantCulture);
-                    float g = float.Parse(split[1], CultureInfo.InvariantCulture);
-                    float b = float.Parse(split[2], CultureInfo.InvariantCulture);
-                    float a = split.Length > 3 ? float.Parse(split[3], CultureInfo.InvariantCulture) : 1f;
-                    return new Color(r, g, b, a);
-                }
-            }
-            catch { }
-            return Color.white;
-        }
-
-        public static List<string> GetCombinedActiveList()
-        {
-            HashSet<string> combined = new HashSet<string>();
-            foreach (var profName in ActiveProfiles)
-            {
-                if (LootProfiles.ContainsKey(profName))
-                    foreach (var item in LootProfiles[profName]) combined.Add(item);
-            }
-            return combined.ToList();
-        }
-
-        public static List<string> GetCombinedActiveDropList()
-        {
-            HashSet<string> combined = new HashSet<string>();
-            foreach (var profName in ActiveDropProfiles)
-            {
-                if (DropProfiles.ContainsKey(profName))
-                    foreach (var item in DropProfiles[profName]) combined.Add(item);
-            }
-            return combined.ToList();
-        }
+        private static string ColorToString(Color c) { return $"{c.r.ToString(CultureInfo.InvariantCulture)},{c.g.ToString(CultureInfo.InvariantCulture)},{c.b.ToString(CultureInfo.InvariantCulture)},{c.a.ToString(CultureInfo.InvariantCulture)}"; }
+        private static Color StringToColor(string s) { try { string[] split = s.Split(','); if (split.Length >= 3) { float r = float.Parse(split[0], CultureInfo.InvariantCulture); float g = float.Parse(split[1], CultureInfo.InvariantCulture); float b = float.Parse(split[2], CultureInfo.InvariantCulture); float a = split.Length > 3 ? float.Parse(split[3], CultureInfo.InvariantCulture) : 1f; return new Color(r, g, b, a); } } catch { } return Color.white; }
+        public static List<string> GetCombinedActiveList() { HashSet<string> combined = new HashSet<string>(); foreach (var profName in ActiveProfiles) { if (LootProfiles.ContainsKey(profName)) foreach (var item in LootProfiles[profName]) combined.Add(item); } return combined.ToList(); }
+        public static List<string> GetCombinedActiveDropList() { HashSet<string> combined = new HashSet<string>(); foreach (var profName in ActiveDropProfiles) { if (DropProfiles.ContainsKey(profName)) foreach (var item in DropProfiles[profName]) combined.Add(item); } return combined.ToList(); }
     }
 }

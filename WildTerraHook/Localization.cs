@@ -10,92 +10,29 @@ namespace WildTerraHook
         private static Dictionary<string, string> _currentDict = new Dictionary<string, string>();
         private static string _folderPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WildTerraHook");
 
-        public static void Init()
-        {
-            if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
-            LoadLanguage(ConfigManager.Language);
-        }
+        public static void Init() { if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath); LoadLanguage(ConfigManager.Language); }
 
         public static void LoadLanguage(string langCode)
         {
             _currentDict.Clear();
             string fileName = $"lang_{langCode}.txt";
             string path = Path.Combine(_folderPath, fileName);
-
             bool loadedFromDisk = false;
-            if (File.Exists(path))
-            {
-                try
-                {
-                    string[] lines = File.ReadAllLines(path);
-                    foreach (var line in lines)
-                    {
-                        if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
-                        var parts = line.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim();
-                    }
-                    loadedFromDisk = true;
-                }
-                catch { Debug.LogError("[Localization] Read Error."); }
-            }
-
-            if (!loadedFromDisk)
-            {
-                string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn();
-                try { File.WriteAllText(path, content); } catch { }
-                LoadHardcoded(langCode);
-            }
-            else
-            {
-                LoadFallback(langCode);
-            }
+            if (File.Exists(path)) { try { string[] lines = File.ReadAllLines(path); foreach (var line in lines) { if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue; var parts = line.Split(new[] { '=' }, 2); if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim(); } loadedFromDisk = true; } catch { Debug.LogError("[Localization] Read Error."); } }
+            if (!loadedFromDisk) { string content = (langCode == "pl") ? GetDefaultPl() : GetDefaultEn(); try { File.WriteAllText(path, content); } catch { } LoadHardcoded(langCode); } else { LoadFallback(langCode); }
         }
 
-        public static string Get(string key)
-        {
-            if (_currentDict.ContainsKey(key)) return _currentDict[key];
-            return key;
-        }
+        public static string Get(string key) { if (_currentDict.ContainsKey(key)) return _currentDict[key]; return key; }
 
-        private static void LoadHardcoded(string lang)
-        {
-            _currentDict.Clear();
-            string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn();
-            ParseData(data);
-        }
-
-        // --- NAPRAWIONO: Dodano brakującą metodę LoadFallback ---
-        private static void LoadFallback(string lang)
-        {
-            string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn();
-            foreach (var line in data.Split('\n'))
-            {
-                if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
-                var parts = line.Split(new[] { '=' }, 2);
-                string key = parts[0].Trim();
-                if (!_currentDict.ContainsKey(key) && parts.Length == 2)
-                {
-                    _currentDict[key] = parts[1].Trim();
-                }
-            }
-        }
-
-        private static void ParseData(string data)
-        {
-            foreach (var line in data.Split('\n'))
-            {
-                if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue;
-                var parts = line.Split(new[] { '=' }, 2);
-                if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim();
-            }
-        }
+        private static void LoadHardcoded(string lang) { _currentDict.Clear(); string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn(); ParseData(data); }
+        private static void LoadFallback(string lang) { string data = (lang == "pl") ? GetDefaultPl() : GetDefaultEn(); foreach (var line in data.Split('\n')) { if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue; var parts = line.Split(new[] { '=' }, 2); string key = parts[0].Trim(); if (!_currentDict.ContainsKey(key) && parts.Length == 2) { _currentDict[key] = parts[1].Trim(); } } }
+        private static void ParseData(string data) { foreach (var line in data.Split('\n')) { if (string.IsNullOrEmpty(line) || !line.Contains("=")) continue; var parts = line.Split(new[] { '=' }, 2); if (parts.Length == 2) _currentDict[parts[0].Trim()] = parts[1].Trim(); } }
 
         private static string GetDefaultEn()
         {
             return @"
 MENU_TITLE=Wild Terra 2 Hack by BrowaR
 MENU_TOGGLE_INFO=Press INSERT to Toggle Menu | DELETE to Hide All
-
 MENU_TAB_ESP=ESP
 MENU_TAB_FISH=Fishing
 MENU_TAB_LOOT=Auto Loot
@@ -103,19 +40,16 @@ MENU_TAB_DROP=Auto Drop
 MENU_TAB_MISC=Misc
 MENU_TAB_CONSOLE=CONSOLE
 MENU_TAB_COMBAT=Combat
-
 COMBAT_HEADER=Combat Settings
 COMBAT_NOCD=No Cooldown
 COMBAT_FAST_ATTACK=Fast Attack (Animation)
 COMBAT_ATTACK_SPEED=Anim Speed
-
 HEAL_HEADER=Auto Heal (Item)
 HEAL_ENABLE=Enable Auto Heal
 HEAL_ITEM_NAME=Item Name (e.g. Bandage):
 HEAL_HP_PERCENT=Heal at HP %
 HEAL_COMBAT_ONLY=Only in Combat
 HEAL_COOLDOWN=Cooldown (s)
-
 MISC_TITLE=Misc Options
 MISC_ETERNAL_DAY=Eternal Day (12:00)
 MISC_NO_FOG=No Fog (Distance Hack)
@@ -134,7 +68,9 @@ MISC_UI_HEADER=UI SETTINGS
 MISC_UI_SCALE=Scale
 MISC_RENDER_DIST=Render Dist
 MISC_AUTO_BUTCHER=Auto Butcher
-
+QS_ENABLE=Enable Quick Stack Button
+QS_DELAY=Quick Stack Speed (s)
+QS_BUTTON=Quick Stack
 ESP_MAIN_BTN=[ ENABLE / DISABLE ESP ]
 ESP_RES_TITLE=RESOURCES
 ESP_MOB_TITLE=MOBS
@@ -145,18 +81,15 @@ ESP_HIDE_COLORS=Hide Colors
 ESP_SAVE_COLORS=Save Colors
 ESP_BOX=Box ESP
 ESP_XRAY=X-Ray Glow
-
 ESP_CAT_MINING=Mining
 ESP_CAT_GATHER=Gathering
 ESP_CAT_LUMBER=Lumberjacking
 ESP_CAT_GODSEND=Godsend (Chests)
 ESP_CAT_OTHERS=Others
 ESP_CAT_DUNGEONS=Dungeons
-
 ESP_MOB_AGGRO=Aggressive (Boss/LargeFox)
 ESP_MOB_RETAL=Retaliating (Fox/Horse)
 ESP_MOB_PASSIVE=Passive (Deer/Hare)
-
 COLOR_MOB_AGGRO=Aggressive Mobs
 COLOR_MOB_PASSIVE=Passive Mobs
 COLOR_MOB_FLEE=Fleeing/Retal Mobs
@@ -165,7 +98,6 @@ COLOR_RES_GATHER=Gatherables
 COLOR_RES_LUMB=Trees
 COLOR_RES_GODSEND=Chests/Godsend
 COLOR_RES_DUNG=Dungeons
-
 FISH_TITLE=Fish Bot (Smart)
 FISH_ENABLE=Enable Bot (Cast manually first)
 FISH_TIMEOUT=Timeout
@@ -182,7 +114,6 @@ FISH_TARGET=Target
 FISH_NONE=None
 FISH_SHOW_ESP=Show ESP (Green)
 FISH_COLOR_BOT_TOGGLE=Color Bot (Standard)
-
 MEMFISH_SHOW_ESP=Show ESP (Purple)
 MEMFISH_AUTO=Auto Click
 MEMFISH_REACTION=Reaction
@@ -194,7 +125,6 @@ MEMFISH_STATUS_WAIT_FISH=Waiting for fish...
 MEMFISH_STATUS_EMPTY_RULES=Rules list is empty/null!
 MEMFISH_STATUS_NO_RULE=No rule for
 MEMFISH_STATUS_INACTIVE=Inactive
-
 LOOT_TITLE=Auto Loot & Profiles
 LOOT_ENABLE=Enable Auto Loot
 LOOT_DELAY=Delay
@@ -217,7 +147,6 @@ LOOT_SCANNING=Scanning...
 LOOT_READY=Ready
 LOOT_ERROR=Error
 LOOT_WAITING=Waiting for window...
-
 DROP_TITLE=AUTO DROP (Blacklist)
 DROP_ENABLE=ENABLE
 DROP_DEBUG=Debug Mode
@@ -233,7 +162,6 @@ DROP_REMOVE=Remove
 DROP_CLEAR_ALL=Clear All
 DROP_PROFILES=Profile Manager
 DROP_CREATE_PROF=Create Profile
-
 CONSOLE_TITLE=DEBUG CONSOLE
 CONSOLE_SAVE=SAVE LOG
 CONSOLE_CLEAR=Clear
@@ -241,7 +169,6 @@ CONSOLE_AUTOSCROLL=Auto-Scroll
 CONSOLE_INFO=Info
 CONSOLE_WARN=Warn
 CONSOLE_ERROR=Error
-
 PERSISTENT_TITLE=Persistent World
 PERSISTENT_ENABLE=Enable Persistent Cache
 PERSISTENT_COUNT=Cached Objects
@@ -256,7 +183,6 @@ PERSISTENT_CLEANUP=Cleanup Range (Collected)
             return @"
 MENU_TITLE=Wild Terra 2 Hack (PL) by BrowaR
 MENU_TOGGLE_INFO=Wciśnij INSERT aby ukryć Menu | DELETE aby ukryć Wszystko
-
 MENU_TAB_ESP=ESP
 MENU_TAB_FISH=Wędkowanie
 MENU_TAB_LOOT=Auto Loot
@@ -264,19 +190,16 @@ MENU_TAB_DROP=Auto Drop
 MENU_TAB_MISC=Inne
 MENU_TAB_CONSOLE=KONSOLA
 MENU_TAB_COMBAT=Walka
-
 COMBAT_HEADER=Ustawienia Walki
 COMBAT_NOCD=No Cooldown (Brak odnowienia)
 COMBAT_FAST_ATTACK=Szybki Atak (Animacja)
 COMBAT_ATTACK_SPEED=Prędkość Animacji
-
 HEAL_HEADER=Auto Leczenie (Przedmiot)
 HEAL_ENABLE=Włącz Auto Leczenie
 HEAL_ITEM_NAME=Nazwa Przedmiotu (np. Linen bandage):
 HEAL_HP_PERCENT=Lecz przy HP %
 HEAL_COMBAT_ONLY=Tylko podczas Walki
 HEAL_COOLDOWN=Odnowienie (s)
-
 MISC_TITLE=Różne Opcje (Misc)
 MISC_ETERNAL_DAY=Wieczny Dzień (12:00)
 MISC_NO_FOG=Brak Mgły (Distance Hack)
@@ -295,7 +218,9 @@ MISC_UI_HEADER=USTAWIENIA UI
 MISC_UI_SCALE=Skala
 MISC_RENDER_DIST=Dystans Renderowania
 MISC_AUTO_BUTCHER=Auto Rzeźnik (Butcher)
-
+QS_ENABLE=Włącz Przycisk Quick Stack
+QS_DELAY=Szybkość (s)
+QS_BUTTON=Quick Stack
 ESP_MAIN_BTN=[ WŁĄCZ / WYŁĄCZ ESP ]
 ESP_RES_TITLE=SUROWCE (RESOURCES)
 ESP_MOB_TITLE=MOBY (MOBS)
@@ -306,18 +231,15 @@ ESP_HIDE_COLORS=Ukryj Edytor Kolorów
 ESP_SAVE_COLORS=Zapisz Konfigurację
 ESP_BOX=Obramowania (Box)
 ESP_XRAY=Podświetlenie (X-Ray)
-
 ESP_CAT_MINING=Górnictwo (Mining)
 ESP_CAT_GATHER=Zbieractwo (Gathering)
 ESP_CAT_LUMBER=Drwalnictwo (Lumber)
 ESP_CAT_GODSEND=Skarby (Godsend)
 ESP_CAT_OTHERS=Inne (Others)
 ESP_CAT_DUNGEONS=Lochy (Dungeons)
-
 ESP_MOB_AGGRO=Agresywne (Boss/LargeFox)
 ESP_MOB_RETAL=Oddające (Lis/Koń)
 ESP_MOB_PASSIVE=Pasywne (Jeleń/Zając)
-
 COLOR_MOB_AGGRO=Kolor: Agresywne
 COLOR_MOB_PASSIVE=Kolor: Pasywne
 COLOR_MOB_FLEE=Kolor: Oddające
@@ -326,7 +248,6 @@ COLOR_RES_GATHER=Kolor: Zbieractwo
 COLOR_RES_LUMB=Kolor: Drzewa
 COLOR_RES_GODSEND=Kolor: Skrzynie/Skarby
 COLOR_RES_DUNG=Kolor: Lochy
-
 FISH_TITLE=Fish Bot (Inteligentny)
 FISH_ENABLE=Włącz Bota (Zarzuć ręcznie)
 FISH_TIMEOUT=Limit Czasu (s)
@@ -343,7 +264,6 @@ FISH_TARGET=Cel
 FISH_NONE=Brak
 FISH_SHOW_ESP=Pokaż ESP (Zielony)
 FISH_COLOR_BOT_TOGGLE=Color Bot (Standardowy)
-
 MEMFISH_SHOW_ESP=Pokaż ESP (Fiolet)
 MEMFISH_AUTO=Auto Klikanie
 MEMFISH_REACTION=Reakcja
@@ -355,7 +275,6 @@ MEMFISH_STATUS_WAIT_FISH=Czekam na rybę...
 MEMFISH_STATUS_EMPTY_RULES=Lista reguł jest pusta/null!
 MEMFISH_STATUS_NO_RULE=Brak reguły dla
 MEMFISH_STATUS_INACTIVE=Nieaktywny
-
 LOOT_TITLE=Auto Loot i Listy
 LOOT_ENABLE=Włącz Auto Loot
 LOOT_DELAY=Opóźnienie
@@ -378,7 +297,6 @@ LOOT_SCANNING=Skanowanie...
 LOOT_READY=Gotowe
 LOOT_ERROR=Błąd
 LOOT_WAITING=Czekam na okno...
-
 DROP_TITLE=AUTO DROP (Blacklist)
 DROP_ENABLE=WŁĄCZ
 DROP_DEBUG=Tryb Debug
@@ -394,7 +312,6 @@ DROP_REMOVE=Usuń
 DROP_CLEAR_ALL=Wyczyść Całą Listę
 DROP_PROFILES=Zarządzanie Profilami
 DROP_CREATE_PROF=Utwórz Profil
-
 CONSOLE_TITLE=KONSOLA DEBUG
 CONSOLE_SAVE=ZAPISZ LOG
 CONSOLE_CLEAR=Czyść
@@ -402,7 +319,6 @@ CONSOLE_AUTOSCROLL=Auto-Scroll
 CONSOLE_INFO=Info
 CONSOLE_WARN=Ostrz
 CONSOLE_ERROR=Błędy
-
 PERSISTENT_TITLE=Pamięć Świata (Persistent)
 PERSISTENT_ENABLE=Włącz Pamięć Świata
 PERSISTENT_COUNT=Zapisane Obiekty

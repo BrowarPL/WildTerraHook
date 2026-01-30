@@ -13,6 +13,7 @@ namespace WildTerraHook
         private DebugConsoleModule _consoleModule;
         private PersistentWorldModule _persistentModule;
         private AutoHealModule _healModule;
+        private QuickStackModule _quickStackModule; // NOWE
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -48,6 +49,7 @@ namespace WildTerraHook
             _memFishModule = new FishBotModule();
             _persistentModule = new PersistentWorldModule();
             _healModule = new AutoHealModule();
+            _quickStackModule = new QuickStackModule(); // NOWE
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -77,6 +79,16 @@ namespace WildTerraHook
             }
             if (_persistentModule != null) _persistentModule.ClearCache();
             if (_consoleModule != null) _consoleModule.Shutdown();
+
+            // Cleanup QuickStack button if exists
+            if (_quickStackModule != null)
+            {
+                // Wyłączamy moduł, co spowoduje usunięcie przycisku w jego metodzie Update (jeśli zrobimy to sprytnie)
+                // Ale lepiej dodać metodę Cleanup
+                ConfigManager.QuickStack_Enabled = false;
+                _quickStackModule.Update();
+                ConfigManager.QuickStack_Enabled = true;
+            }
         }
 
         public void Update()
@@ -99,6 +111,7 @@ namespace WildTerraHook
             _colorFishModule.Update();
             _persistentModule.Update();
             _healModule.Update();
+            _quickStackModule.Update(); // NOWE
         }
 
         private void BlockInputIfOverWindow()
@@ -124,10 +137,6 @@ namespace WildTerraHook
 
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
-
-            // --- FIX: Usunięto wywołanie _persistentModule.DrawESP(), bo ResourceEspModule to robi ---
-            // if (_persistentModule != null) _persistentModule.DrawESP(); 
-            // -----------------------------------------------------------------------------------------
 
             if (_showMenu)
             {
@@ -247,6 +256,12 @@ namespace WildTerraHook
         {
             _miscModule.DrawMenu();
             GUILayout.Space(10);
+
+            // --- DRAW QUICK STACK MENU ---
+            _quickStackModule.DrawMenu();
+            GUILayout.Space(10);
+            // -----------------------------
+
             if (_persistentModule != null) _persistentModule.DrawMenu();
             GUILayout.Space(10);
             GUILayout.Label("<b>" + Localization.Get("MISC_UI_HEADER") + "</b>", GUI.skin.box);
