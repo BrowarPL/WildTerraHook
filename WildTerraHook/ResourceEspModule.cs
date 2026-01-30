@@ -71,10 +71,10 @@ namespace WildTerraHook
             string[] lumber = { "AppleTree", "Snag", "Birch", "GraveTree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "DriedTree", "Oak", "GrimTree", "Infected grim tree" };
             foreach (var s in lumber) _lumberToggles[s] = false;
 
-            string[] godsend = { "Godsend", "PlagueSkeletonsCorpses", "PlagueAbandinedResources" };
+            string[] godsend = { "Godsend", "PlagueSkeletonsCorpses", "PlagueAbandinedResources", "PlagueAbandonedResources", "HideoutGodsendBody" };
             foreach (var s in godsend) _godsendToggles[s] = false;
 
-            string[] dungeons = { "DarkForestDunheonEnter", "HideoutEnter" };
+            string[] dungeons = { "DarkForestDungeonEnter", "HideoutEnter" };
             foreach (var s in dungeons) _dungeonsToggles[s] = false;
         }
 
@@ -214,7 +214,7 @@ namespace WildTerraHook
         private void GetMobInfo(string name, out Color color, out string label, out bool show)
         {
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep") || name.Contains("Crow") || name.Contains("Seagull");
-            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge")) || name.Contains("Horse") || name.Contains("Goat") || (name.Contains("Boar") && !name.Contains("ZombieBoar"));
+            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge")) || name.Contains("Horse") || name.Contains("Goat") || (name.Contains("Boar") && !name.Contains("ZombieBoar") || name.Contains("Ent"));
 
             color = ConfigManager.Colors.MobAggressive;
             label = name;
