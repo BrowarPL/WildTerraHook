@@ -13,7 +13,7 @@ namespace WildTerraHook
         private DebugConsoleModule _consoleModule;
         private PersistentWorldModule _persistentModule;
         private AutoHealModule _healModule;
-        private QuickStackModule _quickStackModule; // NOWE
+        private QuickStackModule _quickStackModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -49,7 +49,7 @@ namespace WildTerraHook
             _memFishModule = new FishBotModule();
             _persistentModule = new PersistentWorldModule();
             _healModule = new AutoHealModule();
-            _quickStackModule = new QuickStackModule(); // NOWE
+            _quickStackModule = new QuickStackModule();
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -60,11 +60,15 @@ namespace WildTerraHook
 
         public void OnDestroy()
         {
+            // Zapisz config przed śmiercią
+            SaveWindowConfig();
+            ConfigManager.Save();
+
             if (_espModule != null)
             {
                 bool wasEnabled = ConfigManager.Esp_Enabled;
                 ConfigManager.Esp_Enabled = false;
-                _espModule.Update();
+                _espModule.Update(); // Force cleanup
                 ConfigManager.Esp_Enabled = wasEnabled;
             }
             if (_miscModule != null)
@@ -73,22 +77,15 @@ namespace WildTerraHook
                 bool wasFull = ConfigManager.Misc_Fullbright;
                 ConfigManager.Misc_BrightPlayer = false;
                 ConfigManager.Misc_Fullbright = false;
-                _miscModule.Update();
+                _miscModule.Update(); // Force cleanup
                 ConfigManager.Misc_BrightPlayer = wasBright;
                 ConfigManager.Misc_Fullbright = wasFull;
             }
             if (_persistentModule != null) _persistentModule.ClearCache();
             if (_consoleModule != null) _consoleModule.Shutdown();
 
-            // Cleanup QuickStack button if exists
-            if (_quickStackModule != null)
-            {
-                // Wyłączamy moduł, co spowoduje usunięcie przycisku w jego metodzie Update (jeśli zrobimy to sprytnie)
-                // Ale lepiej dodać metodę Cleanup
-                ConfigManager.QuickStack_Enabled = false;
-                _quickStackModule.Update();
-                ConfigManager.QuickStack_Enabled = true;
-            }
+            // CLEANUP Quick Stack Button
+            if (_quickStackModule != null) _quickStackModule.OnDestroy();
         }
 
         public void Update()
@@ -96,11 +93,11 @@ namespace WildTerraHook
             if (_showMenu) BlockInputIfOverWindow();
 
             if (Input.GetKeyDown(KeyCode.Insert)) _showMenu = !_showMenu;
+
+            // --- PEŁNY EJECT ---
             if (Input.GetKeyDown(KeyCode.Delete))
             {
-                SaveWindowConfig();
-                ConfigManager.Save();
-                Destroy(this.gameObject);
+                Loader.Unload(); // To zniszczy ten GameObject i wywoła OnDestroy
                 return;
             }
 
@@ -111,7 +108,7 @@ namespace WildTerraHook
             _colorFishModule.Update();
             _persistentModule.Update();
             _healModule.Update();
-            _quickStackModule.Update(); // NOWE
+            _quickStackModule.Update();
         }
 
         private void BlockInputIfOverWindow()
@@ -137,6 +134,9 @@ namespace WildTerraHook
 
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
+
+            // GUI modułów (np. przycisk QS)
+            _quickStackModule.OnGUI();
 
             if (_showMenu)
             {
@@ -257,10 +257,10 @@ namespace WildTerraHook
             _miscModule.DrawMenu();
             GUILayout.Space(10);
 
-            // --- DRAW QUICK STACK MENU ---
+            // --- QUICK STACK MENU ---
             _quickStackModule.DrawMenu();
             GUILayout.Space(10);
-            // -----------------------------
+            // ------------------------
 
             if (_persistentModule != null) _persistentModule.DrawMenu();
             GUILayout.Space(10);
