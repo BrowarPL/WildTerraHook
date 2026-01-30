@@ -24,16 +24,24 @@ namespace WildTerraHook
         // --- Stan ---
         private bool _isStacking = false;
 
+        // --- CLEANUP (NOWE) ---
+        public void OnDestroy()
+        {
+            // Bezwzględnie usuwamy przycisk przy wyłączaniu hacka
+            if (_floatingButton != null)
+            {
+                UnityEngine.Object.Destroy(_floatingButton);
+                _floatingButton = null;
+            }
+        }
+
         // --- Struktury ---
         private class VirtualSlot
         {
             public int Index;
             public int ItemHash;
             public int Amount;
-            // Slot jest pusty jeśli Hash=0 LUB Ilość<=0 (Ignorowanie "duchów")
             public bool IsEmpty => ItemHash == 0 || Amount <= 0;
-
-            // Klonowanie do symulacji
             public VirtualSlot Clone() => new VirtualSlot { Index = Index, ItemHash = ItemHash, Amount = Amount };
         }
 
@@ -42,7 +50,6 @@ namespace WildTerraHook
             if (!ConfigManager.QuickStack_Enabled) return;
             if (!_reflectionInit) InitReflection();
 
-            // Pływający przycisk
             UpdateFloatingButton();
 
             if (Input.GetKeyDown(_hotkey) && !_isStacking)
@@ -56,7 +63,6 @@ namespace WildTerraHook
         {
             if (!ConfigManager.QuickStack_Enabled) return;
 
-            // Używamy precyzyjnego sprawdzania panelu
             if (IsPanelVisible())
             {
                 GUIStyle style = new GUIStyle(GUI.skin.button);
@@ -106,23 +112,19 @@ namespace WildTerraHook
             WTPlayer.localPlayer.StartCoroutine(AppendStackRoutine());
         }
 
-        // --- LOGIKA "SMART APPEND" ---
         private IEnumerator AppendStackRoutine()
         {
             _isStacking = true;
 
-            // 1. Walidacja
             if (_playerInventoryField == null) { _isStacking = false; yield break; }
             if (!IsPanelVisible()) { _isStacking = false; yield break; }
 
             var uiContainer = Object.FindObjectOfType<WTUIContainer>();
             object chestSlotsList = GetFieldOrPropRecursive(uiContainer, "slots");
 
-            // 2. Skanowanie
             List<VirtualSlot> pSlots = ScanCollection(_playerInventoryField.GetValue(WTPlayer.localPlayer));
             List<VirtualSlot> cSlots = ScanCollection(chestSlotsList);
 
-            // 3. Symulacja
             var simulatedChest = cSlots.Select(x => x.Clone()).ToList();
             var chestHashes = simulatedChest.Where(x => !x.IsEmpty).Select(x => x.ItemHash).Distinct().ToList();
 
@@ -131,31 +133,15 @@ namespace WildTerraHook
                 if (pItem.IsEmpty) continue;
                 if (!chestHashes.Contains(pItem.ItemHash)) continue;
 
-                // --- ALGORYTM ---
                 VirtualSlot targetSlot = null;
-
-                // Krok A: Znajdź ostatnie wystąpienie przedmiotu
                 var sameItems = simulatedChest.Where(x => x.ItemHash == pItem.ItemHash && !x.IsEmpty).ToList();
                 int lastIndex = -1;
 
-                if (sameItems.Count > 0)
-                {
-                    lastIndex = sameItems.Max(x => x.Index);
-                }
+                if (sameItems.Count > 0) lastIndex = sameItems.Max(x => x.Index);
 
-                // Krok B: Szukaj pustego slotu ZA ostatnim przedmiotem
-                if (lastIndex != -1)
-                {
-                    targetSlot = simulatedChest.FirstOrDefault(x => x.IsEmpty && x.Index > lastIndex);
-                }
+                if (lastIndex != -1) targetSlot = simulatedChest.FirstOrDefault(x => x.IsEmpty && x.Index > lastIndex);
+                if (targetSlot == null) targetSlot = simulatedChest.FirstOrDefault(x => x.IsEmpty);
 
-                // Krok C: Jeśli brak miejsca ZA, weź pierwszy wolny od początku
-                if (targetSlot == null)
-                {
-                    targetSlot = simulatedChest.FirstOrDefault(x => x.IsEmpty);
-                }
-
-                // --- WYKONANIE ---
                 if (targetSlot != null)
                 {
                     bool success = false;
@@ -172,23 +158,17 @@ namespace WildTerraHook
 
                     if (success)
                     {
-                        // Aktualizuj symulację
                         targetSlot.ItemHash = pItem.ItemHash;
                         targetSlot.Amount = pItem.Amount;
-
                         yield return new WaitForSeconds(Mathf.Max(0.05f, ConfigManager.QuickStack_Delay));
                     }
                 }
-                else
-                {
-                    break; // Skrzynia pełna
-                }
+                else break;
             }
 
             _isStacking = false;
         }
 
-        // --- SKANERY ---
         private List<VirtualSlot> ScanCollection(object collectionObj)
         {
             List<VirtualSlot> result = new List<VirtualSlot>();
@@ -214,7 +194,6 @@ namespace WildTerraHook
                 var fAmt = type.GetField("amount", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (fAmt != null) amount = (int)fAmt.GetValue(slotObj);
 
-                // FIX GHOST SLOTS
                 if (amount <= 0) return new VirtualSlot { Index = index, ItemHash = 0, Amount = 0 };
 
                 var fItem = type.GetField("item", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -232,8 +211,7 @@ namespace WildTerraHook
                             var fInfo = tI.GetField("info", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                             if (fInfo != null)
                             {
-                                // --- POPRAWKA BŁĘDU CS0103 ---
-                                object info = fInfo.GetValue(itemObj); // Deklaracja zmiennej info
+                                object info = fInfo.GetValue(itemObj);
                                 if (info != null)
                                 {
                                     var fId = info.GetType().GetField("id", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -247,24 +225,16 @@ namespace WildTerraHook
             return new VirtualSlot { Index = index, ItemHash = hash, Amount = amount };
         }
 
-        // --- HELPERY UI ---
         private bool IsPanelVisible()
         {
             var ui = Object.FindObjectOfType<WTUIContainer>();
             if (ui == null) return false;
-
             if (!ui.gameObject.activeInHierarchy) return false;
-
             var panelObj = GetFieldOrPropRecursive(ui, "panel") as GameObject;
-            if (panelObj != null)
-            {
-                return panelObj.activeSelf;
-            }
-
+            if (panelObj != null) return panelObj.activeSelf;
             return true;
         }
 
-        // --- UI FLOATING BUTTON ---
         private void UpdateFloatingButton()
         {
             if (!IsPanelVisible())
@@ -315,7 +285,6 @@ namespace WildTerraHook
             textRt.anchorMin = Vector2.zero; textRt.anchorMax = Vector2.one; textRt.offsetMin = Vector2.zero; textRt.offsetMax = Vector2.zero;
         }
 
-        // --- HELPERY REFLECTION ---
         private object GetFieldOrPropRecursive(object obj, string name)
         {
             if (obj == null) return null;

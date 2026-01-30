@@ -4,39 +4,42 @@ namespace WildTerraHook
 {
     public class Loader
     {
-        private static GameObject _loadObject;
+        // Stała nazwa obiektu w scenie - klucz do znalezienia starej wersji
+        private const string GAMEOBJECT_NAME = "WildTerraHook_Loader";
 
-        // Tę metodę musi wywołać Injector!
+        // Tę metodę wywołuje Injector
         public static void Init()
         {
-            // Zabezpieczenie i obsługa RELOADU
-            // Sprawdzamy, czy w scenie istnieje już załadowany hack
-            GameObject existing = GameObject.Find("WildTerraHook_Loader");
-            if (existing != null)
+            // KROK 1: BRUTE FORCE CLEANUP
+            // Szukamy obiektu po nazwie. To znajdzie obiekt stworzony przez POPRZEDNIĄ wersję DLL.
+            GameObject existing = GameObject.Find(GAMEOBJECT_NAME);
+            while (existing != null)
             {
-                // Zmieniamy nazwę, aby nie kolidowała z nowym obiektem
-                existing.name = "WildTerraHook_Loader_Old";
-                // Niszczymy stary obiekt - to wywoła OnDestroy w MainHack i posprząta moduły
-                UnityEngine.Object.Destroy(existing);
+                // Niszczymy natychmiast
+                UnityEngine.Object.DestroyImmediate(existing);
+                // Szukamy, czy są jakieś duplikaty
+                existing = GameObject.Find(GAMEOBJECT_NAME);
             }
 
-            // 1. Tworzymy nowy pusty obiekt w grze
-            _loadObject = new GameObject();
-            _loadObject.name = "WildTerraHook_Loader";
+            // KROK 2: FRESH START
+            // Tworzymy nowy obiekt
+            GameObject loadObject = new GameObject();
+            loadObject.name = GAMEOBJECT_NAME;
 
-            // 2. Dodajemy do niego nasz główny skrypt (MainHack)
-            _loadObject.AddComponent<MainHack>();
+            // Dodajemy główny komponent
+            loadObject.AddComponent<MainHack>();
 
-            // 3. Zapobiegamy niszczeniu obiektu przy zmianie mapy
-            UnityEngine.Object.DontDestroyOnLoad(_loadObject);
+            // Zapobiegamy niszczeniu przy zmianie sceny
+            UnityEngine.Object.DontDestroyOnLoad(loadObject);
         }
 
+        // Metoda do ręcznego wywalenia hacka (np. przez klawisz DELETE)
         public static void Unload()
         {
-            if (_loadObject != null)
+            GameObject existing = GameObject.Find(GAMEOBJECT_NAME);
+            if (existing != null)
             {
-                UnityEngine.Object.Destroy(_loadObject);
-                _loadObject = null;
+                UnityEngine.Object.Destroy(existing);
             }
         }
     }
