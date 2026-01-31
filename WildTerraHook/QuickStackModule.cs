@@ -18,16 +18,17 @@ namespace WildTerraHook
         private FieldInfo _playerInventoryField;
         private bool _reflectionInit = false;
 
-        // --- Cache UI ---
+        // --- Cache UI & Optymalizacja ---
         private RectTransform _containerWindowRect;
+        private FieldInfo _uiPanelField; // Cache pola panelu (zamiast szukania co klatkę)
+        private bool _cachedIsVisible = false; // Cache wyniku widoczności
 
         // --- Stan ---
         private bool _isStacking = false;
 
-        // --- CLEANUP (NOWE) ---
+        // --- CLEANUP ---
         public void OnDestroy()
         {
-            // Bezwzględnie usuwamy przycisk przy wyłączaniu hacka
             if (_floatingButton != null)
             {
                 UnityEngine.Object.Destroy(_floatingButton);
@@ -48,8 +49,14 @@ namespace WildTerraHook
         public void Update()
         {
             if (!ConfigManager.QuickStack_Enabled) return;
+
+            // Inicjalizacja refleksji (tylko raz)
             if (!_reflectionInit) InitReflection();
 
+            // Oblicz widoczność RAZ na klatkę
+            _cachedIsVisible = CheckVisibilityOptimized();
+
+            // Aktualizacja przycisku w oparciu o obliczoną widoczność
             UpdateFloatingButton();
 
             if (Input.GetKeyDown(_hotkey) && !_isStacking)
@@ -58,12 +65,13 @@ namespace WildTerraHook
             }
         }
 
-        // --- GUI ---
+        // --- GUI (Lekkie, korzysta z cache) ---
         public void OnGUI()
         {
             if (!ConfigManager.QuickStack_Enabled) return;
 
-            if (IsPanelVisible())
+            // Używamy zmiennej obliczonej w Update, zamiast liczyć od nowa
+            if (_cachedIsVisible)
             {
                 GUIStyle style = new GUIStyle(GUI.skin.button);
                 style.normal.textColor = _isStacking ? Color.yellow : Color.green;
@@ -80,7 +88,7 @@ namespace WildTerraHook
 
         public void DrawMenu()
         {
-            GUILayout.Label("<b>Quick Stack v37 (Fix Compile)</b>");
+            GUILayout.Label("<b>Quick Stack v38 (FPS Fix)</b>");
             bool en = GUILayout.Toggle(ConfigManager.QuickStack_Enabled, Localization.Get("QS_ENABLE") ?? "Enable");
             if (en != ConfigManager.QuickStack_Enabled) { ConfigManager.QuickStack_Enabled = en; ConfigManager.Save(); }
 
@@ -101,9 +109,33 @@ namespace WildTerraHook
                 var type = WTPlayer.localPlayer.GetType();
                 _cmdMoveItem = GetMethodRecursive(type, "OnDragAndDrop_InventorySlot_ContainerSlot");
                 _playerInventoryField = GetFieldRecursive(type, "inventory");
+
+                // Cache pola panelu dla UI Container (szukamy raz)
+                var containerType = typeof(WTUIContainer); // Zakładam, że klasa jest dostępna, bo używamy jej w FindObjectOfType
+                _uiPanelField = GetFieldRecursive(containerType, "panel");
+
                 if (_cmdMoveItem != null) _reflectionInit = true;
             }
             catch (System.Exception e) { Debug.LogError($"[QS] Init Error: {e.Message}"); }
+        }
+
+        // --- OPTYMALIZACJA WIDOCZNOŚCI ---
+        private bool CheckVisibilityOptimized()
+        {
+            // 1. Używamy Singletona zamiast FindObjectOfType (Ogromna różnica wydajności)
+            var ui = global::WTUIContainer.instance;
+
+            if (ui == null) return false;
+            if (!ui.gameObject.activeInHierarchy) return false;
+
+            // 2. Używamy zcache'owanego pola (zamiast szukać go refleksją co klatkę)
+            if (_uiPanelField != null)
+            {
+                var panelObj = _uiPanelField.GetValue(ui) as GameObject;
+                if (panelObj != null) return panelObj.activeSelf;
+            }
+
+            return true;
         }
 
         private void StartStacking()
@@ -117,9 +149,11 @@ namespace WildTerraHook
             _isStacking = true;
 
             if (_playerInventoryField == null) { _isStacking = false; yield break; }
-            if (!IsPanelVisible()) { _isStacking = false; yield break; }
+            if (!_cachedIsVisible) { _isStacking = false; yield break; }
 
-            var uiContainer = Object.FindObjectOfType<WTUIContainer>();
+            var uiContainer = global::WTUIContainer.instance;
+            if (uiContainer == null) { _isStacking = false; yield break; }
+
             object chestSlotsList = GetFieldOrPropRecursive(uiContainer, "slots");
 
             List<VirtualSlot> pSlots = ScanCollection(_playerInventoryField.GetValue(WTPlayer.localPlayer));
@@ -225,31 +259,27 @@ namespace WildTerraHook
             return new VirtualSlot { Index = index, ItemHash = hash, Amount = amount };
         }
 
-        private bool IsPanelVisible()
-        {
-            var ui = Object.FindObjectOfType<WTUIContainer>();
-            if (ui == null) return false;
-            if (!ui.gameObject.activeInHierarchy) return false;
-            var panelObj = GetFieldOrPropRecursive(ui, "panel") as GameObject;
-            if (panelObj != null) return panelObj.activeSelf;
-            return true;
-        }
-
         private void UpdateFloatingButton()
         {
-            if (!IsPanelVisible())
+            if (!_cachedIsVisible)
             {
                 if (_floatingButton != null) _floatingButton.SetActive(false);
                 _containerWindowRect = null;
                 return;
             }
 
-            var ui = Object.FindObjectOfType<WTUIContainer>();
+            var ui = global::WTUIContainer.instance;
+
+            // Pobieranie RectTransform tylko jeśli konieczne (optymalizacja)
             if (_containerWindowRect == null && ui != null)
             {
-                var panelObj = GetFieldOrPropRecursive(ui, "panel") as GameObject;
-                if (panelObj != null) _containerWindowRect = panelObj.GetComponent<RectTransform>();
+                if (_uiPanelField != null)
+                {
+                    var panelObj = _uiPanelField.GetValue(ui) as GameObject;
+                    if (panelObj != null) _containerWindowRect = panelObj.GetComponent<RectTransform>();
+                }
             }
+
             if (_floatingButton == null && ui != null) CreateFloatingButton(ui.transform.root);
 
             if (_floatingButton != null && _containerWindowRect != null)
