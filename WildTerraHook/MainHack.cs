@@ -56,6 +56,30 @@ namespace WildTerraHook
             Debug.Log("[MainHack] Hook załadowany pomyślnie.");
 
             _isInitialized = true;
+
+            try
+            {
+                // Szukamy typu ItemActionType w Assembly gry
+                System.Type enumType = System.Type.GetType("ItemActionType, Assembly-CSharp");
+
+                if (enumType != null)
+                {
+                    Debug.LogWarning("=== LISTA AKCJI (ItemActionType) ===");
+                    System.Array values = System.Enum.GetValues(enumType);
+                    foreach (object val in values)
+                    {
+                        // Używamy Convert.ToInt32 zamiast (int)val, aby uniknąć błędu rzutowania
+                        int intValue = System.Convert.ToInt32(val);
+                        Debug.Log($"Action: {val.ToString()} = {intValue}");
+                    }
+                    Debug.LogWarning("===================================");
+                }
+                else
+                {
+                    Debug.LogError("Nie znaleziono typu ItemActionType!");
+                }
+            }
+            catch (System.Exception e) { Debug.LogError("Błąd dumpowania: " + e.Message); }
         }
 
         public void OnDestroy()
