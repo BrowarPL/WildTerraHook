@@ -5,11 +5,42 @@ using System.Collections;
 using System.Reflection;
 using System.Linq;
 using UnityEngine;
+using System.Runtime.InteropServices;
 
 namespace WildTerraHook
 {
     public class MiscModule
     {
+        // --- WINDOWS API ---
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetActiveWindow();
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int GWL_STYLE = -16;
+        private const int WS_CAPTION = 0x00C00000;
+        private const int WS_THICKFRAME = 0x00040000;
+        private const int WS_MINIMIZEBOX = 0x00020000;
+        private const int WS_MAXIMIZEBOX = 0x00010000;
+        private const int WS_SYSMENU = 0x00080000;
+
+        private const uint SWP_FRAMECHANGED = 0x0020;
+        private const uint SWP_SHOWWINDOW = 0x0040;
+        private const uint SWP_NOZORDER = 0x0004;
+
+        private const int SW_MAXIMIZE = 3;
+        // -------------------
+
         private GameObject _lightObject;
         private float _defaultFov = 60f;
         private bool _defaultsInitialized = false;
@@ -24,10 +55,13 @@ namespace WildTerraHook
         private float _lastButcherTime = 0f;
         private float _butcherInterval = 0.5f;
 
+        // Borderless
+        private float _borderlessCheckTimer = 0f;
+
         // Reflection Cache
-        private MethodInfo _useItemMethod;          // CmdUseItem / CmdUseInventoryItem
-        private MethodInfo _actionItemMethod;       // CmdInventoryItemAction
-        private object _butcheringEnumValue;        // Zcacheowana wartość enuma dla Butchering
+        private MethodInfo _useItemMethod;
+        private MethodInfo _actionItemMethod;
+        private object _butcheringEnumValue;
 
         public void Update()
         {
@@ -56,6 +90,13 @@ namespace WildTerraHook
             HandleFullbright();
             HandleBrightPlayer();
             HandleFov();
+
+            // Obsługa True Borderless (Maximize)
+            if (ConfigManager.Misc_Borderless)
+            {
+                HandleTrueBorderless();
+            }
+
             if (ConfigManager.Misc_ZoomHack) HandleZoomHack();
 
             if (ConfigManager.Misc_AutoButcher && Time.time - _lastButcherTime > _butcherInterval)
@@ -66,6 +107,47 @@ namespace WildTerraHook
         }
 
         public void OnGUI() { }
+
+        // --- TRUE BORDERLESS LOGIC (MAXIMIZE) ---
+        private void HandleTrueBorderless()
+        {
+            // Gra musi działać w tle
+            Application.runInBackground = true;
+
+            if (Time.time > _borderlessCheckTimer)
+            {
+                try
+                {
+                    // Wymuszamy tryb okienkowy w Unity (żeby system przejął kontrolę)
+                    if (Screen.fullScreen)
+                    {
+                        Screen.fullScreen = false;
+                        _borderlessCheckTimer = Time.time + 0.5f;
+                        return;
+                    }
+
+                    IntPtr hwnd = GetActiveWindow();
+                    int style = GetWindowLong(hwnd, GWL_STYLE);
+
+                    // Jeśli okno ma belkę tytułową lub ramkę -> usuwamy je i maksymalizujemy
+                    if ((style & WS_CAPTION) != 0 || (style & WS_THICKFRAME) != 0)
+                    {
+                        // Usuń dekoracje
+                        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+                        SetWindowLong(hwnd, GWL_STYLE, style);
+
+                        // WYMUŚ MAKSYMALIZACJĘ (To naprawia ucinanie)
+                        ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Borderless] Error: {ex.Message}");
+                }
+
+                _borderlessCheckTimer = Time.time + 2.0f;
+            }
+        }
 
         private void ApplyNoFog()
         {
@@ -197,6 +279,11 @@ namespace WildTerraHook
 
             bool newVal;
 
+            // --- BORDERLESS TOGGLE ---
+            newVal = GUILayout.Toggle(ConfigManager.Misc_Borderless, Localization.Get("MISC_BORDERLESS"));
+            if (newVal != ConfigManager.Misc_Borderless) { ConfigManager.Misc_Borderless = newVal; ConfigManager.Save(); }
+            // -------------------------
+
             newVal = GUILayout.Toggle(ConfigManager.Misc_EternalDay, Localization.Get("MISC_ETERNAL_DAY"));
             if (newVal != ConfigManager.Misc_EternalDay) { ConfigManager.Misc_EternalDay = newVal; ConfigManager.Save(); }
 
@@ -303,7 +390,6 @@ namespace WildTerraHook
 
             var inventory = player.inventory;
 
-            // Inicjalizacja metod i enumów (raz)
             if (_useItemMethod == null)
             {
                 _useItemMethod = player.GetType().GetMethod("CmdUseItem", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
@@ -311,7 +397,6 @@ namespace WildTerraHook
 
                 _actionItemMethod = player.GetType().GetMethod("CmdInventoryItemAction", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-                // Szukamy wartości enuma dla Butchering
                 try
                 {
                     Type enumType = Type.GetType("ItemActionType, Assembly-CSharp");
@@ -334,17 +419,13 @@ namespace WildTerraHook
                     var itemData = slot.item.data;
                     var wtItem = itemData as global::WTScriptableItem;
 
-                    // JEŚLI ITEM MA BUTCHED ITEMS (np. SmallShellfish, Zwierzęta)
                     if (wtItem != null && wtItem.butchedItems != null)
                     {
-                        // Używamy CmdInventoryItemAction, jeśli udało się znaleźć enum Butchering
                         if (_actionItemMethod != null && _butcheringEnumValue != null)
                         {
-                            // CmdInventoryItemAction(slot, ItemActionType.Butchering, 0)
                             _actionItemMethod.Invoke(player, new object[] { i, _butcheringEnumValue, 0 });
                             return;
                         }
-                        // Fallback: Jeśli nie znaleźliśmy metody akcji, próbujemy zwykłego Use
                         else if (_useItemMethod != null)
                         {
                             InvokeUseItem(player, i, 0);
@@ -352,7 +433,6 @@ namespace WildTerraHook
                         }
                     }
 
-                    // JEŚLI ITEM MA ZDEFINIOWANE AKCJE (np. Narzędzia rzeźnickie)
                     var actionsField = itemData.GetType().GetField("actions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
                     if (actionsField != null)
                     {
