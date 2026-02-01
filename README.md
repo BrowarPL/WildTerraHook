@@ -16,6 +16,7 @@ Features:
 - FOV hack
 - Persistent World
 - Auto Heal
+- Quick Stack
   
 Languages supported: English, Polish
 
