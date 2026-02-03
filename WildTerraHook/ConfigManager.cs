@@ -90,6 +90,7 @@ namespace WildTerraHook
         public static float Misc_RenderDistance = 500f;
         public static bool Misc_AutoButcher = false;
         public static bool Misc_Borderless = false;
+        public static bool Building_Enabled = false;
 
         // --- ESP ---
         public static bool Esp_Enabled = false;
@@ -246,6 +247,7 @@ namespace WildTerraHook
                     sw.WriteLine($"Misc_RenderDistance={Misc_RenderDistance.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"Misc_AutoButcher={Misc_AutoButcher}");
                     sw.WriteLine($"Misc_Borderless={Misc_Borderless}");
+                    sw.WriteLine($"Building_Enabled={Building_Enabled}");
 
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
@@ -395,6 +397,7 @@ namespace WildTerraHook
                     else if (key == "Misc_RenderDistance") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Misc_RenderDistance);
                     else if (key == "Misc_AutoButcher") bool.TryParse(val, out Misc_AutoButcher);
                     else if (key == "Misc_Borderless") bool.TryParse(val, out Misc_Borderless);
+                    else if (key == "Building_Enabled") bool.TryParse(val, out Building_Enabled);
 
                     // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
