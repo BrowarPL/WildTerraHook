@@ -14,6 +14,7 @@ namespace WildTerraHook
         private PersistentWorldModule _persistentModule;
         private AutoHealModule _healModule;
         private QuickStackModule _quickStackModule;
+        private BuildingModule _buildingModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -50,6 +51,7 @@ namespace WildTerraHook
             _persistentModule = new PersistentWorldModule();
             _healModule = new AutoHealModule();
             _quickStackModule = new QuickStackModule();
+            _buildingModule = new BuildingModule();
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -133,6 +135,7 @@ namespace WildTerraHook
             _persistentModule.Update();
             _healModule.Update();
             _quickStackModule.Update();
+            _buildingModule.Update();
         }
 
         private void BlockInputIfOverWindow()
@@ -285,6 +288,8 @@ namespace WildTerraHook
             _quickStackModule.DrawMenu();
             GUILayout.Space(10);
             // ------------------------
+            _buildingModule.DrawMenu();
+            GUILayout.Space(10);
 
             if (_persistentModule != null) _persistentModule.DrawMenu();
             GUILayout.Space(10);
