@@ -367,6 +367,24 @@ namespace WildTerraHook
                 ConfigManager.Save();
             }
 
+            GUILayout.Space(10);
+            GUILayout.Label($"<b>{Localization.Get("FEEDER_TITLE")}</b>");
+            bool newFeed = GUILayout.Toggle(ConfigManager.AutoFeed_Enabled, Localization.Get("FEEDER_ENABLE"));
+            if (newFeed != ConfigManager.AutoFeed_Enabled)
+            {
+                ConfigManager.AutoFeed_Enabled = newFeed;
+                ConfigManager.Save();
+            }
+
+            bool newAfk = GUILayout.Toggle(ConfigManager.AntiAfk_Enabled, Localization.Get("ANTIAFK_ENABLE"));
+            if (newAfk != ConfigManager.AntiAfk_Enabled)
+            {
+                ConfigManager.AntiAfk_Enabled = newAfk;
+                ConfigManager.Save();
+            }
+
+
+
             GUILayout.EndVertical();
         }
 

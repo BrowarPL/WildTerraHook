@@ -98,6 +98,7 @@
     <Compile Include="AutoDropModule.cs" />
     <Compile Include="AutoHealModule.cs" />
     <Compile Include="AutoLootModule.cs" />
+    <Compile Include="AutoPetFeederModule.cs" />
     <Compile Include="BuildingModule.cs" />
     <Compile Include="ConfigManager.cs" />
     <Compile Include="DebugConsoleModule.cs" />

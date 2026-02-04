@@ -15,6 +15,7 @@ namespace WildTerraHook
         private AutoHealModule _healModule;
         private QuickStackModule _quickStackModule;
         private BuildingModule _buildingModule;
+        private AutoPetFeederModule _feederModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -52,6 +53,7 @@ namespace WildTerraHook
             _healModule = new AutoHealModule();
             _quickStackModule = new QuickStackModule();
             _buildingModule = new BuildingModule();
+            _feederModule = new AutoPetFeederModule();
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -136,6 +138,7 @@ namespace WildTerraHook
             _healModule.Update();
             _quickStackModule.Update();
             _buildingModule.Update();
+            _feederModule.Update();
         }
 
         private void BlockInputIfOverWindow()
