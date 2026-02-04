@@ -69,6 +69,7 @@ namespace WildTerraHook
         public static float ColorFish_ReactionTime = 0.3f;
         public static float ColorFish_Timeout = 25.0f;
         public static bool ColorFish_ShowESP = true;
+        public static float ColorFish_ButcherDelay = 1.0f;
 
         public static bool MemFish_Enabled = false;
         public static bool MemFish_AutoPress = false;
@@ -226,6 +227,7 @@ namespace WildTerraHook
                     sw.WriteLine($"ColorFish_ReactionTime={ColorFish_ReactionTime.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"ColorFish_Timeout={ColorFish_Timeout.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"ColorFish_ShowESP={ColorFish_ShowESP}");
+                    sw.WriteLine($"ColorFish_ButcherDelay={ColorFish_ButcherDelay.ToString(CultureInfo.InvariantCulture)}");
 
                     sw.WriteLine($"MemFish_Enabled={MemFish_Enabled}");
                     sw.WriteLine($"MemFish_AutoPress={MemFish_AutoPress}");
@@ -377,6 +379,7 @@ namespace WildTerraHook
                     else if (key == "ColorFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ReactionTime);
                     else if (key == "ColorFish_Timeout") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_Timeout);
                     else if (key == "ColorFish_ShowESP") bool.TryParse(val, out ColorFish_ShowESP);
+                    else if (key == "ColorFish_ButcherDelay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ColorFish_ButcherDelay);
                     else if (key == "MemFish_Enabled") bool.TryParse(val, out MemFish_Enabled);
                     else if (key == "MemFish_AutoPress") bool.TryParse(val, out MemFish_AutoPress);
                     else if (key == "MemFish_ReactionTime") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out MemFish_ReactionTime);

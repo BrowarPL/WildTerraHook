@@ -71,7 +71,7 @@ namespace WildTerraHook
             string[] lumber = { "AppleTree", "Snag", "Birch", "GraveTree", "Stump", "Pine", "Maple", "Poplar", "Spruce", "DriedTree", "Oak", "GrimTree", "Infected grim tree" };
             foreach (var s in lumber) _lumberToggles[s] = false;
 
-            string[] godsend = { "Godsend", "PlagueSkeletonsCorpses", "PlagueAbandinedResources", "PlagueAbandonedResources", "HideoutGodsendBody" };
+            string[] godsend = { "Godsend", "PlagueSkeletonsCorpses", "PlagueAbandinedResources", "PlagueAbandonedResources", "HideoutGodsendBody", "Godsens" };
             foreach (var s in godsend) _godsendToggles[s] = false;
 
             string[] dungeons = { "DarkForestDungeonEnter", "HideoutEnter" };
