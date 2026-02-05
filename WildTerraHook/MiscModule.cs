@@ -63,6 +63,10 @@ namespace WildTerraHook
         private MethodInfo _actionItemMethod;
         private object _butcheringEnumValue;
 
+        public AutoActionModule ActionModuleRef;
+        private bool _isActionListOpen = false;
+        private Vector2 _actionScrollPos = Vector2.zero;
+
         public void Update()
         {
             if (global::Player.localPlayer == null) return;
@@ -367,7 +371,100 @@ namespace WildTerraHook
                 ConfigManager.Save();
             }
 
-            GUILayout.EndVertical();
+            GUILayout.Space(10);
+            GUILayout.Label($"<b>{Localization.Get("FEEDER_TITLE")}</b>");
+            bool newFeed = GUILayout.Toggle(ConfigManager.AutoFeed_Enabled, Localization.Get("FEEDER_ENABLE"));
+            if (newFeed != ConfigManager.AutoFeed_Enabled)
+            {
+                ConfigManager.AutoFeed_Enabled = newFeed;
+                ConfigManager.Save();
+            }
+
+            bool newAfk = GUILayout.Toggle(ConfigManager.AntiAfk_Enabled, Localization.Get("ANTIAFK_ENABLE"));
+            if (newAfk != ConfigManager.AntiAfk_Enabled)
+            {
+                ConfigManager.AntiAfk_Enabled = newAfk;
+                ConfigManager.Save();
+            }
+
+            GUILayout.Space(10);
+            GUILayout.Label($"<b>{Localization.Get("ACTION_TITLE")}</b>");
+
+            // Włącznik
+            bool newAction = GUILayout.Toggle(ConfigManager.AutoAction_Enabled, Localization.Get("ACTION_ENABLE"));
+            if (newAction != ConfigManager.AutoAction_Enabled)
+            {
+                ConfigManager.AutoAction_Enabled = newAction;
+                ConfigManager.Save();
+            }
+
+            if (ConfigManager.AutoAction_Enabled)
+            {
+                GUILayout.Label($"{Localization.Get("ACTION_RANGE")}: {ConfigManager.AutoAction_Range:F1}m");
+                float newRange = GUILayout.HorizontalSlider(ConfigManager.AutoAction_Range, 1.0f, 10.0f);
+                if (Math.Abs(newRange - ConfigManager.AutoAction_Range) > 0.1f) { ConfigManager.AutoAction_Range = newRange; ConfigManager.Save(); }
+
+                GUILayout.Label($"{Localization.Get("ACTION_DELAY")}: {ConfigManager.AutoAction_Delay:F1}s");
+                float newDelay = GUILayout.HorizontalSlider(ConfigManager.AutoAction_Delay, 0.1f, 5.0f);
+                if (Math.Abs(newDelay - ConfigManager.AutoAction_Delay) > 0.1f) { ConfigManager.AutoAction_Delay = newDelay; ConfigManager.Save(); }
+
+                GUILayout.Space(5);
+
+                // --- ROZWIJANA LISTA ---
+                string currentActionName = AutoActionModule.KnownActions.ContainsKey(ConfigManager.AutoAction_ID)
+                    ? AutoActionModule.KnownActions[ConfigManager.AutoAction_ID]
+                    : $"Custom ID ({ConfigManager.AutoAction_ID})";
+
+                if (GUILayout.Button($"Akcja: {currentActionName} [Zmień]"))
+                {
+                    _isActionListOpen = !_isActionListOpen;
+                }
+
+                if (_isActionListOpen)
+                {
+                    // Styl dla listy
+                    GUIStyle listStyle = new GUIStyle(GUI.skin.box);
+                    listStyle.padding = new RectOffset(5, 5, 5, 5);
+
+                    GUILayout.BeginVertical(listStyle);
+
+                    // Pole wyszukiwania (opcjonalne, ale przydatne przy 98 elementach)
+                    // Na razie prosta lista
+                    _actionScrollPos = GUILayout.BeginScrollView(_actionScrollPos, GUILayout.Height(200));
+
+                    foreach (var action in AutoActionModule.KnownActions)
+                    {
+                        // Koloruj wybraną akcję
+                        GUI.backgroundColor = (action.Key == ConfigManager.AutoAction_ID) ? Color.green : Color.white;
+
+                        if (GUILayout.Button(action.Value))
+                        {
+                            ConfigManager.AutoAction_ID = action.Key;
+                            ConfigManager.Save();
+                            _isActionListOpen = false; // Zamknij po wyborze
+                        }
+                    }
+                    GUI.backgroundColor = Color.white;
+
+                    GUILayout.EndScrollView();
+                    GUILayout.EndVertical();
+                }
+
+                // PRZYCISK SKANERA
+                if (ActionModuleRef != null)
+                {
+                    GUILayout.Space(5);
+                    GUI.backgroundColor = ActionModuleRef.IsScanning ? Color.red : Color.white;
+                    if (GUILayout.Button(ActionModuleRef.IsScanning ? "STOP SCAN" : "SCAN ACTIONS"))
+                    {
+                        ActionModuleRef.IsScanning = !ActionModuleRef.IsScanning;
+                    }
+                    GUI.backgroundColor = Color.white;
+                }
+
+            }
+
+                GUILayout.EndVertical();
         }
 
         private void ChangeLanguage(string lang)

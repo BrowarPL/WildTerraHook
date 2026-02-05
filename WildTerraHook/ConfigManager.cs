@@ -92,6 +92,12 @@ namespace WildTerraHook
         public static bool Misc_AutoButcher = false;
         public static bool Misc_Borderless = false;
         public static bool Building_Enabled = false;
+        public static bool AutoFeed_Enabled = false;
+        public static bool AntiAfk_Enabled = false;
+        public static bool AutoAction_Enabled = false;
+        public static float AutoAction_Range = 3.0f; // Domyślnie 3m
+        public static int AutoAction_ID = 0;         // Domyślnie 0 (Use)
+        public static float AutoAction_Delay = 1.0f; // Co 1s
 
         // --- ESP ---
         public static bool Esp_Enabled = false;
@@ -250,6 +256,12 @@ namespace WildTerraHook
                     sw.WriteLine($"Misc_AutoButcher={Misc_AutoButcher}");
                     sw.WriteLine($"Misc_Borderless={Misc_Borderless}");
                     sw.WriteLine($"Building_Enabled={Building_Enabled}");
+                    sw.WriteLine($"AutoFeed_Enabled={AutoFeed_Enabled}");
+                    sw.WriteLine($"AntiAfk_Enabled={AntiAfk_Enabled}");
+                    sw.WriteLine($"AutoAction_Enabled={AutoAction_Enabled}");
+                    sw.WriteLine($"AutoAction_Range={AutoAction_Range.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"AutoAction_ID={AutoAction_ID}");
+                    sw.WriteLine($"AutoAction_Delay={AutoAction_Delay.ToString(CultureInfo.InvariantCulture)}");
 
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
@@ -401,6 +413,12 @@ namespace WildTerraHook
                     else if (key == "Misc_AutoButcher") bool.TryParse(val, out Misc_AutoButcher);
                     else if (key == "Misc_Borderless") bool.TryParse(val, out Misc_Borderless);
                     else if (key == "Building_Enabled") bool.TryParse(val, out Building_Enabled);
+                    else if (key == "AutoFeed_Enabled") bool.TryParse(val, out AutoFeed_Enabled);
+                    else if (key == "AntiAfk_Enabled") bool.TryParse(val, out AntiAfk_Enabled);
+                    else if (key == "AutoAction_Enabled") bool.TryParse(val, out AutoAction_Enabled);
+                    else if (key == "AutoAction_Range") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out AutoAction_Range);
+                    else if (key == "AutoAction_ID") int.TryParse(val, out AutoAction_ID);
+                    else if (key == "AutoAction_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out AutoAction_Delay);
 
                     // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
