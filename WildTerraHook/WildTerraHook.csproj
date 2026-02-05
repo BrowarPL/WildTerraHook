@@ -95,6 +95,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AutoActionModule.cs" />
     <Compile Include="AutoDropModule.cs" />
     <Compile Include="AutoHealModule.cs" />
     <Compile Include="AutoLootModule.cs" />
