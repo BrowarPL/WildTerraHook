@@ -17,6 +17,9 @@ Features:
 - Persistent World
 - Auto Heal
 - Quick Stack
+- Auto Action Module - useful for stacked objects.
+- Auto Pet Feed
+- Anti AFK module
   
 Languages supported: English, Polish
 
