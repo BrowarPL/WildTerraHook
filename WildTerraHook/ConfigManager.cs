@@ -125,6 +125,10 @@ namespace WildTerraHook
         public static string Esp_List_Godsend = "";
         public static string Esp_List_Dungeons = "";
 
+        // --- OBJECTS ---
+        public static float ObjectManager_Radius = 2.0f;
+        public static bool ObjectManager_HideNoActions = false;
+
         // --- CONSOLE ---
         public static bool Console_AutoScroll = true;
         public static bool Console_ShowInfo = true;
@@ -298,6 +302,9 @@ namespace WildTerraHook
                     sw.WriteLine($"ResGodsend={ColorToString(Colors.ResGodsend)}");
                     sw.WriteLine($"ResDungeon={ColorToString(Colors.ResDungeon)}");
 
+                    sw.WriteLine($"ObjectManager_Radius={ObjectManager_Radius.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"ObjectManager_HideNoActions={ObjectManager_HideNoActions}");
+
                     sw.WriteLine($"Console_AutoScroll={Console_AutoScroll}");
                     sw.WriteLine($"Console_ShowInfo={Console_ShowInfo}");
                     sw.WriteLine($"Console_ShowWarnings={Console_ShowWarnings}");
@@ -455,6 +462,8 @@ namespace WildTerraHook
                     else if (key == "ResGather") Colors.ResGather = StringToColor(val);
                     else if (key == "ResGodsend") Colors.ResGodsend = StringToColor(val);
                     else if (key == "ResDungeon") Colors.ResDungeon = StringToColor(val);
+                    else if (key == "ObjectManager_Radius") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out ObjectManager_Radius);
+                    else if (key == "ObjectManager_HideNoActions") bool.TryParse(val, out ObjectManager_HideNoActions);
                     else if (key == "Console_AutoScroll") bool.TryParse(val, out Console_AutoScroll);
                     else if (key == "Console_ShowInfo") bool.TryParse(val, out Console_ShowInfo);
                     else if (key == "Console_ShowWarnings") bool.TryParse(val, out Console_ShowWarnings);
