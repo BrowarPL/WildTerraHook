@@ -17,6 +17,7 @@ namespace WildTerraHook
         private BuildingModule _buildingModule;
         private AutoPetFeederModule _feederModule;
         private AutoActionModule _autoActionModule;
+        private SkillBarUnlockerModule _skillUnlockerModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -57,6 +58,7 @@ namespace WildTerraHook
             _feederModule = new AutoPetFeederModule();
             _autoActionModule = new AutoActionModule();
             _miscModule.ActionModuleRef = _autoActionModule;
+            _skillUnlockerModule = new SkillBarUnlockerModule();
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -143,6 +145,7 @@ namespace WildTerraHook
             _buildingModule.Update();
             _feederModule.Update();
             _autoActionModule.Update();
+            _skillUnlockerModule.Update();
         }
 
         private void BlockInputIfOverWindow()

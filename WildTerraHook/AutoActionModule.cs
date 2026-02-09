@@ -370,7 +370,7 @@ namespace WildTerraHook
                 var comps = target.GetComponentsInParent<MonoBehaviour>();
                 foreach (var comp in comps)
                 {
-                    var f = comp.GetType().GetField("actionSkills", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    var f = comp.GetType().GetField("actionSkills", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy);
                     if (f != null)
                     {
                         var list = f.GetValue(comp) as IEnumerable;
