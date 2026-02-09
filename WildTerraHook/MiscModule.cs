@@ -464,7 +464,33 @@ namespace WildTerraHook
 
             }
 
-                GUILayout.EndVertical();
+            GUILayout.Space(10);
+            GUILayout.Label($"<b>{Localization.Get("SKILLUNLOCK_TITLE")}</b>");
+
+            bool newUnlock = GUILayout.Toggle(ConfigManager.SkillUnlocker_Enabled, Localization.Get("SKILLUNLOCK_ENABLE"));
+            if (newUnlock != ConfigManager.SkillUnlocker_Enabled)
+            {
+                ConfigManager.SkillUnlocker_Enabled = newUnlock;
+                ConfigManager.Save();
+            }
+
+            if (ConfigManager.SkillUnlocker_Enabled)
+            {
+                // SUWAK ILOŚCI SLOTÓW
+                GUILayout.Label($"Ilość slotów: {ConfigManager.SkillUnlocker_Slots}");
+                float newSlots = GUILayout.HorizontalSlider((float)ConfigManager.SkillUnlocker_Slots, 5f, 20f);
+
+                int roundedSlots = Mathf.RoundToInt(newSlots);
+                if (roundedSlots != ConfigManager.SkillUnlocker_Slots)
+                {
+                    ConfigManager.SkillUnlocker_Slots = roundedSlots;
+                    ConfigManager.Save();
+                }
+
+                GUILayout.Label($"<size=10>{Localization.Get("SKILLUNLOCK_INFO")}</size>");
+            }
+
+            GUILayout.EndVertical();
         }
 
         private void ChangeLanguage(string lang)

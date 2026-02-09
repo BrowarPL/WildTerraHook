@@ -98,6 +98,8 @@ namespace WildTerraHook
         public static float AutoAction_Range = 3.0f; // Domyślnie 3m
         public static int AutoAction_ID = 0;         // Domyślnie 0 (Use)
         public static float AutoAction_Delay = 1.0f; // Co 1s
+        public static bool SkillUnlocker_Enabled = false;
+        public static int SkillUnlocker_Slots = 6; // Domyślnie 6
 
         // --- ESP ---
         public static bool Esp_Enabled = false;
@@ -262,6 +264,8 @@ namespace WildTerraHook
                     sw.WriteLine($"AutoAction_Range={AutoAction_Range.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"AutoAction_ID={AutoAction_ID}");
                     sw.WriteLine($"AutoAction_Delay={AutoAction_Delay.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"SkillUnlocker_Enabled={SkillUnlocker_Enabled}");
+                    sw.WriteLine($"SkillUnlocker_Slots={SkillUnlocker_Slots}");
 
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
@@ -419,6 +423,8 @@ namespace WildTerraHook
                     else if (key == "AutoAction_Range") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out AutoAction_Range);
                     else if (key == "AutoAction_ID") int.TryParse(val, out AutoAction_ID);
                     else if (key == "AutoAction_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out AutoAction_Delay);
+                    else if (key == "SkillUnlocker_Enabled") bool.TryParse(val, out SkillUnlocker_Enabled);
+                    else if (key == "SkillUnlocker_Slots") int.TryParse(val, out SkillUnlocker_Slots);
 
                     // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
