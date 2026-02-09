@@ -1,6 +1,6 @@
 EN:
 
-Hack for Wild Terra 2 by BrowaR (only for educational purposes)
+Hack for Wild Terra 2 by BrowarPL (only for educational purposes)
 
 Features:
 
@@ -32,7 +32,7 @@ Use my loader https://github.com/BrowarPL/GUI-Unity-injector or any other Unity 
 
 PL:
 
-Hack do Wild Terra 2 autorstwa BrowaR (tylko do celów edukacyjnych)
+Hack do Wild Terra 2 autorstwa BrowarPL (tylko do celów edukacyjnych)
 
 Funkcje:
 
