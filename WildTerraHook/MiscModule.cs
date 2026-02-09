@@ -67,6 +67,10 @@ namespace WildTerraHook
         private bool _isActionListOpen = false;
         private Vector2 _actionScrollPos = Vector2.zero;
 
+        // Scroll Positions dla kolumn
+        private Vector2 _leftColumnScroll = Vector2.zero;
+        private Vector2 _rightColumnScroll = Vector2.zero;
+
         public void Update()
         {
             if (global::Player.localPlayer == null) return;
@@ -95,7 +99,6 @@ namespace WildTerraHook
             HandleBrightPlayer();
             HandleFov();
 
-            // Obsługa True Borderless (Maximize)
             if (ConfigManager.Misc_Borderless)
             {
                 HandleTrueBorderless();
@@ -110,19 +113,282 @@ namespace WildTerraHook
             }
         }
 
+        // --- RYSOWANIE MENU ---
+        // Przyjmujemy Action z zewnątrz, aby narysować QuickStack/Building wewnątrz kolumn
+        public void DrawMenu(Action drawQuickStack, Action drawBuilding, Action drawPersistent)
+        {
+            // Język i nagłówek
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(Localization.Get("MISC_LANG_SEL"), GUILayout.Width(100));
+            if (GUILayout.Button("English", ConfigManager.Language == "en" ? GUI.skin.box : GUI.skin.button)) ChangeLanguage("en");
+            if (GUILayout.Button("Polski", ConfigManager.Language == "pl" ? GUI.skin.box : GUI.skin.button)) ChangeLanguage("pl");
+            GUILayout.EndHorizontal();
+            GUILayout.Space(5);
+
+            // GŁÓWNY LAYOUT: Dwie Kolumny
+            GUILayout.BeginHorizontal();
+
+            // === LEWA KOLUMNA (Wizualne, Kamera, Info) ===
+            // Używamy GUILayout.Width(ConfigManager.Menu_W * 0.48f) aby dopasować do okna
+            float halfWidth = (ConfigManager.Menu_W - 40) * 0.5f;
+
+            GUILayout.BeginVertical(GUILayout.Width(halfWidth));
+            _leftColumnScroll = GUILayout.BeginScrollView(_leftColumnScroll);
+
+            DrawVisualsGroup();
+            GUILayout.Space(5);
+            DrawCameraGroup();
+            GUILayout.Space(5);
+
+            // Persistent World
+            if (drawPersistent != null)
+            {
+                GUILayout.BeginVertical("box"); // Ciemne tło
+                drawPersistent.Invoke();
+                GUILayout.EndVertical();
+            }
+
+            // Info o celu
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("<b>Info</b>");
+            ConfigManager.Misc_ShowTargetInfo = GUILayout.Toggle(ConfigManager.Misc_ShowTargetInfo, "Show Target Info");
+            GUILayout.EndVertical();
+
+            GUILayout.EndScrollView();
+            GUILayout.EndVertical();
+
+            // === PRAWA KOLUMNA (Automatyzacja, Akcje, Budowanie, QuickStack) ===
+            GUILayout.BeginVertical(GUILayout.Width(halfWidth));
+            _rightColumnScroll = GUILayout.BeginScrollView(_rightColumnScroll);
+
+            DrawAutomationGroup();
+            GUILayout.Space(5);
+
+            // Quick Stack
+            if (drawQuickStack != null)
+            {
+                GUILayout.BeginVertical("box"); // Ciemne tło
+                drawQuickStack.Invoke();
+                GUILayout.EndVertical();
+                GUILayout.Space(5);
+            }
+
+            // Building
+            if (drawBuilding != null)
+            {
+                GUILayout.BeginVertical("box"); // Ciemne tło
+                drawBuilding.Invoke();
+                GUILayout.EndVertical();
+                GUILayout.Space(5);
+            }
+
+            DrawActionGroup();
+
+            GUILayout.EndScrollView();
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
+        }
+
+        // Przeciążenie dla kompatybilności wstecznej (gdyby coś wywołało bez parametrów)
+        public void DrawMenu() { DrawMenu(null, null, null); }
+
+
+        // Grupa: Wizualne
+        private void DrawVisualsGroup()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("MISC_GROUP_VISUALS")}</b>"); // "Wizualne / System"
+
+            bool newVal = GUILayout.Toggle(ConfigManager.Misc_Borderless, Localization.Get("MISC_BORDERLESS"));
+            if (newVal != ConfigManager.Misc_Borderless) { ConfigManager.Misc_Borderless = newVal; ConfigManager.Save(); }
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_EternalDay, Localization.Get("MISC_ETERNAL_DAY"));
+            if (newVal != ConfigManager.Misc_EternalDay) { ConfigManager.Misc_EternalDay = newVal; ConfigManager.Save(); }
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_NoFog, Localization.Get("MISC_NO_FOG"));
+            if (newVal != ConfigManager.Misc_NoFog) { ConfigManager.Misc_NoFog = newVal; ConfigManager.Save(); }
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_Fullbright, Localization.Get("MISC_FULLBRIGHT"));
+            if (newVal != ConfigManager.Misc_Fullbright) { ConfigManager.Misc_Fullbright = newVal; ConfigManager.Save(); }
+
+            newVal = GUILayout.Toggle(ConfigManager.Misc_BrightPlayer, Localization.Get("MISC_BRIGHT_PLAYER"));
+            if (newVal != ConfigManager.Misc_BrightPlayer) { ConfigManager.Misc_BrightPlayer = newVal; ConfigManager.Save(); }
+
+            if (ConfigManager.Misc_BrightPlayer)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{Localization.Get("MISC_LIGHT_INT")}: {ConfigManager.Misc_LightIntensity:F1}", GUILayout.Width(70));
+                float newInt = GUILayout.HorizontalSlider(ConfigManager.Misc_LightIntensity, 1f, 5f);
+                if (Math.Abs(newInt - ConfigManager.Misc_LightIntensity) > 0.1f) { ConfigManager.Misc_LightIntensity = newInt; ConfigManager.Save(); }
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{Localization.Get("MISC_LIGHT_RNG")}: {ConfigManager.Misc_LightRange:F0}", GUILayout.Width(70));
+                float newRng = GUILayout.HorizontalSlider(ConfigManager.Misc_LightRange, 50f, 2000f);
+                if (Math.Abs(newRng - ConfigManager.Misc_LightRange) > 1f) { ConfigManager.Misc_LightRange = newRng; ConfigManager.Save(); }
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndVertical();
+        }
+
+        // Grupa: Kamera
+        private void DrawCameraGroup()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("MISC_GROUP_CAMERA")}</b>"); // "Kamera"
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"{Localization.Get("MISC_RENDER_DIST")}: {ConfigManager.Misc_RenderDistance:F0}", GUILayout.Width(70));
+            float newDist = GUILayout.HorizontalSlider(ConfigManager.Misc_RenderDistance, 100f, 5000f);
+            if (Math.Abs(newDist - ConfigManager.Misc_RenderDistance) > 1f) { ConfigManager.Misc_RenderDistance = newDist; ConfigManager.Save(); }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"{Localization.Get("MISC_FOV")}: {ConfigManager.Misc_Fov:F0}", GUILayout.Width(70));
+            float newFov = GUILayout.HorizontalSlider(ConfigManager.Misc_Fov, 30f, 120f);
+            if (Math.Abs(newFov - ConfigManager.Misc_Fov) > 1f) { ConfigManager.Misc_Fov = newFov; ConfigManager.Save(); }
+            GUILayout.EndHorizontal();
+
+            bool newVal = GUILayout.Toggle(ConfigManager.Misc_ZoomHack, Localization.Get("MISC_ZOOM_TITLE"));
+            if (newVal != ConfigManager.Misc_ZoomHack) { ConfigManager.Misc_ZoomHack = newVal; ConfigManager.Save(); }
+
+            if (ConfigManager.Misc_ZoomHack)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{Localization.Get("MISC_ZOOM_LIMIT")}: {ConfigManager.Misc_ZoomLimit:F0}", GUILayout.Width(70));
+                float newLim = GUILayout.HorizontalSlider(ConfigManager.Misc_ZoomLimit, 20f, 200f);
+                if (Math.Abs(newLim - ConfigManager.Misc_ZoomLimit) > 1f) { ConfigManager.Misc_ZoomLimit = newLim; ConfigManager.Save(); }
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{Localization.Get("MISC_CAM_ANGLE")}: {ConfigManager.Misc_CamAngle:F0}", GUILayout.Width(70));
+                float newAng = GUILayout.HorizontalSlider(ConfigManager.Misc_CamAngle, 10f, 89f);
+                if (Math.Abs(newAng - ConfigManager.Misc_CamAngle) > 1f) { ConfigManager.Misc_CamAngle = newAng; ConfigManager.Save(); }
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{Localization.Get("MISC_ZOOM_SENS")}: {ConfigManager.Misc_ZoomSpeed:F0}", GUILayout.Width(70));
+                float newSpd = GUILayout.HorizontalSlider(ConfigManager.Misc_ZoomSpeed, 10f, 200f);
+                if (Math.Abs(newSpd - ConfigManager.Misc_ZoomSpeed) > 1f) { ConfigManager.Misc_ZoomSpeed = newSpd; ConfigManager.Save(); }
+                GUILayout.EndHorizontal();
+            }
+
+            if (GUILayout.Button(Localization.Get("MISC_RESET")))
+            {
+                ConfigManager.Misc_Fov = _defaultFov;
+                ConfigManager.Misc_RenderDistance = _originalRenderDist;
+                ConfigManager.Misc_ZoomLimit = 100f;
+                ConfigManager.Misc_CamAngle = 45f;
+                ConfigManager.Misc_ZoomSpeed = 60f;
+                ConfigManager.Misc_LightIntensity = 2.0f;
+                ConfigManager.Misc_LightRange = 1000f;
+                ConfigManager.Save();
+            }
+            GUILayout.EndVertical();
+        }
+
+        // Grupa: Automatyzacja
+        private void DrawAutomationGroup()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("MISC_GROUP_AUTOMATION")}</b>"); // "Automatyzacja"
+
+            bool butcherVal = GUILayout.Toggle(ConfigManager.Misc_AutoButcher, Localization.Get("MISC_AUTO_BUTCHER"));
+            if (butcherVal != ConfigManager.Misc_AutoButcher) { ConfigManager.Misc_AutoButcher = butcherVal; ConfigManager.Save(); }
+
+            bool newFeed = GUILayout.Toggle(ConfigManager.AutoFeed_Enabled, Localization.Get("FEEDER_ENABLE"));
+            if (newFeed != ConfigManager.AutoFeed_Enabled) { ConfigManager.AutoFeed_Enabled = newFeed; ConfigManager.Save(); }
+
+            bool newAfk = GUILayout.Toggle(ConfigManager.AntiAfk_Enabled, Localization.Get("ANTIAFK_ENABLE"));
+            if (newAfk != ConfigManager.AntiAfk_Enabled) { ConfigManager.AntiAfk_Enabled = newAfk; ConfigManager.Save(); }
+
+            GUILayout.EndVertical();
+        }
+
+        // Grupa: Akcje
+        private void DrawActionGroup()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("ACTION_TITLE")}</b>");
+
+            bool newAction = GUILayout.Toggle(ConfigManager.AutoAction_Enabled, Localization.Get("ACTION_ENABLE"));
+            if (newAction != ConfigManager.AutoAction_Enabled) { ConfigManager.AutoAction_Enabled = newAction; ConfigManager.Save(); }
+
+            if (ConfigManager.AutoAction_Enabled)
+            {
+                GUILayout.Label($"{Localization.Get("ACTION_RANGE")}: {ConfigManager.AutoAction_Range:F1}m");
+                float newRange = GUILayout.HorizontalSlider(ConfigManager.AutoAction_Range, 1.0f, 10.0f);
+                if (Math.Abs(newRange - ConfigManager.AutoAction_Range) > 0.1f) { ConfigManager.AutoAction_Range = newRange; ConfigManager.Save(); }
+
+                GUILayout.Label($"{Localization.Get("ACTION_DELAY")}: {ConfigManager.AutoAction_Delay:F1}s");
+                float newDelay = GUILayout.HorizontalSlider(ConfigManager.AutoAction_Delay, 0.1f, 5.0f);
+                if (Math.Abs(newDelay - ConfigManager.AutoAction_Delay) > 0.1f) { ConfigManager.AutoAction_Delay = newDelay; ConfigManager.Save(); }
+
+                GUILayout.Space(5);
+
+                string currentActionName = AutoActionModule.KnownActions.ContainsKey(ConfigManager.AutoAction_ID)
+                    ? AutoActionModule.KnownActions[ConfigManager.AutoAction_ID]
+                    : $"Custom ID ({ConfigManager.AutoAction_ID})";
+
+                if (GUILayout.Button($"Akcja: {currentActionName} [Zmień]"))
+                {
+                    _isActionListOpen = !_isActionListOpen;
+                }
+
+                if (_isActionListOpen)
+                {
+                    GUIStyle listStyle = new GUIStyle(GUI.skin.box);
+                    listStyle.padding = new RectOffset(5, 5, 5, 5);
+                    GUILayout.BeginVertical(listStyle);
+                    _actionScrollPos = GUILayout.BeginScrollView(_actionScrollPos, GUILayout.Height(150));
+
+                    foreach (var action in AutoActionModule.KnownActions)
+                    {
+                        GUI.backgroundColor = (action.Key == ConfigManager.AutoAction_ID) ? Color.green : Color.white;
+                        if (GUILayout.Button(action.Value))
+                        {
+                            ConfigManager.AutoAction_ID = action.Key;
+                            ConfigManager.Save();
+                            _isActionListOpen = false;
+                        }
+                    }
+                    GUI.backgroundColor = Color.white;
+                    GUILayout.EndScrollView();
+                    GUILayout.EndVertical();
+                }
+            }
+
+            GUILayout.Space(10);
+            GUILayout.Label($"<b>{Localization.Get("SKILLUNLOCK_TITLE")}</b>");
+
+            bool newUnlock = GUILayout.Toggle(ConfigManager.SkillUnlocker_Enabled, Localization.Get("SKILLUNLOCK_ENABLE"));
+            if (newUnlock != ConfigManager.SkillUnlocker_Enabled) { ConfigManager.SkillUnlocker_Enabled = newUnlock; ConfigManager.Save(); }
+
+            if (ConfigManager.SkillUnlocker_Enabled)
+            {
+                GUILayout.Label($"Ilość slotów: {ConfigManager.SkillUnlocker_Slots}");
+                float newSlots = GUILayout.HorizontalSlider((float)ConfigManager.SkillUnlocker_Slots, 5f, 20f);
+                int roundedSlots = Mathf.RoundToInt(newSlots);
+                if (roundedSlots != ConfigManager.SkillUnlocker_Slots) { ConfigManager.SkillUnlocker_Slots = roundedSlots; ConfigManager.Save(); }
+                GUILayout.Label($"<size=10>{Localization.Get("SKILLUNLOCK_INFO")}</size>");
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        // --- RESZTA LOGIKI BEZ ZMIAN ---
+
         public void OnGUI() { }
 
-        // --- TRUE BORDERLESS LOGIC (MAXIMIZE) ---
         private void HandleTrueBorderless()
         {
-            // Gra musi działać w tle
             Application.runInBackground = true;
 
             if (Time.time > _borderlessCheckTimer)
             {
                 try
                 {
-                    // Wymuszamy tryb okienkowy w Unity (żeby system przejął kontrolę)
                     if (Screen.fullScreen)
                     {
                         Screen.fullScreen = false;
@@ -133,14 +399,10 @@ namespace WildTerraHook
                     IntPtr hwnd = GetActiveWindow();
                     int style = GetWindowLong(hwnd, GWL_STYLE);
 
-                    // Jeśli okno ma belkę tytułową lub ramkę -> usuwamy je i maksymalizujemy
                     if ((style & WS_CAPTION) != 0 || (style & WS_THICKFRAME) != 0)
                     {
-                        // Usuń dekoracje
                         style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
                         SetWindowLong(hwnd, GWL_STYLE, style);
-
-                        // WYMUŚ MAKSYMALIZACJĘ (To naprawia ucinanie)
                         ShowWindow(hwnd, SW_MAXIMIZE);
                     }
                 }
@@ -261,238 +523,6 @@ namespace WildTerraHook
             }
         }
 
-        public void DrawMenu()
-        {
-            GUILayout.BeginVertical("box");
-            GUILayout.Label($"<b>{Localization.Get("MISC_TITLE")}</b>");
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(Localization.Get("MISC_LANG_SEL"), GUILayout.Width(120));
-            if (GUILayout.Button("English", ConfigManager.Language == "en" ? GUI.skin.box : GUI.skin.button)) ChangeLanguage("en");
-            if (GUILayout.Button("Polski", ConfigManager.Language == "pl" ? GUI.skin.box : GUI.skin.button)) ChangeLanguage("pl");
-            GUILayout.EndHorizontal();
-            GUILayout.Space(10);
-
-            // RENDER DISTANCE
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{Localization.Get("MISC_RENDER_DIST")}: {ConfigManager.Misc_RenderDistance:F0}", GUILayout.Width(150));
-            float newDist = GUILayout.HorizontalSlider(ConfigManager.Misc_RenderDistance, 100f, 5000f);
-            if (Math.Abs(newDist - ConfigManager.Misc_RenderDistance) > 1f) { ConfigManager.Misc_RenderDistance = newDist; ConfigManager.Save(); }
-            GUILayout.EndHorizontal();
-            GUILayout.Space(5);
-
-            bool newVal;
-
-            // --- BORDERLESS TOGGLE ---
-            newVal = GUILayout.Toggle(ConfigManager.Misc_Borderless, Localization.Get("MISC_BORDERLESS"));
-            if (newVal != ConfigManager.Misc_Borderless) { ConfigManager.Misc_Borderless = newVal; ConfigManager.Save(); }
-            // -------------------------
-
-            newVal = GUILayout.Toggle(ConfigManager.Misc_EternalDay, Localization.Get("MISC_ETERNAL_DAY"));
-            if (newVal != ConfigManager.Misc_EternalDay) { ConfigManager.Misc_EternalDay = newVal; ConfigManager.Save(); }
-
-            newVal = GUILayout.Toggle(ConfigManager.Misc_NoFog, Localization.Get("MISC_NO_FOG"));
-            if (newVal != ConfigManager.Misc_NoFog) { ConfigManager.Misc_NoFog = newVal; ConfigManager.Save(); }
-
-            newVal = GUILayout.Toggle(ConfigManager.Misc_Fullbright, Localization.Get("MISC_FULLBRIGHT"));
-            if (newVal != ConfigManager.Misc_Fullbright) { ConfigManager.Misc_Fullbright = newVal; ConfigManager.Save(); }
-
-            GUILayout.Space(5);
-
-            newVal = GUILayout.Toggle(ConfigManager.Misc_BrightPlayer, Localization.Get("MISC_BRIGHT_PLAYER"));
-            if (newVal != ConfigManager.Misc_BrightPlayer) { ConfigManager.Misc_BrightPlayer = newVal; ConfigManager.Save(); }
-
-            if (ConfigManager.Misc_BrightPlayer)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_LIGHT_INT")}: {ConfigManager.Misc_LightIntensity:F1}", GUILayout.Width(120));
-                float newInt = GUILayout.HorizontalSlider(ConfigManager.Misc_LightIntensity, 1f, 5f);
-                if (Math.Abs(newInt - ConfigManager.Misc_LightIntensity) > 0.1f) { ConfigManager.Misc_LightIntensity = newInt; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_LIGHT_RNG")}: {ConfigManager.Misc_LightRange:F0}", GUILayout.Width(120));
-                float newRng = GUILayout.HorizontalSlider(ConfigManager.Misc_LightRange, 50f, 2000f);
-                if (Math.Abs(newRng - ConfigManager.Misc_LightRange) > 1f) { ConfigManager.Misc_LightRange = newRng; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-            }
-
-            GUILayout.Space(5);
-
-            newVal = GUILayout.Toggle(ConfigManager.Misc_ZoomHack, Localization.Get("MISC_ZOOM_TITLE"));
-            if (newVal != ConfigManager.Misc_ZoomHack) { ConfigManager.Misc_ZoomHack = newVal; ConfigManager.Save(); }
-
-            if (ConfigManager.Misc_ZoomHack)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_ZOOM_LIMIT")}: {ConfigManager.Misc_ZoomLimit:F0}", GUILayout.Width(120));
-                float newLim = GUILayout.HorizontalSlider(ConfigManager.Misc_ZoomLimit, 20f, 200f);
-                if (Math.Abs(newLim - ConfigManager.Misc_ZoomLimit) > 1f) { ConfigManager.Misc_ZoomLimit = newLim; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_CAM_ANGLE")}: {ConfigManager.Misc_CamAngle:F0}", GUILayout.Width(120));
-                float newAng = GUILayout.HorizontalSlider(ConfigManager.Misc_CamAngle, 10f, 89f);
-                if (Math.Abs(newAng - ConfigManager.Misc_CamAngle) > 1f) { ConfigManager.Misc_CamAngle = newAng; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"{Localization.Get("MISC_ZOOM_SENS")}: {ConfigManager.Misc_ZoomSpeed:F0}", GUILayout.Width(120));
-                float newSpd = GUILayout.HorizontalSlider(ConfigManager.Misc_ZoomSpeed, 10f, 200f);
-                if (Math.Abs(newSpd - ConfigManager.Misc_ZoomSpeed) > 1f) { ConfigManager.Misc_ZoomSpeed = newSpd; ConfigManager.Save(); }
-                GUILayout.EndHorizontal();
-            }
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{Localization.Get("MISC_FOV")}: {ConfigManager.Misc_Fov:F0}", GUILayout.Width(120));
-            float newFov = GUILayout.HorizontalSlider(ConfigManager.Misc_Fov, 30f, 120f);
-            if (Math.Abs(newFov - ConfigManager.Misc_Fov) > 1f) { ConfigManager.Misc_Fov = newFov; ConfigManager.Save(); }
-            GUILayout.EndHorizontal();
-
-            if (GUILayout.Button(Localization.Get("MISC_RESET")))
-            {
-                ConfigManager.Misc_Fov = _defaultFov;
-                ConfigManager.Misc_RenderDistance = _originalRenderDist;
-                ConfigManager.Misc_ZoomLimit = 100f;
-                ConfigManager.Misc_CamAngle = 45f;
-                ConfigManager.Misc_ZoomSpeed = 60f;
-                ConfigManager.Misc_LightIntensity = 2.0f;
-                ConfigManager.Misc_LightRange = 1000f;
-                ConfigManager.Save();
-            }
-
-            GUILayout.Space(10);
-
-            // --- AUTO BUTCHER ---
-            bool butcherVal = GUILayout.Toggle(ConfigManager.Misc_AutoButcher, Localization.Get("MISC_AUTO_BUTCHER"));
-            if (butcherVal != ConfigManager.Misc_AutoButcher)
-            {
-                ConfigManager.Misc_AutoButcher = butcherVal;
-                ConfigManager.Save();
-            }
-
-            GUILayout.Space(10);
-            GUILayout.Label($"<b>{Localization.Get("FEEDER_TITLE")}</b>");
-            bool newFeed = GUILayout.Toggle(ConfigManager.AutoFeed_Enabled, Localization.Get("FEEDER_ENABLE"));
-            if (newFeed != ConfigManager.AutoFeed_Enabled)
-            {
-                ConfigManager.AutoFeed_Enabled = newFeed;
-                ConfigManager.Save();
-            }
-
-            bool newAfk = GUILayout.Toggle(ConfigManager.AntiAfk_Enabled, Localization.Get("ANTIAFK_ENABLE"));
-            if (newAfk != ConfigManager.AntiAfk_Enabled)
-            {
-                ConfigManager.AntiAfk_Enabled = newAfk;
-                ConfigManager.Save();
-            }
-
-            GUILayout.Space(10);
-            GUILayout.Label($"<b>{Localization.Get("ACTION_TITLE")}</b>");
-
-            // Włącznik
-            bool newAction = GUILayout.Toggle(ConfigManager.AutoAction_Enabled, Localization.Get("ACTION_ENABLE"));
-            if (newAction != ConfigManager.AutoAction_Enabled)
-            {
-                ConfigManager.AutoAction_Enabled = newAction;
-                ConfigManager.Save();
-            }
-
-            if (ConfigManager.AutoAction_Enabled)
-            {
-                GUILayout.Label($"{Localization.Get("ACTION_RANGE")}: {ConfigManager.AutoAction_Range:F1}m");
-                float newRange = GUILayout.HorizontalSlider(ConfigManager.AutoAction_Range, 1.0f, 10.0f);
-                if (Math.Abs(newRange - ConfigManager.AutoAction_Range) > 0.1f) { ConfigManager.AutoAction_Range = newRange; ConfigManager.Save(); }
-
-                GUILayout.Label($"{Localization.Get("ACTION_DELAY")}: {ConfigManager.AutoAction_Delay:F1}s");
-                float newDelay = GUILayout.HorizontalSlider(ConfigManager.AutoAction_Delay, 0.1f, 5.0f);
-                if (Math.Abs(newDelay - ConfigManager.AutoAction_Delay) > 0.1f) { ConfigManager.AutoAction_Delay = newDelay; ConfigManager.Save(); }
-
-                GUILayout.Space(5);
-
-                // --- ROZWIJANA LISTA ---
-                string currentActionName = AutoActionModule.KnownActions.ContainsKey(ConfigManager.AutoAction_ID)
-                    ? AutoActionModule.KnownActions[ConfigManager.AutoAction_ID]
-                    : $"Custom ID ({ConfigManager.AutoAction_ID})";
-
-                if (GUILayout.Button($"Akcja: {currentActionName} [Zmień]"))
-                {
-                    _isActionListOpen = !_isActionListOpen;
-                }
-
-                if (_isActionListOpen)
-                {
-                    // Styl dla listy
-                    GUIStyle listStyle = new GUIStyle(GUI.skin.box);
-                    listStyle.padding = new RectOffset(5, 5, 5, 5);
-
-                    GUILayout.BeginVertical(listStyle);
-
-                    // Pole wyszukiwania (opcjonalne, ale przydatne przy 98 elementach)
-                    // Na razie prosta lista
-                    _actionScrollPos = GUILayout.BeginScrollView(_actionScrollPos, GUILayout.Height(200));
-
-                    foreach (var action in AutoActionModule.KnownActions)
-                    {
-                        // Koloruj wybraną akcję
-                        GUI.backgroundColor = (action.Key == ConfigManager.AutoAction_ID) ? Color.green : Color.white;
-
-                        if (GUILayout.Button(action.Value))
-                        {
-                            ConfigManager.AutoAction_ID = action.Key;
-                            ConfigManager.Save();
-                            _isActionListOpen = false; // Zamknij po wyborze
-                        }
-                    }
-                    GUI.backgroundColor = Color.white;
-
-                    GUILayout.EndScrollView();
-                    GUILayout.EndVertical();
-                }
-
-                // PRZYCISK SKANERA
-                if (ActionModuleRef != null)
-                {
-                    GUILayout.Space(5);
-                    GUI.backgroundColor = ActionModuleRef.IsScanning ? Color.red : Color.white;
-                    if (GUILayout.Button(ActionModuleRef.IsScanning ? "STOP SCAN" : "SCAN ACTIONS"))
-                    {
-                        ActionModuleRef.IsScanning = !ActionModuleRef.IsScanning;
-                    }
-                    GUI.backgroundColor = Color.white;
-                }
-
-            }
-
-            GUILayout.Space(10);
-            GUILayout.Label($"<b>{Localization.Get("SKILLUNLOCK_TITLE")}</b>");
-
-            bool newUnlock = GUILayout.Toggle(ConfigManager.SkillUnlocker_Enabled, Localization.Get("SKILLUNLOCK_ENABLE"));
-            if (newUnlock != ConfigManager.SkillUnlocker_Enabled)
-            {
-                ConfigManager.SkillUnlocker_Enabled = newUnlock;
-                ConfigManager.Save();
-            }
-
-            if (ConfigManager.SkillUnlocker_Enabled)
-            {
-                // SUWAK ILOŚCI SLOTÓW
-                GUILayout.Label($"Ilość slotów: {ConfigManager.SkillUnlocker_Slots}");
-                float newSlots = GUILayout.HorizontalSlider((float)ConfigManager.SkillUnlocker_Slots, 5f, 20f);
-
-                int roundedSlots = Mathf.RoundToInt(newSlots);
-                if (roundedSlots != ConfigManager.SkillUnlocker_Slots)
-                {
-                    ConfigManager.SkillUnlocker_Slots = roundedSlots;
-                    ConfigManager.Save();
-                }
-
-                GUILayout.Label($"<size=10>{Localization.Get("SKILLUNLOCK_INFO")}</size>");
-            }
-
-            GUILayout.EndVertical();
-        }
-
         private void ChangeLanguage(string lang)
         {
             if (ConfigManager.Language != lang)
@@ -503,9 +533,6 @@ namespace WildTerraHook
             }
         }
 
-        // ==========================================================
-        //  AUTO BUTCHER LOGIC
-        // ==========================================================
         private void AutoButcherLoop()
         {
             var player = global::Player.localPlayer as global::WTPlayer;

@@ -191,6 +191,9 @@ MENU_TAB_OBJECTS=Objects
 OBJ_RADIUS=Search Radius
 OBJ_NO_BOJECTS=No Objects in Range
 OBJ_HIDE_EMPTY=Hide objects with no actions
+MISC_GROUP_VISUALS=Wizualne / System
+MISC_GROUP_CAMERA=Kamera
+MISC_GROUP_AUTOMATION=Automatyzacja
 ".Trim();
         }
 
@@ -357,6 +360,9 @@ MENU_TAB_OBJECTS=Obiekty
 OBJ_RADIUS=Promień Szukania
 OBJ_NO_BOJECTS=Brak Obiektów w Zasięgu
 OBJ_HIDE_EMPTY=Ukryj obiekty bez akcji
+MISC_GROUP_VISUALS=Visuals / System
+MISC_GROUP_CAMERA=Camera
+MISC_GROUP_AUTOMATION=Automation
 ".Trim();
         }
     }

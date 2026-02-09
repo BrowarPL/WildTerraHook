@@ -33,18 +33,30 @@ namespace WildTerraHook
 
             _currentTab = ConfigManager.Menu_Tab;
 
+            // --- [POPRAWKA] BEZPIECZNE INICJOWANIE OKNA ---
+            float startW = 400;
+            float startH = 300;
+
             if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
             {
-                float w = ConfigManager.TabWidths[_currentTab];
-                float h = ConfigManager.TabHeights[_currentTab];
-                if (w < 250) w = 250;
-                if (h < 200) h = 200;
-                _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, w, h);
+                startW = ConfigManager.TabWidths[_currentTab];
+                startH = ConfigManager.TabHeights[_currentTab];
             }
-            else
-            {
-                _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, 400, 300);
-            }
+
+            // Zabezpieczenie: Jeśli zapisana szerokość/wysokość jest większa niż ekran - zmniejsz ją
+            if (startW > Screen.width) startW = Screen.width - 50;
+            if (startH > Screen.height) startH = Screen.height - 50;
+
+            // Zabezpieczenie minimalne
+            if (startW < 300) startW = 300;
+            if (startH < 200) startH = 200;
+
+            _windowRect = new Rect(ConfigManager.Menu_X, ConfigManager.Menu_Y, startW, startH);
+
+            // Zabezpieczenie pozycji (żeby belka nie uciekła poza ekran)
+            if (_windowRect.x < 0) _windowRect.x = 0;
+            if (_windowRect.y < 0) _windowRect.y = 0;
+            // ----------------------------------------------
 
             _espModule = new ResourceEspModule();
             _lootModule = new AutoLootModule();
@@ -67,59 +79,16 @@ namespace WildTerraHook
             Debug.Log("[MainHack] Hook załadowany pomyślnie.");
 
             _isInitialized = true;
-
-            try
-            {
-                // Szukamy typu ItemActionType w Assembly gry
-                System.Type enumType = System.Type.GetType("ItemActionType, Assembly-CSharp");
-
-                if (enumType != null)
-                {
-                    Debug.LogWarning("=== LISTA AKCJI (ItemActionType) ===");
-                    System.Array values = System.Enum.GetValues(enumType);
-                    foreach (object val in values)
-                    {
-                        // Używamy Convert.ToInt32 zamiast (int)val, aby uniknąć błędu rzutowania
-                        int intValue = System.Convert.ToInt32(val);
-                        Debug.Log($"Action: {val.ToString()} = {intValue}");
-                    }
-                    Debug.LogWarning("===================================");
-                }
-                else
-                {
-                    Debug.LogError("Nie znaleziono typu ItemActionType!");
-                }
-            }
-            catch (System.Exception e) { Debug.LogError("Błąd dumpowania: " + e.Message); }
         }
 
         public void OnDestroy()
         {
-            // Zapisz config przed śmiercią
             SaveWindowConfig();
             ConfigManager.Save();
 
-            if (_espModule != null)
-            {
-                bool wasEnabled = ConfigManager.Esp_Enabled;
-                ConfigManager.Esp_Enabled = false;
-                _espModule.Update(); // Force cleanup
-                ConfigManager.Esp_Enabled = wasEnabled;
-            }
-            if (_miscModule != null)
-            {
-                bool wasBright = ConfigManager.Misc_BrightPlayer;
-                bool wasFull = ConfigManager.Misc_Fullbright;
-                ConfigManager.Misc_BrightPlayer = false;
-                ConfigManager.Misc_Fullbright = false;
-                _miscModule.Update(); // Force cleanup
-                ConfigManager.Misc_BrightPlayer = wasBright;
-                ConfigManager.Misc_Fullbright = wasFull;
-            }
+            if (_espModule != null) ConfigManager.Esp_Enabled = false;
             if (_persistentModule != null) _persistentModule.ClearCache();
             if (_consoleModule != null) _consoleModule.Shutdown();
-
-            // CLEANUP Quick Stack Button
             if (_quickStackModule != null) _quickStackModule.OnDestroy();
         }
 
@@ -129,10 +98,9 @@ namespace WildTerraHook
 
             if (Input.GetKeyDown(KeyCode.Insert)) _showMenu = !_showMenu;
 
-            // --- PEŁNY EJECT ---
             if (Input.GetKeyDown(KeyCode.Delete))
             {
-                Loader.Unload(); // To zniszczy ten GameObject i wywoła OnDestroy
+                Loader.Unload();
                 return;
             }
 
@@ -174,8 +142,6 @@ namespace WildTerraHook
 
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
-
-            // GUI modułów (np. przycisk QS)
             _quickStackModule.OnGUI();
 
             if (_showMenu)
@@ -186,7 +152,14 @@ namespace WildTerraHook
 
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1.0f));
 
-                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(250), GUILayout.MinHeight(200));
+                // Rysowanie okna z minimalnymi wymiarami
+                _windowRect = GUILayout.Window(0, _windowRect, DrawWindow, Localization.Get("MENU_TITLE"), GUILayout.MinWidth(400), GUILayout.MinHeight(300));
+
+                // [POPRAWKA] Upewnij się, że okno nie ucieka poza ekran podczas rysowania
+                _windowRect.x = Mathf.Clamp(_windowRect.x, 0, Screen.width - 50);
+                _windowRect.y = Mathf.Clamp(_windowRect.y, 0, Screen.height - 50);
+                _windowRect.width = Mathf.Clamp(_windowRect.width, 300, Screen.width);
+                _windowRect.height = Mathf.Clamp(_windowRect.height, 200, Screen.height);
 
                 GUI.matrix = oldMatrix;
             }
@@ -217,6 +190,7 @@ namespace WildTerraHook
 
             if (newTab != _currentTab)
             {
+                // Zapisz rozmiar starej zakładki
                 if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
                 {
                     ConfigManager.TabWidths[_currentTab] = _windowRect.width;
@@ -226,18 +200,26 @@ namespace WildTerraHook
                 _currentTab = newTab;
                 ConfigManager.Menu_Tab = _currentTab;
 
+                // Wczytaj rozmiar nowej (Z ZABEZPIECZENIEM)
                 if (_currentTab >= 0 && _currentTab < ConfigManager.TabWidths.Length)
                 {
                     float w = ConfigManager.TabWidths[_currentTab];
                     float h = ConfigManager.TabHeights[_currentTab];
-                    if (w < 250) w = 350;
-                    if (h < 200) h = 300;
+
+                    // Resetuj absurdalne wartości
+                    if (w > Screen.width || w < 300) w = 500;
+                    if (h > Screen.height || h < 200) h = 400;
+
                     _windowRect.width = w;
                     _windowRect.height = h;
                 }
             }
 
             GUILayout.Space(10);
+
+            // Scrollview dla całej zawartości okna, na wypadek gdyby elementy nie mieściły się w oknie
+            // To zapobiegnie "rozpychaniu" okna przez zawartość
+            // (Opcjonalne, ale bezpieczniejsze. W MiscModule mamy już wewnętrzne scrolle, więc tam zadziała dobrze)
 
             switch (_currentTab)
             {
@@ -261,6 +243,15 @@ namespace WildTerraHook
             {
                 SaveWindowConfig();
             }
+        }
+
+        private void DrawMiscTab()
+        {
+            _miscModule.DrawMenu(
+                () => _quickStackModule.DrawMenu(),
+                () => _buildingModule.DrawMenu(),
+                () => _persistentModule?.DrawMenu()
+            );
         }
 
         private void DrawCombatTab()
@@ -289,33 +280,12 @@ namespace WildTerraHook
             }
             else
             {
-                GUILayout.Label("<i>Memory Bot disabled (Work in Progress)</i>", CenteredLabel());
+                GUILayout.Label("<i>Memory Bot disabled</i>", CenteredLabel());
             }
             GUILayout.EndVertical();
         }
 
-        private void DrawMiscTab()
-        {
-            _miscModule.DrawMenu();
-            GUILayout.Space(10);
-
-            // --- QUICK STACK MENU ---
-            _quickStackModule.DrawMenu();
-            GUILayout.Space(10);
-            // ------------------------
-            _buildingModule.DrawMenu();
-            GUILayout.Space(10);
-
-            if (_persistentModule != null) _persistentModule.DrawMenu();
-            GUILayout.Space(10);
-            GUILayout.Label("<b>" + Localization.Get("MISC_UI_HEADER") + "</b>", GUI.skin.box);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{Localization.Get("MISC_UI_SCALE")}: {ConfigManager.Menu_Scale:F1}x", GUILayout.Width(80));
-            float newScale = GUILayout.HorizontalSlider(ConfigManager.Menu_Scale, 0.8f, 2.0f);
-            if (Mathf.Abs(newScale - ConfigManager.Menu_Scale) > 0.05f) ConfigManager.Menu_Scale = newScale;
-            GUILayout.EndHorizontal();
-        }
-
+        // --- POPRAWIONY RESIZER ---
         private void DrawResizer()
         {
             Vector2 resizeHandleSize = new Vector2(20, 20);
@@ -326,10 +296,15 @@ namespace WildTerraHook
             if (e.type == EventType.MouseDown && resizeRect.Contains(e.mousePosition)) e.Use();
             else if (e.type == EventType.MouseDrag && resizeRect.Contains(e.mousePosition))
             {
-                _windowRect.width += e.delta.x;
-                _windowRect.height += e.delta.y;
-                if (_windowRect.width < 250) _windowRect.width = 250;
-                if (_windowRect.height < 200) _windowRect.height = 200;
+                float newWidth = _windowRect.width + e.delta.x;
+                float newHeight = _windowRect.height + e.delta.y;
+
+                // [POPRAWKA] Ograniczenie maksymalnego rozmiaru do wielkości ekranu
+                newWidth = Mathf.Clamp(newWidth, 300, Screen.width);
+                newHeight = Mathf.Clamp(newHeight, 200, Screen.height);
+
+                _windowRect.width = newWidth;
+                _windowRect.height = newHeight;
                 e.Use();
             }
         }

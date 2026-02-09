@@ -100,6 +100,7 @@ namespace WildTerraHook
         public static float AutoAction_Delay = 1.0f; // Co 1s
         public static bool SkillUnlocker_Enabled = false;
         public static int SkillUnlocker_Slots = 6; // Domyślnie 6
+        public static bool Misc_ShowTargetInfo = false;
 
         // --- ESP ---
         public static bool Esp_Enabled = false;
@@ -270,6 +271,7 @@ namespace WildTerraHook
                     sw.WriteLine($"AutoAction_Delay={AutoAction_Delay.ToString(CultureInfo.InvariantCulture)}");
                     sw.WriteLine($"SkillUnlocker_Enabled={SkillUnlocker_Enabled}");
                     sw.WriteLine($"SkillUnlocker_Slots={SkillUnlocker_Slots}");
+                    sw.WriteLine($"Misc_ShowTargetInfo={Misc_ShowTargetInfo}");
 
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
@@ -468,10 +470,13 @@ namespace WildTerraHook
                     else if (key == "Console_ShowInfo") bool.TryParse(val, out Console_ShowInfo);
                     else if (key == "Console_ShowWarnings") bool.TryParse(val, out Console_ShowWarnings);
                     else if (key == "Console_ShowErrors") bool.TryParse(val, out Console_ShowErrors);
+                    else if (key == "Misc_ShowTargetInfo") bool.TryParse(val, out Misc_ShowTargetInfo);
 
                     // Other
-                    else if (key == "Menu_Scale") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
-                    else if (key == "Menu_Tab") int.TryParse(val, out Menu_Tab);
+                    else if (key == "Menu_Scale")
+                        float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out Menu_Scale);
+                    else if (key == "Menu_Tab")
+                        int.TryParse(val, out Menu_Tab);
                     else if (key == "Menu_Rect")
                     {
                         string[] r = val.Split(',');
@@ -485,18 +490,30 @@ namespace WildTerraHook
                     }
                     else if (key.StartsWith("Profile:"))
                     {
-                        if (!profilesLoaded) { LootProfiles.Clear(); profilesLoaded = true; }
+                        if (!profilesLoaded)
+                        {
+                            LootProfiles.Clear();
+                            profilesLoaded = true;
+                        }
+
                         string profileName = key.Substring(8);
                         List<string> items = new List<string>();
-                        if (!string.IsNullOrEmpty(val)) items.AddRange(val.Split(';'));
+                        if (!string.IsNullOrEmpty(val))
+                            items.AddRange(val.Split(';'));
                         LootProfiles[profileName] = items;
                     }
                     else if (key.StartsWith("DropProfile:"))
                     {
-                        if (!dropProfilesLoaded) { DropProfiles.Clear(); dropProfilesLoaded = true; }
+                        if (!dropProfilesLoaded)
+                        {
+                            DropProfiles.Clear();
+                            dropProfilesLoaded = true;
+                        }
+
                         string profileName = key.Substring(12);
                         List<string> items = new List<string>();
-                        if (!string.IsNullOrEmpty(val)) items.AddRange(val.Split(';'));
+                        if (!string.IsNullOrEmpty(val))
+                            items.AddRange(val.Split(';'));
                         DropProfiles[profileName] = items;
                     }
                 }
