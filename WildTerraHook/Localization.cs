@@ -187,6 +187,10 @@ PERSISTENT_COUNT=Cached Objects
 PERSISTENT_CLEAR=Clear Cache
 PERSISTENT_DISABLED=Module Disabled (RAM Saving)
 PERSISTENT_CLEANUP=Cleanup Range (Collected)
+MENU_TAB_OBJECTS=Objects
+OBJ_RADIUS=Search Radius
+OBJ_NO_BOJECTS=No Objects in Range
+OBJ_HIDE_EMPTY=Hide objects with no actions
 ".Trim();
         }
 
@@ -349,6 +353,10 @@ PERSISTENT_COUNT=Zapisane Obiekty
 PERSISTENT_CLEAR=Wyczyść Pamięć
 PERSISTENT_DISABLED=Moduł Wyłączony (Oszczędzanie RAM)
 PERSISTENT_CLEANUP=Zasięg Czyszczenia (Zebrane)
+MENU_TAB_OBJECTS=Obiekty
+OBJ_RADIUS=Promień Szukania
+OBJ_NO_BOJECTS=Brak Obiektów w Zasięgu
+OBJ_HIDE_EMPTY=Ukryj obiekty bez akcji
 ".Trim();
         }
     }

@@ -18,6 +18,7 @@ namespace WildTerraHook
         private AutoPetFeederModule _feederModule;
         private AutoActionModule _autoActionModule;
         private SkillBarUnlockerModule _skillUnlockerModule;
+        private ObjectManagerModule _objManagerModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -59,6 +60,7 @@ namespace WildTerraHook
             _autoActionModule = new AutoActionModule();
             _miscModule.ActionModuleRef = _autoActionModule;
             _skillUnlockerModule = new SkillBarUnlockerModule();
+            _objManagerModule = new ObjectManagerModule();
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -146,6 +148,7 @@ namespace WildTerraHook
             _feederModule.Update();
             _autoActionModule.Update();
             _skillUnlockerModule.Update();
+            _objManagerModule.Update();
         }
 
         private void BlockInputIfOverWindow()
@@ -202,6 +205,7 @@ namespace WildTerraHook
                 Localization.Get("MENU_TAB_DROP"),
                 Localization.Get("MENU_TAB_MISC"),
                 Localization.Get("MENU_TAB_COMBAT"),
+                Localization.Get("MENU_TAB_OBJECTS"),
                 Localization.Get("MENU_TAB_CONSOLE")
             };
 
@@ -243,7 +247,8 @@ namespace WildTerraHook
                 case 3: _dropModule.DrawMenu(); break;
                 case 4: DrawMiscTab(); break;
                 case 5: DrawCombatTab(); break;
-                case 6: _consoleModule.DrawMenu(); break;
+                case 6: _objManagerModule.DrawMenu(); break;
+                case 7: _consoleModule.DrawMenu(); break;
             }
 
             GUILayout.Space(10);
