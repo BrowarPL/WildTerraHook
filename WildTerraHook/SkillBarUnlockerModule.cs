@@ -68,6 +68,9 @@ namespace WildTerraHook
                     }
                 }
             }
+
+            // Debug celowania pod klawiszem I
+            if (Input.GetKeyDown(KeyCode.I)) DebugAim();
         }
 
         void OnGUI()
@@ -139,15 +142,14 @@ namespace WildTerraHook
             GUI.DragWindow();
         }
 
-        // --- SMART CAST (FINAL VERSION) ---
+        // --- SMART CAST ---
         void SmartCast(string skillName)
         {
             var player = global::Player.localPlayer as global::WTPlayer;
             if (player == null) return;
 
-            // 1. ZNAJDŹ SKILL (Index)
             int skillIndex = -1;
-            object skillObj = null; // Struktura Skill
+            object skillObj = null;
             for (int i = 0; i < player.skills.Count; i++)
             {
                 if (player.skills[i].data != null && player.skills[i].data.name == skillName)
@@ -159,106 +161,155 @@ namespace WildTerraHook
             }
             if (skillIndex == -1) return;
 
-            // 2. ZNAJDŹ CEL (Target)
-            // Używamy ulepszonej metody szukania celu w hierarchii klas
+            // Ulepszone pobieranie celu
             NetworkIdentity target = GetTargetRobust(player);
 
-            // Jeśli brak manualnego celu, szukaj surowca
             if (target == null)
             {
                 target = FindResourceForSkill(player, skillName);
             }
 
-            // 3. WYKONAJ ATAK
             if (target != null)
             {
-                Vector3 centerPoint = GetCenterPoint(target);
+                // [FIX] Używamy nowej funkcji GetAimPoint zamiast GetCenterPoint
+                Vector3 aimPoint = GetAimPoint(target);
 
-                // A. Synchronizacja Celu
                 SetTarget(player, target);
 
-                // B. Obrót w stronę celu (żeby Pointed Skill poleciał dobrze)
-                Vector3 lookPos = centerPoint;
+                Vector3 lookPos = aimPoint;
                 lookPos.y = player.transform.position.y;
                 player.transform.LookAt(lookPos);
 
-                // C. Sprawdź typ skilla (IsPointedSkill)
-                // W WTPlayer.cs logika jest taka: jeśli Pointed -> AbilitySkillToPoint, w przeciwnym razie UseSkill
                 if (IsPointedSkill(skillObj))
                 {
-                    CmdAbilitySkillToPoint(player, skillIndex, centerPoint);
+                    CmdAbilitySkillToPoint(player, skillIndex, aimPoint);
                 }
                 else
                 {
-                    // Skille namierzane (Targeted) ignorują punkt i lecą w zaznaczony cel
                     CmdUseSkill(player, skillIndex);
                 }
             }
             else
             {
-                // Brak celu -> Skill na siebie lub w powietrze
                 CmdUseSkill(player, skillIndex);
             }
         }
 
-        // --- PANCERNY GET TARGET ---
+        // --- ULEPSZONE CELOWANIE (BONE AIMING) ---
+        Vector3 GetAimPoint(NetworkIdentity target)
+        {
+            if (target == null) return Vector3.zero;
+
+            // 1. Priorytet: Kości (Dla Humanoidów/Potworów)
+            // Szukamy rekurencyjnie kości klatki piersiowej lub kręgosłupa
+            Transform bone = FindRecursive(target.transform, "Chest");
+            if (bone == null) bone = FindRecursive(target.transform, "Spine2"); // Często wyższy kręgosłup
+            if (bone == null) bone = FindRecursive(target.transform, "Spine1");
+            if (bone == null) bone = FindRecursive(target.transform, "Spine");
+            if (bone == null) bone = FindRecursive(target.transform, "Head");
+
+            if (bone != null) return bone.position;
+
+            // 2. Priorytet: Collider Kapsułowy (Standard Unity dla postaci)
+            // Celujemy w 70% wysokości (klatka piersiowa), zamiast w 50% (brzuch)
+            var cap = target.GetComponent<CapsuleCollider>();
+            if (cap != null)
+            {
+                float heightOffset = cap.height * 0.7f;
+                // Uwzględniamy skalę obiektu
+                float worldHeight = heightOffset * target.transform.lossyScale.y;
+                return target.transform.position + new Vector3(0, worldHeight, 0);
+            }
+
+            var charCtrl = target.GetComponent<CharacterController>();
+            if (charCtrl != null)
+            {
+                float heightOffset = charCtrl.height * 0.7f;
+                float worldHeight = heightOffset * target.transform.lossyScale.y;
+                return target.transform.position + new Vector3(0, worldHeight, 0);
+            }
+
+            // 3. Fallback: Środek Boundboxa (Dla budynków/skał)
+            var col = target.GetComponent<Collider>();
+            if (col != null) return col.bounds.center;
+
+            // 4. Ostateczność: Pozycja + 1 metr w górę
+            return target.transform.position + Vector3.up;
+        }
+
+        // Pomocnicza funkcja do szukania kości w głąb hierarchii
+        Transform FindRecursive(Transform parent, string partialName)
+        {
+            if (parent.name.IndexOf(partialName, StringComparison.OrdinalIgnoreCase) >= 0) return parent;
+            foreach (Transform child in parent)
+            {
+                var result = FindRecursive(child, partialName);
+                if (result != null) return result;
+            }
+            return null;
+        }
+
+        void DebugAim()
+        {
+            var player = global::Player.localPlayer as global::WTPlayer;
+            if (player == null) return;
+            var target = GetTargetRobust(player);
+            if (target != null)
+            {
+                Vector3 aim = GetAimPoint(target);
+                Debug.LogWarning($"[AimDebug] Target: {target.name} | AimPoint Y: {aim.y:F2} | Root Y: {target.transform.position.y:F2}");
+                // Rysuj linię w scenie (widoczne tylko w edytorze lub z włączonymi Gizmos, ale info w logu wystarczy)
+            }
+            else
+            {
+                Debug.LogWarning("[AimDebug] Brak celu.");
+            }
+        }
+
+        // --- RESZTA FUNKCJI (Bez zmian) ---
+
         NetworkIdentity GetTargetRobust(global::WTPlayer player)
         {
-            // Przeszukujemy całą hierarchię klas (WTPlayer -> Player -> Entity -> NetworkBehaviour)
-            // Szukamy zarówno public/private PÓL jak i WŁAŚCIWOŚCI o nazwie "target"
             Type type = player.GetType();
             while (type != null && type != typeof(object))
             {
-                // 1. Sprawdź Pola
                 FieldInfo f = type.GetField("target", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
                 if (f != null)
                 {
                     var val = f.GetValue(player) as NetworkBehaviour;
                     if (val != null) return val.netIdentity;
                 }
-
-                // 2. Sprawdź Właściwości (Properties)
                 PropertyInfo p = type.GetProperty("target", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
                 if (p != null && p.CanRead)
                 {
                     var val = p.GetValue(player, null) as NetworkBehaviour;
                     if (val != null) return val.netIdentity;
                 }
-
                 type = type.BaseType;
             }
             return null;
         }
 
-        // --- REFLECTION HELPERS ---
-
         bool IsPointedSkill(object skillObj)
         {
-            // Próbujemy wywołać skill.IsPointedSkill()
-            // Metoda może być w strukturze Skill lub jako Extension Method.
-            // Tutaj zakładamy metodę instancji (jak w WTPlayer.cs)
             try
             {
                 MethodInfo m = skillObj.GetType().GetMethod("IsPointedSkill", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (m != null) return (bool)m.Invoke(skillObj, null);
 
-                // Alternatywa: Sprawdź typ ScriptableSkill (data)
-                // WTAbilitySkill zazwyczaj jest Pointed, chyba że to TargetSkill
                 var dataProp = skillObj.GetType().GetProperty("data");
                 if (dataProp != null)
                 {
                     var data = dataProp.GetValue(skillObj, null);
                     if (data != null)
                     {
-                        // Jeśli to WTAbilityTargetSkill -> False (Targeted)
                         if (data.GetType().Name.Contains("TargetSkill")) return false;
-                        // Jeśli to WTAbilitySkill (ale nie Target) -> True (Pointed)
                         if (data.GetType().Name.Contains("AbilitySkill")) return true;
                     }
                 }
             }
             catch { }
-            return false; // Domyślnie False (bezpieczniej użyć CmdUseSkill)
+            return false;
         }
 
         void CmdAbilitySkillToPoint(global::WTPlayer player, int index, Vector3 point)
@@ -278,7 +329,6 @@ namespace WildTerraHook
             var m = player.GetType().GetMethod("CmdSetTarget", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (m != null) m.Invoke(player, new object[] { target });
 
-            // Często potrzebne dla interakcji z NPC/Surowcami
             var m2 = player.GetType().GetMethod("CmdSetActionTarget", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (m2 != null) m2.Invoke(player, new object[] { target });
         }
@@ -326,13 +376,6 @@ namespace WildTerraHook
                 }
             }
             return false;
-        }
-
-        Vector3 GetCenterPoint(NetworkIdentity target)
-        {
-            var col = target.GetComponent<Collider>();
-            if (col != null) return col.bounds.center;
-            return target.transform.position + Vector3.up;
         }
 
         // --- UI DRAWING & HELPERS ---

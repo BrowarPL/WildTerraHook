@@ -335,18 +335,29 @@ namespace WildTerraHook
         private void HandleRequipping(global::WTPlayer player)
         {
             if (Time.time < _stateTimer) return;
+
             if (_hasCalibration)
             {
                 player.transform.position = _savedPlayerPos;
                 player.transform.rotation = _savedPlayerRot;
             }
 
-            if (_itemActionMethod != null && _actionEquipEnum != null)
+            // 1. Znajdź slot z PIERWSZĄ wędką
+            int rodSlotIndex = FindRodInInventory(player);
+
+            // 2. Jeśli znaleziono wędkę i mamy metodę do zakładania
+            if (rodSlotIndex != -1 && _itemActionMethod != null && _actionEquipEnum != null)
             {
-                try { _itemActionMethod.Invoke(player, new object[] { _fishingSkillIndex, _actionEquipEnum, 0 }); } catch { }
+                try
+                {
+                    // Używamy rodSlotIndex (np. 1), a nie indeksu skilla
+                    _itemActionMethod.Invoke(player, new object[] { rodSlotIndex, _actionEquipEnum, 0 });
+                }
+                catch { }
             }
             else
             {
+                // Fallback: Jeśli nie znalazł wędki w plecaku, próbuje użyć skilla (stare zachowanie)
                 player.CmdUseSkill(_fishingSkillIndex);
             }
 
@@ -424,6 +435,27 @@ namespace WildTerraHook
             _currentState = BotState.CASTING_ROD;
             _stateTimer = Time.time + 1.0f;
             _castAttempts = 0;
+        }
+
+        private int FindRodInInventory(global::WTPlayer player)
+        {
+            if (player.inventory == null) return -1;
+
+            for (int i = 0; i < player.inventory.Count; i++)
+            {
+                var slot = player.inventory[i];
+
+                // [POPRAWKA] Usunięto "slot.item != null", ponieważ Item to struktura
+                if (slot.amount > 0 && slot.item.data != null)
+                {
+                    // Szukamy przedmiotu, który ma w nazwie "FishingRod"
+                    if (slot.item.data.name.IndexOf("FishingRod", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return i; // Zwróć indeks pierwszej znalezionej wędki
+                    }
+                }
+            }
+            return -1;
         }
 
         private void EnterFishingState()
