@@ -20,6 +20,7 @@ namespace WildTerraHook
         private SkillBarUnlockerModule _skillUnlockerModule;
         private ObjectManagerModule _objManagerModule;
         private FastAttackModule _fastAttackModule;
+        private DungeonHelperModule _dungeonModule;
 
         private bool _showMenu = true;
         private Rect _windowRect;
@@ -75,6 +76,7 @@ namespace WildTerraHook
             _skillUnlockerModule = new SkillBarUnlockerModule();
             _objManagerModule = new ObjectManagerModule();
             _fastAttackModule = new FastAttackModule();
+            _dungeonModule = new DungeonHelperModule();
 
             _espModule.SetPersistentModule(_persistentModule);
             _consoleModule = new DebugConsoleModule();
@@ -120,6 +122,7 @@ namespace WildTerraHook
             _skillUnlockerModule.Update();
             _objManagerModule.Update();
             _fastAttackModule.Update();
+            _dungeonModule.Update();
         }
 
         private void BlockInputIfOverWindow()
@@ -146,6 +149,7 @@ namespace WildTerraHook
             _espModule.DrawESP();
             _colorFishModule.DrawESP();
             _quickStackModule.OnGUI();
+            _dungeonModule.OnGUI();
 
             if (_showMenu)
             {

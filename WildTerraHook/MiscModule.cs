@@ -161,6 +161,9 @@ namespace WildTerraHook
             GUILayout.BeginVertical(GUILayout.Width(halfWidth));
             _rightColumnScroll = GUILayout.BeginScrollView(_rightColumnScroll);
 
+            DrawDungeonGroup();
+            GUILayout.Space(5);
+
             DrawAutomationGroup();
             GUILayout.Space(5);
 
@@ -193,6 +196,49 @@ namespace WildTerraHook
         // Przeciążenie dla kompatybilności wstecznej (gdyby coś wywołało bez parametrów)
         public void DrawMenu() { DrawMenu(null, null, null); }
 
+        private void DrawDungeonGroup()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("DUNG_TITLE")}</b>");
+
+            // Włącznik modułu
+            bool enabled = GUILayout.Toggle(ConfigManager.Dungeon_Enabled, " Enable Module");
+            if (enabled != ConfigManager.Dungeon_Enabled)
+            {
+                ConfigManager.Dungeon_Enabled = enabled;
+                ConfigManager.Save();
+            }
+
+            if (ConfigManager.Dungeon_Enabled)
+            {
+                // Boss Info
+                bool boss = GUILayout.Toggle(ConfigManager.Dungeon_ShowBossInfo, " " + Localization.Get("DUNG_SHOW_BOSS"));
+                if (boss != ConfigManager.Dungeon_ShowBossInfo) { ConfigManager.Dungeon_ShowBossInfo = boss; ConfigManager.Save(); }
+
+                // Mini Map
+                bool map = GUILayout.Toggle(ConfigManager.Dungeon_MapEnabled, " " + Localization.Get("DUNG_SHOW_MAP"));
+                if (map != ConfigManager.Dungeon_MapEnabled) { ConfigManager.Dungeon_MapEnabled = map; ConfigManager.Save(); }
+
+                if (ConfigManager.Dungeon_MapEnabled)
+                {
+                    // Path
+                    bool path = GUILayout.Toggle(ConfigManager.Dungeon_ShowMainPath, " " + Localization.Get("DUNG_SHOW_PATH"));
+                    if (path != ConfigManager.Dungeon_ShowMainPath) { ConfigManager.Dungeon_ShowMainPath = path; ConfigManager.Save(); }
+
+                    // Scale
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"{Localization.Get("DUNG_MAP_SCALE")}: {ConfigManager.Dungeon_MapScale:F1}", GUILayout.Width(100));
+                    float newScale = GUILayout.HorizontalSlider(ConfigManager.Dungeon_MapScale, 0.2f, 3.0f);
+                    if (Math.Abs(newScale - ConfigManager.Dungeon_MapScale) > 0.1f)
+                    {
+                        ConfigManager.Dungeon_MapScale = newScale;
+                        ConfigManager.Save();
+                    }
+                    GUILayout.EndHorizontal();
+                }
+            }
+            GUILayout.EndVertical();
+        }
 
         // Grupa: Wizualne
         private void DrawVisualsGroup()
