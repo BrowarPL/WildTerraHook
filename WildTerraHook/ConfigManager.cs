@@ -101,6 +101,11 @@ namespace WildTerraHook
         public static bool SkillUnlocker_Enabled = false;
         public static int SkillUnlocker_Slots = 6; // Domyślnie 6
         public static bool Misc_ShowTargetInfo = false;
+        public static bool FastAttack_Enabled = false;
+        public static bool FastAttack_AlwaysMove = false; // <--- NOWOŚĆ
+        public static float FastAttack_Cutoff = 0.85f;
+        public static float FastAttack_MoveSpeed = 0.5f;
+        public static float FastAttack_CastSpeed = 0.0f;
 
         // --- ESP ---
         public static bool Esp_Enabled = false;
@@ -272,6 +277,11 @@ namespace WildTerraHook
                     sw.WriteLine($"SkillUnlocker_Enabled={SkillUnlocker_Enabled}");
                     sw.WriteLine($"SkillUnlocker_Slots={SkillUnlocker_Slots}");
                     sw.WriteLine($"Misc_ShowTargetInfo={Misc_ShowTargetInfo}");
+                    sw.WriteLine($"FastAttack_Enabled={FastAttack_Enabled}");
+                    sw.WriteLine($"FastAttack_Cutoff={FastAttack_Cutoff.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"FastAttack_AlwaysMove={FastAttack_AlwaysMove}");
+                    sw.WriteLine($"FastAttack_MoveSpeed={FastAttack_MoveSpeed.ToString(CultureInfo.InvariantCulture)}");
+                    sw.WriteLine($"FastAttack_CastSpeed={FastAttack_CastSpeed.ToString(CultureInfo.InvariantCulture)}");
 
                     // ESP
                     sw.WriteLine($"Esp_Enabled={Esp_Enabled}");
@@ -434,6 +444,12 @@ namespace WildTerraHook
                     else if (key == "AutoAction_Delay") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out AutoAction_Delay);
                     else if (key == "SkillUnlocker_Enabled") bool.TryParse(val, out SkillUnlocker_Enabled);
                     else if (key == "SkillUnlocker_Slots") int.TryParse(val, out SkillUnlocker_Slots);
+                    else if (key == "Misc_ShowTargetInfo") bool.TryParse(val, out Misc_ShowTargetInfo);
+                    else if (key == "FastAttack_Enabled") bool.TryParse(val, out FastAttack_Enabled);
+                    else if (key == "FastAttack_Cutoff") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out FastAttack_Cutoff);
+                    else if (key == "FastAttack_AlwaysMove") bool.TryParse(val, out FastAttack_AlwaysMove);
+                    else if (key == "FastAttack_MoveSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out FastAttack_MoveSpeed);
+                    else if (key == "FastAttack_CastSpeed") float.TryParse(val, NumberStyles.Any, CultureInfo.InvariantCulture, out FastAttack_CastSpeed);
 
                     // ESP
                     else if (key == "Esp_Enabled") bool.TryParse(val, out Esp_Enabled);
@@ -470,7 +486,6 @@ namespace WildTerraHook
                     else if (key == "Console_ShowInfo") bool.TryParse(val, out Console_ShowInfo);
                     else if (key == "Console_ShowWarnings") bool.TryParse(val, out Console_ShowWarnings);
                     else if (key == "Console_ShowErrors") bool.TryParse(val, out Console_ShowErrors);
-                    else if (key == "Misc_ShowTargetInfo") bool.TryParse(val, out Misc_ShowTargetInfo);
 
                     // Other
                     else if (key == "Menu_Scale")
