@@ -194,6 +194,11 @@ OBJ_HIDE_EMPTY=Hide objects with no actions
 MISC_GROUP_VISUALS=Wizualne / System
 MISC_GROUP_CAMERA=Kamera
 MISC_GROUP_AUTOMATION=Automatyzacja
+DUNG_TITLE=Dungeon Helper
+DUNG_SHOW_BOSS=Show Boss Name
+DUNG_SHOW_MAP=Dungeon Mini-Map
+DUNG_SHOW_PATH=Highlight Main Path
+DUNG_MAP_SCALE=Map Scale
 ".Trim();
         }
 
@@ -363,6 +368,11 @@ OBJ_HIDE_EMPTY=Ukryj obiekty bez akcji
 MISC_GROUP_VISUALS=Visuals / System
 MISC_GROUP_CAMERA=Camera
 MISC_GROUP_AUTOMATION=Automation
+DUNG_TITLE=Pomocnik Lochów (Dungeon Helper)
+DUNG_SHOW_BOSS=Pokaż nazwę Bossa
+DUNG_SHOW_MAP=Mini-Mapa Lochu
+DUNG_SHOW_PATH=Pokaż Główną Ścieżkę
+DUNG_MAP_SCALE=Skala Mapy
 ".Trim();
         }
     }

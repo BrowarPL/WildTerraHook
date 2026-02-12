@@ -214,7 +214,7 @@ namespace WildTerraHook
         private void GetMobInfo(string name, out Color color, out string label, out bool show)
         {
             bool isPassive = name.Contains("Hare") || name.Contains("Deer") || name.Contains("Stag") || name.Contains("Cow") || name.Contains("Sheep") || name.Contains("Crow") || name.Contains("Seagull");
-            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge")) || name.Contains("Horse") || name.Contains("Goat") || (name.Contains("Boar") && !name.Contains("ZombieBoar") || name.Contains("Ent"));
+            bool isRetal = (name.Contains("Fox") && !name.Contains("LargeFox") && !name.Contains("FoxLarge")) || name.Contains("Horse") || name.Contains("Goat") || (name.Contains("Boar") && !name.Contains("ZombieBoar") && !name.Contains("Huge") || name.Contains("Ent"));
 
             color = ConfigManager.Colors.MobAggressive;
             label = name;

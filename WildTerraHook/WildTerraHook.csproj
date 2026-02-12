@@ -103,6 +103,8 @@
     <Compile Include="BuildingModule.cs" />
     <Compile Include="ConfigManager.cs" />
     <Compile Include="DebugConsoleModule.cs" />
+    <Compile Include="DungeonHelperModule.cs" />
+    <Compile Include="FastAttackModule.cs" />
     <Compile Include="FishBotModule.cs" />
     <Compile Include="Loader.cs" />
     <Compile Include="Localization.cs" />

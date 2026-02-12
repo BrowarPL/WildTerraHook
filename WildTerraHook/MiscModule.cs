@@ -161,6 +161,9 @@ namespace WildTerraHook
             GUILayout.BeginVertical(GUILayout.Width(halfWidth));
             _rightColumnScroll = GUILayout.BeginScrollView(_rightColumnScroll);
 
+            DrawDungeonGroup();
+            GUILayout.Space(5);
+
             DrawAutomationGroup();
             GUILayout.Space(5);
 
@@ -193,6 +196,49 @@ namespace WildTerraHook
         // Przeciążenie dla kompatybilności wstecznej (gdyby coś wywołało bez parametrów)
         public void DrawMenu() { DrawMenu(null, null, null); }
 
+        private void DrawDungeonGroup()
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label($"<b>{Localization.Get("DUNG_TITLE")}</b>");
+
+            // Włącznik modułu
+            bool enabled = GUILayout.Toggle(ConfigManager.Dungeon_Enabled, " Enable Module");
+            if (enabled != ConfigManager.Dungeon_Enabled)
+            {
+                ConfigManager.Dungeon_Enabled = enabled;
+                ConfigManager.Save();
+            }
+
+            if (ConfigManager.Dungeon_Enabled)
+            {
+                // Boss Info
+                bool boss = GUILayout.Toggle(ConfigManager.Dungeon_ShowBossInfo, " " + Localization.Get("DUNG_SHOW_BOSS"));
+                if (boss != ConfigManager.Dungeon_ShowBossInfo) { ConfigManager.Dungeon_ShowBossInfo = boss; ConfigManager.Save(); }
+
+                // Mini Map
+                bool map = GUILayout.Toggle(ConfigManager.Dungeon_MapEnabled, " " + Localization.Get("DUNG_SHOW_MAP"));
+                if (map != ConfigManager.Dungeon_MapEnabled) { ConfigManager.Dungeon_MapEnabled = map; ConfigManager.Save(); }
+
+                if (ConfigManager.Dungeon_MapEnabled)
+                {
+                    // Path
+                    bool path = GUILayout.Toggle(ConfigManager.Dungeon_ShowMainPath, " " + Localization.Get("DUNG_SHOW_PATH"));
+                    if (path != ConfigManager.Dungeon_ShowMainPath) { ConfigManager.Dungeon_ShowMainPath = path; ConfigManager.Save(); }
+
+                    // Scale
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"{Localization.Get("DUNG_MAP_SCALE")}: {ConfigManager.Dungeon_MapScale:F1}", GUILayout.Width(100));
+                    float newScale = GUILayout.HorizontalSlider(ConfigManager.Dungeon_MapScale, 0.2f, 3.0f);
+                    if (Math.Abs(newScale - ConfigManager.Dungeon_MapScale) > 0.1f)
+                    {
+                        ConfigManager.Dungeon_MapScale = newScale;
+                        ConfigManager.Save();
+                    }
+                    GUILayout.EndHorizontal();
+                }
+            }
+            GUILayout.EndVertical();
+        }
 
         // Grupa: Wizualne
         private void DrawVisualsGroup()
@@ -311,6 +357,62 @@ namespace WildTerraHook
         {
             GUILayout.BeginVertical("box");
             GUILayout.Label($"<b>{Localization.Get("ACTION_TITLE")}</b>");
+
+            // --- FAST ATTACK (ALL-IN-ONE) ---
+            GUILayout.BeginVertical(GUI.skin.box);
+            ConfigManager.FastAttack_Enabled = GUILayout.Toggle(ConfigManager.FastAttack_Enabled, " <b>Fast Attack & Move</b>");
+
+            if (ConfigManager.FastAttack_Enabled)
+            {
+                // 1. PRĘDKOŚĆ CHODZENIA (SLIDE)
+                float movePerc = ConfigManager.FastAttack_MoveSpeed * 100f;
+                GUILayout.Label($"Prędkość ruchu (Slide): {movePerc:F0}%");
+                float newMove = GUILayout.HorizontalSlider(ConfigManager.FastAttack_MoveSpeed, 0.0f, 1.5f);
+                if (Math.Abs(newMove - ConfigManager.FastAttack_MoveSpeed) > 0.01f)
+                {
+                    ConfigManager.FastAttack_MoveSpeed = newMove;
+                    ConfigManager.Save();
+                }
+
+                GUILayout.Space(5);
+
+                // 2. PRĘDKOŚĆ ATAKU (CAST SPEED)
+                float castPerc = ConfigManager.FastAttack_CastSpeed * 100f;
+                GUILayout.Label($"Przyspieszenie paska (Attack Speed): +{castPerc:F0}%");
+                float newCast = GUILayout.HorizontalSlider(ConfigManager.FastAttack_CastSpeed, 0.0f, 1.0f); // Max +100% (2x szybciej)
+                if (Math.Abs(newCast - ConfigManager.FastAttack_CastSpeed) > 0.01f)
+                {
+                    ConfigManager.FastAttack_CastSpeed = newCast;
+                    ConfigManager.Save();
+                }
+
+                GUILayout.Space(5);
+
+                // 3. CUTOFF (BACKSWING CANCEL)
+                float cutPerc = ConfigManager.FastAttack_Cutoff * 100f;
+                GUILayout.Label($"Ucięcie końcówki (Finisher): przy {cutPerc:F0}%");
+                float newCut = GUILayout.HorizontalSlider(ConfigManager.FastAttack_Cutoff, 0.5f, 0.95f);
+                if (Math.Abs(newCut - ConfigManager.FastAttack_Cutoff) > 0.01f)
+                {
+                    ConfigManager.FastAttack_Cutoff = newCut;
+                    ConfigManager.Save();
+                }
+
+                bool alwaysMove = GUILayout.Toggle(ConfigManager.FastAttack_AlwaysMove, " <b>Always Move Mode</b>");
+                if (alwaysMove != ConfigManager.FastAttack_AlwaysMove)
+                {
+                    ConfigManager.FastAttack_AlwaysMove = alwaysMove;
+                    ConfigManager.Save();
+                }
+                GUILayout.Label("<size=10>Wymusza ruch 'Slide' cały czas (omija stuny/blokady).</size>");
+                GUILayout.Space(5);
+                // ---------------------------
+
+                
+            }
+            GUILayout.EndVertical();
+            GUILayout.Space(5);
+            // ---------------------------
 
             bool newAction = GUILayout.Toggle(ConfigManager.AutoAction_Enabled, Localization.Get("ACTION_ENABLE"));
             if (newAction != ConfigManager.AutoAction_Enabled) { ConfigManager.AutoAction_Enabled = newAction; ConfigManager.Save(); }
